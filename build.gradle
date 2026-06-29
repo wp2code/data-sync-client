@@ -1,0 +1,71 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group = 'com.datasync'
+version = '1.0.0'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+// 统一 UTF-8 编码，避免 Windows 平台 GBK 编译乱码
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.compilerArgs << '-Xlint:unchecked'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // FlatLaf 现代化 UI 美化
+    implementation 'com.formdev:flatlaf:3.4.1'
+
+    // MySQL 官方 JDBC 驱动
+    implementation 'com.mysql:mysql-connector-j:8.3.0'
+
+    // PostgreSQL 官方 JDBC 驱动
+    implementation 'org.postgresql:postgresql:42.7.3'
+
+    // SQLite 本地持久化驱动
+    implementation 'org.xerial:sqlite-jdbc:3.45.2.0'
+
+    // SLF4J 日志实现（消除 SQLite 驱动的警告）
+    implementation 'org.slf4j:slf4j-nop:2.0.13'
+}
+
+application {
+    mainClass = 'com.datasync.Main'
+}
+
+// 配置可执行 JAR 打包 —— 将所有依赖整合进一个 Fat JAR
+jar {
+    manifest {
+        attributes(
+            'Main-Class': 'com.datasync.Main',
+            'Implementation-Title': 'DataSync Client',
+            'Implementation-Version': project.version
+        )
+    }
+
+    // 剔除重复的签名文件，避免打包冲突
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+    from {
+        configurations.runtimeClasspath.collect { 
+            it.isDirectory() ? it : zipTree(it).matching {
+                // 排除依赖包的 MANIFEST，避免覆盖项目自己的
+                exclude 'META-INF/MANIFEST.MF'
+                exclude 'META-INF/*.SF'
+                exclude 'META-INF/*.DSA'
+                exclude 'META-INF/*.RSA'
+            }
+        }
+    }
+}
+
+

@@ -1,0 +1,1372 @@
+package com.datasync.ui;
+
+import com.datasync.core.ConnectionWrapper;
+import com.datasync.core.DataSource;
+import com.datasync.core.DataSyncService;
+import com.datasync.core.DbConnector;
+import com.datasync.util.ConfigUtil;
+import com.datasync.util.GlobalUtil;
+import java.awt.*;
+import java.awt.event.*;
+import java.sql.Connection;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Consumer;
+import javax.swing.*;
+import javax.swing.border.EmptyBorder;
+import javax.swing.border.TitledBorder;
+
+/**
+ * Swing 主界面 — 聚焦数据同步操作，数据源配置通过管理对话框维护
+ */
+public class DataSyncUI extends JFrame {
+    
+    // ────────── 源库选择组件 ──────────
+    private JComboBox<String> srcConfigCombo;
+    
+    private JLabel srcInfoLabel;
+    
+    // ────────── 目标库选择组件 ──────────
+    private JComboBox<String> tgtConfigCombo;
+    
+    private JLabel tgtInfoLabel;
+    
+    // ────────── 同步操作组件 ──────────
+    private JComboBox<String> srcSyncSchemaCombo;
+    
+    private JPanel srcSyncTablePanel;
+    
+    private JComboBox<String> tgtSyncSchemaCombo;
+    
+    private JPanel tgtSyncTablePanel;
+    
+    private JLabel srcSchemaLabel;
+    
+    private JLabel tgtSchemaLabel;
+    
+    private JButton syncButton;
+    
+    private JCheckBox truncateCheckBox;
+    
+    private JPanel srcSchemaPanel;
+    
+    private JPanel tgtSchemaPanel;
+    
+    private JPanel srcTablePanel;
+    
+    private JPanel tgtTablePanel;
+    
+    // ────────── 日志组件 ──────────
+    private JEditorPane logArea;
+    
+    // ────────── 当前连接 ──────────
+    private volatile ConnectionWrapper srcConn;
+    
+    private volatile ConnectionWrapper tgtConn;
+    
+    private boolean suppressComboEvents = false; // 程序性刷新下拉时抑制事件
+    
+    // ────────── 服务 ──────────
+    private final DataSyncService syncService = new DataSyncService();
+    
+    // ────────── 构造方法 ──────────
+    
+    public DataSyncUI() {
+        initUI();
+        ConfigUtil.initialize();
+        refreshConfigCombos();
+    }
+    
+    // ────────── UI 初始化 ──────────
+    
+    private void initUI() {
+        setTitle("DataSync Client — 数据同步工具 v1.0");
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setSize(960, 780);
+        setLocationRelativeTo(null);
+        setLayout(new BorderLayout(10, 10));
+        
+        setAppIcon();
+        
+        // 窗口关闭时释放所有连接
+        addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosing(WindowEvent e) {
+                closeConnection(true, true);
+                closeConnection(false, true);
+            }
+        });
+        
+        add(createHeaderPanel(), BorderLayout.NORTH);
+        
+        // 中间区域：源库 + 同步按钮 + 目标库，使用 GridBagLayout 等宽自适应
+        JPanel centerPanel = new JPanel(new GridBagLayout());
+        centerPanel.setBorder(new EmptyBorder(5, 12, 5, 12));
+        
+        JPanel srcPanel = createDbSidePanel(true);
+        JPanel syncPanel = createSyncActionPanel();
+        JPanel tgtPanel = createDbSidePanel(false);
+        
+        GridBagConstraints gbcCenter = new GridBagConstraints();
+        gbcCenter.fill = GridBagConstraints.BOTH;
+        gbcCenter.weighty = 1.0;
+        gbcCenter.insets = new Insets(0, 0, 0, 5);
+        
+        gbcCenter.gridx = 0;
+        gbcCenter.weightx = 1.0;
+        centerPanel.add(srcPanel, gbcCenter);
+        
+        gbcCenter.gridx = 1;
+        gbcCenter.weightx = 0;
+        gbcCenter.insets = new Insets(0, 5, 0, 5);
+        centerPanel.add(syncPanel, gbcCenter);
+        
+        gbcCenter.gridx = 2;
+        gbcCenter.weightx = 1.0;
+        gbcCenter.insets = new Insets(0, 5, 0, 0);
+        centerPanel.add(tgtPanel, gbcCenter);
+        
+        add(centerPanel, BorderLayout.CENTER);
+        add(createLogPanel(), BorderLayout.SOUTH);
+    }
+    
+    // ────────── 图标 ──────────
+    
+    private void setAppIcon() {
+        try {
+            setIconImage(ConfigUtil.createAppIcon());
+        } catch (Exception ignored) {
+        }
+    }
+    
+    // ────────── 头部面板 ──────────
+    
+    private JPanel createHeaderPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBorder(new EmptyBorder(12, 20, 8, 20));
+        
+        JLabel title = new JLabel("DataSync Client");
+        title.setFont(new Font("SansSerif", Font.BOLD, 22));
+        panel.add(title, BorderLayout.WEST);
+        
+        JButton manageBtn = new JButton("管理数据源");
+        manageBtn.addActionListener(e -> openDataSourceManager());
+        panel.add(manageBtn, BorderLayout.EAST);
+        
+        JLabel subtitle = new JLabel("不同环境数据同步工具");
+        subtitle.setFont(new Font("SansSerif", Font.PLAIN, 13));
+        subtitle.setForeground(Color.GRAY);
+        panel.add(subtitle, BorderLayout.SOUTH);
+        
+        return panel;
+    }
+    
+    // ────────── 左右两侧面板 ──────────
+    
+    /**
+     * 创建源库或目标库的侧边面板，包含：数据源选择、Schema（单选）、表（多选）、刷新连接
+     */
+    private JPanel createDbSidePanel(boolean isSource) {
+        String title = isSource ? "源数据库 (Source)" : "目标数据库 (Target)";
+        Color accentColor = isSource ? new Color(0x4F46E5) : new Color(0x059669); // 源=蓝紫, 目标=绿
+        JPanel sourcePanel = new JPanel(new BorderLayout(5, 5));
+        TitledBorder titledBorder = BorderFactory.createTitledBorder(title);
+        titledBorder.setTitleColor(accentColor);
+        titledBorder.setTitleFont(new Font("SansSerif", Font.BOLD, 13));
+        sourcePanel.setBorder(BorderFactory.createCompoundBorder(titledBorder, new EmptyBorder(6, 8, 6, 8)));
+        // ── 标签固定宽度 ──
+        Dimension labelDim = new Dimension(55, 25);
+        Font labelFont = new Font("SansSerif", Font.PLAIN, 12);
+        
+        // ── 数据源选择行 ──
+        JPanel configRow = new JPanel(new BorderLayout(5, 0));
+        JLabel configLabel = new JLabel("数据源:", SwingConstants.RIGHT);
+        configLabel.setFont(labelFont);
+        configLabel.setPreferredSize(labelDim);
+        configRow.add(configLabel, BorderLayout.WEST);
+        JComboBox<String> configCombo = new JComboBox<>();
+        configCombo.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        configRow.add(configCombo, BorderLayout.CENTER);
+        
+        // ── Schema 选择行（单选）──
+        JPanel schemaRow = new JPanel(new BorderLayout(5, 0));
+        JLabel schemaLabel = new JLabel("模式:", SwingConstants.RIGHT);
+        schemaLabel.setFont(labelFont);
+        schemaLabel.setPreferredSize(labelDim);
+        schemaRow.add(schemaLabel, BorderLayout.WEST);
+        JComboBox<String> schemaCombo = new JComboBox<>(new String[] {"（请先连接）"});
+        schemaCombo.setEditable(false); // 仅单选，不允许编辑
+        schemaCombo.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        schemaRow.add(schemaCombo, BorderLayout.CENTER);
+        // ── 连接状态标签 ──
+        JLabel infoLabel = new JLabel("请选择数据源", SwingConstants.CENTER);
+        infoLabel.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        infoLabel.setForeground(Color.GRAY);
+        infoLabel.setBorder(new EmptyBorder(4, 0, 2, 0));
+        // ── 按钮行 ──
+        JPanel btnRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        btnRow.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, -10));
+        JPanel tableRow = null;
+        JPanel tableCheckPanel = null;
+        if (isSource) {
+            // ── 表选择行（复选框多选）──
+            tableRow = new JPanel(new BorderLayout(5, 0));
+            JLabel tableLabel = new JLabel("表:", SwingConstants.RIGHT);
+            tableLabel.setFont(labelFont);
+            tableLabel.setPreferredSize(labelDim);
+            tableRow.add(tableLabel, BorderLayout.WEST);
+            // 使用 JPanel + JCheckBox 实现复选框多选
+            tableCheckPanel = new JPanel();
+            tableCheckPanel.setLayout(new BoxLayout(tableCheckPanel, BoxLayout.Y_AXIS));
+            JScrollPane tableScrollPane = new JScrollPane(tableCheckPanel);
+            tableScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+            tableRow.add(tableScrollPane, BorderLayout.CENTER);
+            
+            JButton exportBtn = new JButton("导出脚本");
+            exportBtn.setFont(new Font("SansSerif", Font.PLAIN, 11));
+            final JPanel finalTableCheckPanelForExport = tableCheckPanel;
+            exportBtn.addActionListener(e -> DataSyncUI.this.exportInsertScript(finalTableCheckPanelForExport));
+            JButton selectAllTablesBtn = new JButton("全选");
+            selectAllTablesBtn.setFont(new Font("SansSerif", Font.PLAIN, 11));
+            selectAllTablesBtn.addActionListener(e -> selectAllTables(finalTableCheckPanelForExport));
+            JButton deselectAllTablesBtn = new JButton("取消选中");
+            deselectAllTablesBtn.setFont(new Font("SansSerif", Font.PLAIN, 11));
+            deselectAllTablesBtn.addActionListener(e -> clearTableSelection(finalTableCheckPanelForExport));
+            btnRow.add(exportBtn);
+            btnRow.add(selectAllTablesBtn);
+            btnRow.add(deselectAllTablesBtn);
+        }
+        //        JButton refreshBtn = new JButton("刷新连接");
+        //        refreshBtn.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        //        refreshBtn.addActionListener(e -> refreshConnection(isSource, infoLabel));
+        //        btnRow.add(refreshBtn);
+        // ── 组装面板：使用 GridBagLayout 让下拉框宽度一致 ──
+        JPanel formPanel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.insets = new Insets(0, 0, 5, 0);
+        gbc.gridx = 0;
+        gbc.weightx = 1.0;
+        
+        gbc.gridy = 0;
+        formPanel.add(configRow, gbc);
+        gbc.gridy = 1;
+        formPanel.add(schemaRow, gbc);
+        gbc.gridy = 2;
+        gbc.weighty = 1.0; // 表列表行占用剩余垂直空间
+        gbc.fill = GridBagConstraints.BOTH;
+        if (tableRow != null) {
+            formPanel.add(tableRow, gbc);
+        }
+        gbc.gridy = 3;
+        gbc.weighty = 0;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        formPanel.add(btnRow, gbc);
+        
+        sourcePanel.add(formPanel, BorderLayout.CENTER);
+        sourcePanel.add(infoLabel, BorderLayout.SOUTH);
+        
+        // ── configCombo ActionListener ──
+        configCombo.addActionListener(e -> {
+            if (suppressComboEvents) {
+                return;
+            }
+            Object sel = configCombo.getSelectedItem();
+            if (sel != null && !"请选择数据源".equals(sel.toString()) && !"（无）".equals(sel.toString()) && !"（无同类型配置）".equals(sel.toString())) {
+                DataSource ds = ConfigUtil.loadDataSourceByName(sel.toString());
+                final String srcDataSource = GlobalUtil.getSrcDataSource();
+                if (ds != null && (srcDataSource == null || !srcDataSource.equals(ds.getSourceName()))) {
+                    doAutoConnect(ds, title, isSource, infoLabel);
+                }
+            } else {
+                infoLabel.setText("请选择数据源");
+                infoLabel.setFont(new Font("SansSerif", Font.PLAIN, 11));
+                infoLabel.setHorizontalAlignment(SwingConstants.CENTER);
+                infoLabel.setForeground(Color.GRAY);
+                closeConnection(isSource, false);
+            }
+            if (isSource) {
+                onSourceConfigChanged();
+            }
+        });
+        
+        // ── Schema ItemListener ──
+        schemaCombo.addItemListener(e -> {
+            if (e.getStateChange() == ItemEvent.SELECTED) {
+                onSchemaSelected(isSource);
+            }
+        });
+        
+        // ── 保存引用 ──
+        if (isSource) {
+            srcConfigCombo = configCombo;
+            srcInfoLabel = infoLabel;
+            srcSyncSchemaCombo = schemaCombo;
+            srcSyncTablePanel = tableCheckPanel;
+            srcSchemaLabel = schemaLabel;
+            srcSchemaPanel = schemaRow;
+            srcTablePanel = tableRow;
+        } else {
+            tgtConfigCombo = configCombo;
+            tgtInfoLabel = infoLabel;
+            tgtSyncSchemaCombo = schemaCombo;
+            tgtSyncTablePanel = tableCheckPanel;
+            tgtSchemaLabel = schemaLabel;
+            tgtSchemaPanel = schemaRow;
+            tgtTablePanel = tableRow;
+        }
+        
+        return sourcePanel;
+    }
+    
+    // ────────── 自动连接 ──────────
+    
+    /**
+     * 关闭指定端的旧连接
+     */
+    private void closeConnection(boolean isSource, boolean isCloseWindow) {
+        ConnectionWrapper oldConn = isSource ? srcConn : tgtConn;
+        if (oldConn != null) {
+            String side = isSource ? "源数据库" : "目标数据库";
+            if (oldConn.getDataSource() != null) {
+                side += "[" + oldConn.getDataSource().getSourceName() + "]";
+            }
+            appendLog(ConfigUtil.logLine("[DISCONNECT] 正在关闭" + side + "连接…"));
+            DbConnector.closeQuietly(oldConn.getConnection());
+            if (isSource) {
+                srcConn = null;
+                if (isCloseWindow) {
+                    GlobalUtil.removeSrcDataSource();
+                }
+            } else {
+                tgtConn = null;
+                if (isCloseWindow) {
+                    GlobalUtil.removeTargetDataSource();
+                }
+            }
+            appendLog(ConfigUtil.logLine("[DISCONNECT] " + side + "连接已关闭"));
+        }
+    }
+    
+    /**
+     * 选中数据源后自动连接：先关闭旧连接，再建立新连接
+     */
+    private void doAutoConnect(DataSource ds, String title, boolean isSource, JLabel infoLabel) {
+        if (ds == null || !ds.isValid()) {
+            return;
+        }
+        
+        // 先关闭旧连接
+        closeConnection(isSource, false);
+        
+        appendLog(ConfigUtil.logLine("[CONNECT] 正在连接 " + title + "…"));
+        infoLabel.setText("连接中…");
+        infoLabel.setFont(new Font("SansSerif", Font.BOLD, 14));
+        infoLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        infoLabel.setForeground(Color.ORANGE);
+        final ConnectThread connectThread = new ConnectThread(this, ds, infoLabel, isSource, false);
+        connectThread.start();
+    }
+    
+    // ────────── 中间同步操作面板 ──────────
+    
+    private JPanel createSyncActionPanel() {
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        panel.setBorder(new EmptyBorder(40, 15, 40, 15));
+        
+        // 同步图标/方向指示
+        JLabel arrowLabel = new JLabel("→");
+        arrowLabel.setFont(new Font("SansSerif", Font.BOLD, 72));
+        arrowLabel.setForeground(new Color(0x4F46E5));
+        arrowLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        
+        syncButton = new JButton("开始同步");
+        syncButton.setFont(new Font("SansSerif", Font.BOLD, 16));
+        syncButton.setAlignmentX(Component.CENTER_ALIGNMENT);
+        syncButton.addActionListener(e -> startSync());
+        
+        truncateCheckBox = new JCheckBox("同步前先清空目标表");
+        truncateCheckBox.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        truncateCheckBox.setAlignmentX(Component.CENTER_ALIGNMENT);
+        truncateCheckBox.setToolTipText("勾选后，同步数据前会先清空（TRUNCATE）目标表所有数据");
+        
+        panel.add(Box.createVerticalGlue());
+        panel.add(arrowLabel);
+        panel.add(Box.createRigidArea(new Dimension(0, 15)));
+        panel.add(truncateCheckBox);
+        panel.add(Box.createRigidArea(new Dimension(0, 8)));
+        panel.add(syncButton);
+        panel.add(Box.createVerticalGlue());
+        
+        return panel;
+    }
+    
+    // ────────── 日志面板 ──────────
+    
+    private JPanel createLogPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBorder(BorderFactory.createCompoundBorder(new TitledBorder("运行日志"), new EmptyBorder(5, 12, 8, 12)));
+        panel.setPreferredSize(new Dimension(850, 350));
+        
+        logArea = new JEditorPane();
+        logArea.setEditable(false);
+        logArea.setContentType("text/plain");
+        logArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
+        logArea.setBackground(new Color(30, 30, 30));
+        logArea.setForeground(new Color(200, 200, 200));
+        
+        JScrollPane scrollPane = new JScrollPane(logArea);
+        scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
+        panel.add(scrollPane, BorderLayout.CENTER);
+        
+        JButton clearBtn = new JButton("清空日志");
+        clearBtn.addActionListener(e -> {
+            ConfigUtil.clearLog(logArea);
+        });
+        JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        btnPanel.add(clearBtn);
+        panel.add(btnPanel, BorderLayout.SOUTH);
+        
+        return panel;
+    }
+    
+    // ────────── 数据源管理对话框 ──────────
+    
+    private void openDataSourceManager() {
+        DataSourceManagerDialog dialog = new DataSourceManagerDialog(this);
+        dialog.setVisible(true);
+        // 对话框关闭后刷新主页下拉框
+        refreshConfigCombos();
+    }
+    
+    // ────────── 配置下拉刷新 ──────────
+    
+    private void refreshConfigCombos() {
+        suppressComboEvents = true;
+        try {
+            refreshSingleCombo(srcConfigCombo, null, null);
+            // 目标库根据源库类型过滤，同时排除和源库同名的配置
+            String srcType = getSelectedSourceDbType();
+            DataSource srcDs = getSelectedSource(true);
+            String excludeName = srcDs != null ? srcDs.getSourceName() : null;
+            refreshSingleCombo(tgtConfigCombo, srcType, excludeName);
+        } finally {
+            suppressComboEvents = false;
+        }
+    }
+    
+    private void refreshSingleCombo(JComboBox<String> combo, String filterDbType, String excludeName) {
+        String selected = (String) combo.getSelectedItem();
+        combo.removeAllItems();
+        // 始终在第一项添加提示
+        combo.addItem("请选择数据源");
+        List<String> names = ConfigUtil.loadAllSourceNames();
+        List<String> filtered = new ArrayList<>();
+        for (String name : names) {
+            // 排除指定名称
+            if (excludeName != null && excludeName.equals(name)) {
+                continue;
+            }
+            if (filterDbType == null) {
+                filtered.add(name);
+            } else {
+                DataSource ds = ConfigUtil.loadDataSourceByName(name);
+                if (ds != null && filterDbType.equalsIgnoreCase(ds.getDbType())) {
+                    filtered.add(name);
+                }
+            }
+        }
+        if (filtered.isEmpty()) {
+            combo.addItem(filterDbType != null ? "（无同类型配置）" : "（无）");
+        } else {
+            filtered.forEach(combo::addItem);
+        }
+        // 尝试恢复之前的选中项（被排除的项不能恢复），否则选中提示项
+        if (selected != null && !selected.equals(excludeName) && !"请选择数据源".equals(selected) && !"（无）".equals(selected)
+                && !"（无同类型配置）".equals(selected)) {
+            combo.setSelectedItem(selected);
+        } else {
+            combo.setSelectedItem("请选择数据源");
+        }
+    }
+    
+    // ────────── 获取选中数据源 ──────────
+    
+    private DataSource getSelectedSource(boolean isSource) {
+        JComboBox<String> combo = isSource ? srcConfigCombo : tgtConfigCombo;
+        Object sel = combo.getSelectedItem();
+        if (sel == null || "请选择数据源".equals(sel.toString()) || "（无）".equals(sel.toString()) || "（无同类型配置）".equals(sel.toString())) {
+            return null;
+        }
+        return ConfigUtil.loadDataSourceByName(sel.toString());
+    }
+    
+    /**
+     * 获取当前源库的数据库类型（mysql / postgresql），未选择时返回 null
+     */
+    private String getSelectedSourceDbType() {
+        DataSource ds = getSelectedSource(true);
+        return ds != null ? ds.getDbType() : null;
+    }
+    
+    /**
+     * 源库配置变更时的联动处理： 1. MySQL 隐藏 Schema 行，PostgreSQL 显示 2. 过滤目标库下拉只显示同类型配置
+     */
+    private void onSourceConfigChanged() {
+        String srcType = getSelectedSourceDbType();
+        boolean isPostgres = "postgresql".equalsIgnoreCase(srcType);
+        // 显示/隐藏 Schema 行
+        srcSchemaPanel.setVisible(isPostgres);
+        tgtSchemaPanel.setVisible(isPostgres);
+        
+        // 如果目标库已选中但类型与源库不一致，关闭目标连接
+        DataSource tgtDs = getSelectedSource(false);
+        if (tgtDs != null && tgtConn != null && srcType != null && !srcType.equalsIgnoreCase(tgtDs.getDbType())) {
+            closeConnection(false, false);
+            tgtInfoLabel.setText("请选择数据源");
+            tgtInfoLabel.setFont(new Font("SansSerif", Font.PLAIN, 11));
+            tgtInfoLabel.setHorizontalAlignment(SwingConstants.CENTER);
+            tgtInfoLabel.setForeground(Color.GRAY);
+        }
+        
+        // 过滤目标库下拉：同类型 + 排除与源库同名
+        DataSource srcDs = getSelectedSource(true);
+        String excludeName = srcDs != null ? srcDs.getSourceName() : null;
+        suppressComboEvents = true;
+        try {
+            refreshSingleCombo(tgtConfigCombo, srcType, excludeName);
+        } finally {
+            suppressComboEvents = false;
+        }
+        
+        // 清空同步面板
+        if (!isPostgres) {
+            srcSyncSchemaCombo.setSelectedItem("");
+            tgtSyncSchemaCombo.setSelectedItem("");
+        }
+        String tableHint = isPostgres ? "（请先选择 Schema）" : "（请先连接）";
+        setTableCheckItems(srcSyncTablePanel, tableHint);
+        setTableCheckItems(tgtSyncTablePanel, tableHint);
+    }
+    
+    // ────────── Schema → Table 联动 ──────────
+    
+    private void onSchemaSelected(boolean isSource) {
+        JComboBox<String> schemaCombo = isSource ? srcSyncSchemaCombo : tgtSyncSchemaCombo;
+        JPanel tablePanel = isSource ? srcSyncTablePanel : tgtSyncTablePanel;
+        Object sel = schemaCombo.getSelectedItem();
+        if (sel == null) {
+            return;
+        }
+        String schema = sel.toString().trim();
+        if (schema.isEmpty() || schema.startsWith("（")) {
+            // 未选中有效 Schema，清空表列表
+            setTableCheckItems(tablePanel, "（请先选择 Schema）");
+            return;
+        }
+        
+        DataSource ds = getSelectedSource(isSource);
+        if (ds == null) {
+            return;
+        }
+        ds.setSchema(schema);
+        
+        fetchTablesInBackground(tablePanel, ds, schema);
+    }
+    
+    private void fetchTablesInBackground(JPanel tablePanel, DataSource ds, String schema) {
+        setTableCheckItems(tablePanel, "（查询中…）");
+        new Thread(() -> {
+            List<String> tables = DbConnector.fetchTables(ds, schema);
+            SwingUtilities.invokeLater(() -> {
+                if (tables.isEmpty()) {
+                    setTableCheckItems(tablePanel, "（无表）");
+                } else {
+                    setTableCheckItems(tablePanel, tables.toArray(new String[0]));
+                }
+            });
+        }).start();
+    }
+    
+    /**
+     * 设置复选框面板的内容。单字符串参数显示为提示标签，字符串数组则显示为复选框列表。
+     */
+    private void setTableCheckItems(JPanel panel, String... items) {
+        if (panel == null) {
+            return;
+        }
+        panel.removeAll();
+        if (items.length == 1 && items[0] != null && items[0].startsWith("（")) {
+            // 提示文字
+            JLabel hint = new JLabel(items[0], SwingConstants.CENTER);
+            hint.setFont(new Font("SansSerif", Font.PLAIN, 12));
+            hint.setForeground(Color.GRAY);
+            panel.add(hint);
+        } else {
+            for (String item : items) {
+                JCheckBox checkBox = new JCheckBox(item);
+                checkBox.setFont(new Font("SansSerif", Font.PLAIN, 12));
+                //                checkBox.setBackground(Color.WHITE);
+                panel.add(checkBox);
+            }
+        }
+        panel.revalidate();
+        panel.repaint();
+    }
+    
+    /**
+     * 获取面板中所有勾选的复选框文本。
+     */
+    private List<String> getCheckedTables(JPanel panel) {
+        List<String> checked = new ArrayList<>();
+        for (Component comp : panel.getComponents()) {
+            if (comp instanceof JCheckBox) {
+                JCheckBox cb = (JCheckBox) comp;
+                if (cb.isSelected()) {
+                    checked.add(cb.getText());
+                }
+            }
+        }
+        return checked;
+    }
+    
+    /**
+     * 全选面板中所有复选框。
+     */
+    private void selectAllTables(JPanel panel) {
+        for (Component comp : panel.getComponents()) {
+            if (comp instanceof JCheckBox) {
+                ((JCheckBox) comp).setSelected(true);
+            }
+        }
+    }
+    
+    /**
+     * 取消面板中所有复选框的选中状态。
+     */
+    private void clearTableSelection(JPanel panel) {
+        for (Component comp : panel.getComponents()) {
+            if (comp instanceof JCheckBox) {
+                ((JCheckBox) comp).setSelected(false);
+            }
+        }
+    }
+    
+    /**
+     * 导出选中表的 INSERT SQL 脚本到 .sql 文件，支持选择指定列
+     */
+    private void exportInsertScript(JPanel tablePanel) {
+        List<String> checkedTables = getCheckedTables(tablePanel);
+        if (checkedTables.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "请先勾选需要导出的表", "提示", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        
+        DataSource ds = getSelectedSource(true);
+        if (ds == null || !ds.isValid()) {
+            JOptionPane.showMessageDialog(this, "请先选择并连接源数据库", "提示", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        
+        // 检查连接是否可用
+        ConnectionWrapper wrapper = srcConn;
+        if (wrapper == null || wrapper.getConnection() == null) {
+            JOptionPane.showMessageDialog(this, "源数据库未连接，请先连接", "提示", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        
+        // 设置 Schema（PostgreSQL）
+        boolean isPg = "postgresql".equalsIgnoreCase(ds.getDbType());
+        if (isPg) {
+            Object schemaObj = srcSyncSchemaCombo.getSelectedItem();
+            if (schemaObj == null || schemaObj.toString().startsWith("（")) {
+                JOptionPane.showMessageDialog(this, "请先选择 Schema", "提示", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            ds.setSchema(schemaObj.toString().trim());
+        }
+        
+        // ── 列选择对话框（按表区分）──
+        Map<String, List<String>> tableColumnMap = showColumnSelectionDialog(ds, checkedTables);
+        if (tableColumnMap == null) {
+            return; // 用户取消
+        }
+        
+        // 选择保存路径
+        JFileChooser fileChooser = new JFileChooser();
+        fileChooser.setDialogTitle("导出 INSERT SQL 脚本");
+        fileChooser.setSelectedFile(new java.io.File(checkedTables.size() == 1 ? checkedTables.get(0) + ".sql" : ds.getDbName() + "_export.sql"));
+        fileChooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("SQL 脚本文件 (*.sql)", "sql"));
+        
+        if (fileChooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+        
+        java.io.File outputFile = fileChooser.getSelectedFile();
+        if (!outputFile.getName().toLowerCase().endsWith(".sql")) {
+            outputFile = new java.io.File(outputFile.getAbsolutePath() + ".sql");
+        }
+        
+        final java.io.File finalFile = outputFile;
+        final DataSource finalDs = ds;
+        final Map<String, List<String>> finalTableColumnMap = tableColumnMap;
+        
+        syncButton.setEnabled(false);
+        appendLog(ConfigUtil.logLine("[EXPORT] 开始导出 " + checkedTables.size() + " 个表的 INSERT 脚本…"));
+        
+        new Thread(() -> {
+            try (java.io.BufferedWriter writer = new java.io.BufferedWriter(
+                    new java.io.OutputStreamWriter(new java.io.FileOutputStream(finalFile), java.nio.charset.StandardCharsets.UTF_8))) {
+                
+                // 文件头
+                writer.write("-- ============================================\n");
+                writer.write("-- DataSync Client 导出的 INSERT SQL 脚本\n");
+                writer.write("-- 数据库: " + finalDs.getDbType().toUpperCase() + " | " + finalDs.getHost() + ":" + finalDs.getPort() + "/"
+                        + finalDs.getDbName() + "\n");
+                writer.write(
+                        "-- 导出时间: " + java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+                                + "\n");
+                writer.write("-- 表数量: " + checkedTables.size() + "\n");
+                writer.write("-- ============================================\n\n");
+                writer.write("SET FOREIGN_KEY_CHECKS = 0;\n\n");
+                
+                int totalRows = 0;
+                for (int i = 0; i < checkedTables.size(); i++) {
+                    String tableName = checkedTables.get(i);
+                    final int idx = i;
+                    SwingUtilities.invokeLater(() -> appendLog(
+                            ConfigUtil.logLine("[EXPORT] 正在导出表 [" + (idx + 1) + "/" + checkedTables.size() + "]: " + tableName + "…")));
+                    
+                    List<String> cols = finalTableColumnMap.get(tableName);
+                    String script = syncService.exportInsertScript(finalDs, tableName, wrapper, cols);
+                    writer.write(script);
+                    writer.write("\n");
+                    
+                    // 统计行数
+                    int rows = countLines(script) - 7;
+                    if (rows > 0) {
+                        totalRows += rows;
+                    }
+                }
+                
+                writer.write("SET FOREIGN_KEY_CHECKS = 1;\n");
+                
+                final int finalTotalRows = totalRows;
+                SwingUtilities.invokeLater(() -> {
+                    appendLog(ConfigUtil.logLine(
+                            "<html><body><span style=\"color: green; font-weight: bold;\">[EXPORT] 导出完成！共 " + checkedTables.size() + " 个表, "
+                                    + finalTotalRows + " 条数据 → " + finalFile.getAbsolutePath() + "</span></body></html>"));
+                    syncButton.setEnabled(true);
+                    JOptionPane.showMessageDialog(DataSyncUI.this,
+                            "导出成功！\n" + checkedTables.size() + " 个表, 共 " + finalTotalRows + " 条数据\n保存至: " + finalFile.getAbsolutePath(),
+                            "导出完成", JOptionPane.INFORMATION_MESSAGE);
+                });
+                
+            } catch (Exception ex) {
+                SwingUtilities.invokeLater(() -> {
+                    appendLog(ConfigUtil.logLine(
+                            "<html><body><span style=\"color: red;\">[EXPORT] 导出失败: " + ex.getMessage() + "</span></body></html>"));
+                    syncButton.setEnabled(true);
+                    JOptionPane.showMessageDialog(DataSyncUI.this, "导出失败: " + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
+                });
+            }
+        }).start();
+    }
+    
+    /**
+     * 弹出列选择对话框，每张表独立展示列列表和勾选状态
+     *
+     * @param ds     数据源配置
+     * @param tables 选中的表名列表
+     * @return Map<表名, 该表选中的列列表>（空列表=该表全选），取消返回 null
+     */
+    private Map<String, List<String>> showColumnSelectionDialog(DataSource ds, List<String> tables) {
+        String schema = "postgresql".equalsIgnoreCase(ds.getDbType()) ? ds.getSchema() : null;
+        
+        // 获取每张表的列信息
+        java.util.LinkedHashMap<String, List<String>> allTableColumns = new java.util.LinkedHashMap<>();
+        for (String table : tables) {
+            List<String> cols = DbConnector.fetchColumns(ds, table, schema);
+            allTableColumns.put(table, cols);
+        }
+        
+        // 检查是否有任何表的列信息
+        boolean hasAnyColumns = false;
+        for (List<String> cols : allTableColumns.values()) {
+            if (!cols.isEmpty()) {
+                hasAnyColumns = true;
+                break;
+            }
+        }
+        if (!hasAnyColumns) {
+            // 无法获取列信息，直接导出所有列
+            java.util.Map<String, List<String>> result = new java.util.LinkedHashMap<>();
+            for (String table : tables) {
+                result.put(table, new ArrayList<>());
+            }
+            return result;
+        }
+        
+        // 构建对话框
+        JDialog dialog = new JDialog(this, "选择导出列", true);
+        dialog.setLayout(new BorderLayout(10, 10));
+        dialog.setSize(480, 520);
+        dialog.setLocationRelativeTo(this);
+        
+        // 提示标签
+        JLabel hintLabel = new JLabel("按表选择要导出的列（默认全选）：");
+        hintLabel.setBorder(new EmptyBorder(10, 12, 5, 12));
+        hintLabel.setFont(new Font("SansSerif", Font.BOLD, 12));
+        dialog.add(hintLabel, BorderLayout.NORTH);
+        
+        // 按表分组展示列
+        JPanel mainPanel = new JPanel();
+        mainPanel.setLayout(new BoxLayout(mainPanel, BoxLayout.Y_AXIS));
+        // 存储所有复选框引用: 表名 → 该表的复选框列表
+        LinkedHashMap<String, List<JCheckBox>> allCheckBoxes = new LinkedHashMap<>();
+        
+        for (java.util.Map.Entry<String, List<String>> entry : allTableColumns.entrySet()) {
+            String tableName = entry.getKey();
+            List<String> columns = entry.getValue();
+            
+            // 表名标题
+            JPanel titleRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+            titleRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 28));
+            titleRow.setPreferredSize(new Dimension(400, 28));
+            titleRow.setMinimumSize(new Dimension(200, 28));
+            JLabel tableTitle = new JLabel("▸ " + tableName + "（" + columns.size() + " 列）");
+            tableTitle.setFont(new Font("SansSerif", Font.BOLD, 12));
+            tableTitle.setForeground(new Color(0x4F46E5));
+            tableTitle.setVerticalAlignment(SwingConstants.CENTER);
+            titleRow.add(tableTitle);
+            
+            // 该表的全选/全不选按钮
+            if (columns.size() > 3) {
+                JButton tbSelectAll = new JButton("全选");
+                tbSelectAll.setFont(new Font("SansSerif", Font.PLAIN, 10));
+                JButton tbDeselectAll = new JButton("全不选");
+                tbDeselectAll.setFont(new Font("SansSerif", Font.PLAIN, 10));
+                titleRow.add(tbSelectAll);
+                titleRow.add(tbDeselectAll);
+                
+                // 延迟绑定（此时 checkBoxes 还未创建）
+                final String finalTableName = tableName;
+                tbSelectAll.addActionListener(e -> {
+                    List<JCheckBox> cbs = allCheckBoxes.get(finalTableName);
+                    if (cbs != null) {
+                        for (JCheckBox cb : cbs) {
+                            cb.setSelected(true);
+                        }
+                    }
+                });
+                tbDeselectAll.addActionListener(e -> {
+                    List<JCheckBox> cbs = allCheckBoxes.get(finalTableName);
+                    if (cbs != null) {
+                        for (JCheckBox cb : cbs) {
+                            cb.setSelected(false);
+                        }
+                    }
+                });
+            }
+            mainPanel.add(titleRow);
+            // 该表的列复选框（流式排列）
+            if (columns.isEmpty()) {
+                JLabel noColLabel = new JLabel("   （无法获取列信息）");
+                noColLabel.setFont(new Font("SansSerif", Font.ITALIC, 11));
+                noColLabel.setForeground(Color.GRAY);
+                mainPanel.add(noColLabel);
+                allCheckBoxes.put(tableName, new ArrayList<>());
+            } else {
+                JPanel colPanel = new JPanel();
+                colPanel.setLayout(new BoxLayout(colPanel, BoxLayout.Y_AXIS));
+                List<JCheckBox> checkBoxes = new ArrayList<>();
+                for (String col : columns) {
+                    JCheckBox cb = new JCheckBox(col, true); // 默认全选
+                    cb.setFont(new Font("SansSerif", Font.PLAIN, 11));
+                    cb.setAlignmentX(Component.LEFT_ALIGNMENT);
+                    colPanel.add(cb);
+                    checkBoxes.add(cb);
+                }
+                // 用 FlowLayout.LEFT 包装确保靠左
+                JPanel colWrapper = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+                colWrapper.setOpaque(false);
+                colWrapper.add(colPanel);
+                mainPanel.add(colWrapper);
+                allCheckBoxes.put(tableName, checkBoxes);
+            }
+            
+        }
+        
+        JScrollPane scrollPane = new JScrollPane(mainPanel);
+        scrollPane.setBorder(new EmptyBorder(0, 10, 0, 10));
+        scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+        dialog.add(scrollPane, BorderLayout.CENTER);
+        
+        // 底部按钮面板
+        JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 10));
+        JButton cancelIncrementBtn = new JButton("取消自增列");
+        cancelIncrementBtn.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        cancelIncrementBtn.addActionListener(e -> {
+            for (java.util.Map.Entry<String, List<String>> entry : allTableColumns.entrySet()) {
+                String tableName = entry.getKey();
+                String autoCol = DbConnector.fetchAutoIncrementColumn(ds, tableName, schema);
+                if (autoCol != null) {
+                    List<JCheckBox> cbs = allCheckBoxes.get(tableName);
+                    if (cbs != null) {
+                        for (JCheckBox cb : cbs) {
+                            if (cb.getText().equalsIgnoreCase(autoCol)) {
+                                cb.setSelected(false);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        btnPanel.add(cancelIncrementBtn);
+//        JButton selectAllBtn = new JButton("全部全选");
+//        selectAllBtn.setFont(new Font("SansSerif", Font.PLAIN, 11));
+//        selectAllBtn.addActionListener(e -> {
+//            for (List<JCheckBox> cbs : allCheckBoxes.values()) {
+//                for (JCheckBox cb : cbs) {
+//                    cb.setSelected(true);
+//                }
+//            }
+//        });
+        
+//        JButton deselectAllBtn = new JButton("全部取消");
+//        deselectAllBtn.setFont(new Font("SansSerif", Font.PLAIN, 11));
+//        deselectAllBtn.addActionListener(e -> {
+//            for (List<JCheckBox> cbs : allCheckBoxes.values()) {
+//                for (JCheckBox cb : cbs) {
+//                    cb.setSelected(false);
+//                }
+//            }
+//        });
+        
+        JButton okBtn = new JButton("确定导出");
+        okBtn.setFont(new Font("SansSerif", Font.BOLD, 12));
+        JButton cancelBtn = new JButton("取消");
+        cancelBtn.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        cancelBtn.addActionListener(e -> dialog.dispose());
+//        btnPanel.add(selectAllBtn);
+//        btnPanel.add(deselectAllBtn);
+        btnPanel.add(Box.createHorizontalStrut(20));
+        btnPanel.add(okBtn);
+        btnPanel.add(cancelBtn);
+        dialog.add(btnPanel, BorderLayout.SOUTH);
+        
+        // 结果容器
+        @SuppressWarnings("unchecked") final java.util.Map<String, List<String>>[] result = new HashMap[] {null};
+        okBtn.addActionListener(e -> {
+            java.util.Map<String, List<String>> selected = new java.util.LinkedHashMap<>();
+            for (java.util.Map.Entry<String, List<JCheckBox>> entry : allCheckBoxes.entrySet()) {
+                String tableName = entry.getKey();
+                List<JCheckBox> cbs = entry.getValue();
+                List<String> allCols = allTableColumns.get(tableName);
+                // 如果该表无列信息 → 传空列表表示全选
+                if (allCols.isEmpty()) {
+                    selected.put(tableName, new ArrayList<>());
+                    continue;
+                }
+                List<String> tableSelected = new ArrayList<>();
+                for (JCheckBox cb : cbs) {
+                    if (cb.isSelected()) {
+                        tableSelected.add(cb.getText());
+                    }
+                }
+                // 校验：每张表必须至少选中一列
+                if (tableSelected.isEmpty()) {
+                    JOptionPane.showMessageDialog(dialog, "表 [" + tableName + "] 未选择任何列，请至少选择一列！", "校验失败",
+                            JOptionPane.WARNING_MESSAGE);
+                    return;
+                }
+                // 如果该表的列全部选中 → 传空列表表示全选
+                if (tableSelected.size() == allCols.size()) {
+                    selected.put(tableName, new ArrayList<>());
+                } else {
+                    selected.put(tableName, tableSelected);
+                }
+            }
+            result[0] = selected;
+            dialog.dispose();
+        });
+
+        
+        dialog.setVisible(true);
+        return result[0];
+    }
+    
+    private int countLines(String text) {
+        if (text == null || text.isEmpty()) {
+            return 0;
+        }
+        int count = 0;
+        for (int i = 0; i < text.length(); i++) {
+            if (text.charAt(i) == '\n') {
+                count++;
+            }
+        }
+        return count;
+    }
+    
+    private void fetchSchemasInBackground(JComboBox<String> schemaCombo, DataSource ds) {
+        new Thread(() -> {
+            List<String> schemas = DbConnector.fetchSchemas(ds);
+            SwingUtilities.invokeLater(() -> {
+                if (schemas.isEmpty()) {
+                    schemas.add("public");
+                }
+                // 在最前面插入占位项，默认不选中任何 Schema
+                schemas.add(0, "（请选择 Schema）");
+                DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(schemas.toArray(new String[0]));
+                schemaCombo.setModel(model);
+            });
+        }).start();
+    }
+    
+    private static void setModelQuietly(JComboBox<String> combo, DefaultComboBoxModel<String> model) {
+        combo.setModel(model);
+    }
+    
+    /**
+     * 刷新连接：先关闭旧连接，再重新连接数据库，然后重新加载元数据
+     */
+    private void refreshConnection(boolean isSource, JLabel infoLabel) {
+        String side = isSource ? "源数据库" : "目标数据库";
+        DataSource ds = getSelectedSource(isSource);
+        if (ds == null || !ds.isValid()) {
+            appendLog(ConfigUtil.logLine(
+                    "<html><body><span style=\"color: red;\">[REFRESH] " + side + "：未选择有效数据源，跳过刷新</span></body></html>"));
+            return;
+        }
+        
+        appendLog(ConfigUtil.logLine("[REFRESH] 正在刷新" + side + "连接…"));
+        
+        // 重置 Schema 和表选择
+        JComboBox<String> schemaCombo = isSource ? srcSyncSchemaCombo : tgtSyncSchemaCombo;
+        JPanel tablePanel = isSource ? srcSyncTablePanel : tgtSyncTablePanel;
+        boolean isPg = "postgresql".equalsIgnoreCase(ds.getDbType());
+        if (isPg) {
+            setModelQuietly(schemaCombo, new DefaultComboBoxModel<>(new String[] {"（查询中…）"}));
+            setTableCheckItems(tablePanel, "（请先选择 Schema）");
+        } else {
+            setModelQuietly(schemaCombo, new DefaultComboBoxModel<>(new String[] {"（请先连接）"}));
+            setTableCheckItems(tablePanel, "（查询中…）");
+        }
+        
+        // 先关闭旧连接
+        closeConnection(isSource, false);
+        // 重新连接
+        infoLabel.setText("连接中…");
+        infoLabel.setFont(new Font("SansSerif", Font.BOLD, 14));
+        infoLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        infoLabel.setForeground(Color.ORANGE);
+        final ConnectThread connectThread = new ConnectThread(this, ds, infoLabel, isSource, true);
+        connectThread.start();
+    }
+    
+    // ────────── 同步执行 ──────────
+    
+    private void startSync() {
+        final DataSource source = getSelectedSource(true);
+        final DataSource target = getSelectedSource(false);
+        if (source == null) {
+            JOptionPane.showMessageDialog(this, "请先选择源数据库", "参数不完整", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        if (target == null) {
+            JOptionPane.showMessageDialog(this, "请先选择目标数据库", "参数不完整", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        // 源和目标不能是同一个数据源
+        String srcName = source.getSourceName();
+        String tgtName = target.getSourceName();
+        if (srcName != null && srcName.equals(tgtName)) {
+            JOptionPane.showMessageDialog(this, "源数据库和目标数据库不能是同一个数据源", "配置错误", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        
+        boolean isPostgres = "postgresql".equalsIgnoreCase(source.getDbType());
+        
+        // ── 获取复选框选中的源表列表 ──
+        List<String> srcTables = getCheckedTables(srcSyncTablePanel);
+        
+        // ── 获取复选框选中的目标表列表 ──
+        List<String> tgtTables = srcTables;
+        
+        String srcSchema = "";
+        String tgtSchema = "";
+        if (isPostgres) {
+            Object srcSchemaObj = srcSyncSchemaCombo.getSelectedItem();
+            Object tgtSchemaObj = tgtSyncSchemaCombo.getSelectedItem();
+            srcSchema = srcSchemaObj != null ? srcSchemaObj.toString().trim() : "";
+            tgtSchema = tgtSchemaObj != null ? tgtSchemaObj.toString().trim() : "";
+            final int selectedIndex = tgtSyncSchemaCombo.getSelectedIndex();
+            if (selectedIndex == 0) {
+                JOptionPane.showMessageDialog(this, "请选择目标Schema", "参数不完整", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+        }
+        if (srcTables.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "请勾选源表", "参数不完整", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        // 校验源表和目标表数量一致，且名称一一对应
+        if (srcTables.size() != tgtTables.size()) {
+            JOptionPane.showMessageDialog(this, "源表和目标表选择数量不一致（源: " + srcTables.size() + " 个, 目标: " + tgtTables.size() + " 个）",
+                    "参数不完整", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        for (int i = 0; i < srcTables.size(); i++) {
+            if (!srcTables.get(i).equals(tgtTables.get(i))) {
+                JOptionPane.showMessageDialog(this, "第 " + (i + 1) + " 个表名不一致: 源=[" + srcTables.get(i) + "], 目标=[" + tgtTables.get(i) + "]",
+                        "参数不完整", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+        }
+        
+        source.setSchema(srcSchema);
+        target.setSchema(tgtSchema);
+        
+        if (!source.isValid()) {
+            JOptionPane.showMessageDialog(this, "源数据库参数不完整", "参数不完整", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        if (!target.isValid()) {
+            JOptionPane.showMessageDialog(this, "目标数据库参数不完整", "参数不完整", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        
+        // ── 确认弹窗 ──
+        StringBuilder confirmMsg = new StringBuilder("确认同步以下 " + srcTables.size() + " 个表？\n\n");
+        for (int i = 0; i < srcTables.size(); i++) {
+            confirmMsg.append("  • ").append(srcTables.get(i));
+            
+            if (i < srcTables.size() - 1) {
+                confirmMsg.append("\n");
+            }
+        }
+        
+        if (truncateCheckBox.isSelected()) {
+            confirmMsg.append("\n\n⚠ 已勾选\"同步前清空目标表\"，目标表现有数据将被删除！");
+        }
+        int confirm = JOptionPane.showConfirmDialog(this, confirmMsg.toString(), "确认同步", JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.QUESTION_MESSAGE);
+        if (confirm != JOptionPane.OK_OPTION) {
+            return;
+        }
+        
+        syncButton.setEnabled(false);
+        final boolean truncateBeforeSync = truncateCheckBox.isSelected();
+        final List<String> finalSrcTables = new ArrayList<>(srcTables);
+        final String finalSrcSchema = srcSchema;
+        final String finalTgtSchema = tgtSchema;
+        
+        appendLog(ConfigUtil.logLine("[SYNC] ======== 开始批量同步 " + finalSrcTables.size() + " 个表 ========"));
+        if (truncateBeforeSync) {
+            appendLog(ConfigUtil.logLine("[SYNC] 已开启\"同步前清空目标表\"，将先清空目标表数据"));
+        }
+        
+        Consumer<String> logConsumer = msg -> SwingUtilities.invokeLater(() -> appendLog(ConfigUtil.logLine(msg)));
+        
+        // 捕获当前连接引用
+        final ConnectionWrapper[] wrappers = new ConnectionWrapper[] {srcConn, tgtConn};
+        
+        new Thread(() -> {
+            int totalSyncedRows = 0;
+            int failedTables = 0;
+            
+            try {
+                ConnectionWrapper srcWrapper = waitForConnection(wrappers[0], true);
+                ConnectionWrapper tgtWrapper = waitForConnection(wrappers[1], false);
+                
+                for (int i = 0; i < finalSrcTables.size(); i++) {
+                    String tableName = finalSrcTables.get(i);
+                    String logPrefix =
+                            isPostgres ? "[" + (i + 1) + "/" + finalSrcTables.size() + "] 源[" + source.getSourceName() + "][" + finalSrcSchema + "."
+                                    + tableName + "] → 目标[" + target.getSourceName() + "][" + finalTgtSchema + "." + tableName + "]"
+                                    : "[" + (i + 1) + "/" + finalSrcTables.size() + "] 源[" + tableName + "] → 目标[" + tableName + "]";
+                    appendLog(ConfigUtil.logLine("[SYNC] " + logPrefix + " 开始…"));
+                    
+                    int rows = syncService.syncTableWithConn(source, target, tableName, tableName, truncateBeforeSync, srcWrapper, tgtWrapper,
+                            logConsumer);
+                    if (rows >= 0) {
+                        totalSyncedRows += rows;
+                        appendLog(ConfigUtil.logLine("[SYNC] " + logPrefix + " 完成，同步 " + rows + " 条"));
+                    } else {
+                        failedTables++;
+                        appendLog(ConfigUtil.logLine("[SYNC] " + logPrefix + " 失败！"));
+                    }
+                }
+                
+                final int finalTotalRows = totalSyncedRows;
+                final int finalFailed = failedTables;
+                SwingUtilities.invokeLater(() -> {
+                    if (finalFailed == 0) {
+                        JOptionPane.showMessageDialog(this, "全部同步完成！\n" + finalSrcTables.size() + " 个表，共同步 " + finalTotalRows + " 条数据",
+                                "同步成功", JOptionPane.INFORMATION_MESSAGE);
+                    } else {
+                        JOptionPane.showMessageDialog(this,
+                                "同步结束（部分失败）\n成功: " + (finalSrcTables.size() - finalFailed) + " 个表, 共 " + finalTotalRows + " 条\n失败: "
+                                        + finalFailed + " 个表，请查看日志详情", "同步结果", JOptionPane.WARNING_MESSAGE);
+                    }
+                    syncButton.setEnabled(true);
+                });
+            } catch (Exception ex) {
+                SwingUtilities.invokeLater(() -> {
+                    appendLog(ConfigUtil.logLine("[ERROR] 同步异常: " + ex.getMessage()));
+                    syncButton.setEnabled(true);
+                });
+            }
+        }).start();
+    }
+    
+    // ────────── 连接等待 ──────────
+    
+    /**
+     * 等待异步连接就绪。如果已有连接则直接返回；否则轮询等待直到连接建立或超时。
+     *
+     * @param current  当前已知的连接引用
+     * @param isSource true=源库, false=目标库
+     * @return 就绪的 ConnectionWrapper，超时仍为 null
+     */
+    private ConnectionWrapper waitForConnection(ConnectionWrapper current, boolean isSource) {
+        if (current != null && current.getConnection() != null) {
+            return current;
+        }
+        
+        String side = isSource ? "源数据库" : "目标数据库";
+        appendLog(ConfigUtil.logLine("[WAIT] 等待" + side + "连接就绪…"));
+        
+        long deadline = System.currentTimeMillis() + 30_000; // 30 秒超时
+        while (System.currentTimeMillis() < deadline) {
+            ConnectionWrapper conn = isSource ? srcConn : tgtConn;
+            if (conn != null && conn.getConnection() != null) {
+                appendLog(ConfigUtil.logLine("[WAIT] " + side + "连接已就绪"));
+                return conn;
+            }
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        
+        // 超时：返回 null，syncTableWithConn 内部会自动创建连接
+        appendLog(ConfigUtil.logLine("[WAIT] " + side + "连接等待超时，将自动创建新连接"));
+        return null;
+    }
+    
+    // ────────── 连接全局访问 ──────────
+    
+    /**
+     * 获取源数据库当前连接（可能为 null）
+     */
+    public ConnectionWrapper getSrcConn() {
+        return srcConn;
+    }
+    
+    /**
+     * 获取目标数据库当前连接（可能为 null）
+     */
+    public ConnectionWrapper getTgtConn() {
+        return tgtConn;
+    }
+    
+    // ────────── 日志辅助 ──────────
+    
+    
+    public void appendLog(String msg) {
+        ConfigUtil.appendLog(msg, logArea);
+    }
+    
+    public static class ConnectThread extends Thread {
+        
+        private final DataSyncUI dataSyncUI;
+        
+        private final DataSource ds;
+        
+        private final JLabel infoLabel;
+        
+        private final boolean isSource;
+        
+        private final boolean isReset;
+        
+        public ConnectThread(DataSyncUI dataSyncUI, DataSource ds, JLabel infoLabel, boolean isSource, boolean isReset) {
+            this.dataSyncUI = dataSyncUI;
+            this.ds = ds;
+            this.infoLabel = infoLabel;
+            this.isSource = isSource;
+            this.isReset = isReset;
+        }
+        
+        @Override
+        public void run() {
+            try {
+                Connection conn = DbConnector.getConnection(ds);
+                SwingUtilities.invokeLater(() -> {
+                    String result;
+                    if (isReset) {
+                        result = "[REFRESH] [SUCCESS] 重新连接成功[" + ds.getSourceName() + "] → " + ds.getDbType().toUpperCase() + " " + ds.getHost()
+                                + ":" + ds.getPort() + "/" + ds.getDbName();
+                    } else {
+                        result = "[CONNECT] [SUCCESS] 连接成功[" + ds.getSourceName() + "] → " + ds.getDbType().toUpperCase() + " " + ds.getHost()
+                                + ":" + ds.getPort() + "/" + ds.getDbName();
+                    }
+                    dataSyncUI.appendLog(ConfigUtil.logLine(result));
+                    // 保存连接
+                    if (isSource) {
+                        dataSyncUI.srcConn = new ConnectionWrapper(ds, conn);
+                        GlobalUtil.addSrcDataSource(ds);
+                    } else {
+                        dataSyncUI.tgtConn = new ConnectionWrapper(ds, conn);
+                        GlobalUtil.addTargetDataSource(ds);
+                    }
+                    infoLabel.setText(ds.getDbType().toUpperCase() + " | " + ds.getHost() + ":" + ds.getPort() + "/" + ds.getDbName());
+                    infoLabel.setFont(new Font("SansSerif", Font.PLAIN, 11));
+                    infoLabel.setHorizontalAlignment(SwingConstants.LEADING);
+                    infoLabel.setForeground(Color.GREEN.darker());
+                    
+                    // 加载元数据
+                    boolean isPg = "postgresql".equalsIgnoreCase(ds.getDbType());
+                    JComboBox<String> sCombo = isSource ? dataSyncUI.srcSyncSchemaCombo : dataSyncUI.tgtSyncSchemaCombo;
+                    JPanel tPanel = isSource ? dataSyncUI.srcSyncTablePanel : dataSyncUI.tgtSyncTablePanel;
+                    
+                    // 重置为默认状态
+                    if (isPg) {
+                        setModelQuietly(sCombo, new DefaultComboBoxModel<>(new String[] {"（查询中…）"}));
+                        dataSyncUI.setTableCheckItems(tPanel, "（请先选择 Schema）");
+                    } else {
+                        setModelQuietly(sCombo, new DefaultComboBoxModel<>(new String[] {"（请先连接）"}));
+                        dataSyncUI.setTableCheckItems(tPanel, "（查询中…）");
+                    }
+                    
+                    if (isPg) {
+                        dataSyncUI.fetchSchemasInBackground(sCombo, ds);
+                    } else {
+                        dataSyncUI.fetchTablesInBackground(tPanel, ds, null);
+                    }
+                });
+            } catch (Exception e) {
+                String failMsg = e.getMessage();
+                SwingUtilities.invokeLater(() -> {
+                    if (isReset) {
+                        dataSyncUI.appendLog(ConfigUtil.logLine("[REFRESH] [FAILED] 连接失败" + failMsg));
+                    } else {
+                        dataSyncUI.appendLog(ConfigUtil.logLine("[CONNECT] [FAILED] 连接失败" + failMsg));
+                    }
+                    infoLabel.setText("连接失败");
+                    infoLabel.setFont(new Font("SansSerif", Font.BOLD, 14));
+                    infoLabel.setHorizontalAlignment(SwingConstants.CENTER);
+                    infoLabel.setForeground(Color.RED);
+                });
+            }
+        }
+    }
+}
