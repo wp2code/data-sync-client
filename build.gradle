@@ -1,6 +1,7 @@
 plugins {
     id 'java'
     id 'application'
+    id 'edu.sc.seis.launch4j' version '3.0.5'
 }
 
 group = 'com.datasync'
@@ -46,9 +47,9 @@ application {
 jar {
     manifest {
         attributes(
-            'Main-Class': 'com.datasync.Main',
-            'Implementation-Title': 'DataSync Client',
-            'Implementation-Version': project.version
+                'Main-Class': 'com.datasync.Main',
+                'Implementation-Title': 'DataSync',
+                'Implementation-Version': project.version
         )
     }
 
@@ -56,7 +57,7 @@ jar {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 
     from {
-        configurations.runtimeClasspath.collect { 
+        configurations.runtimeClasspath.collect {
             it.isDirectory() ? it : zipTree(it).matching {
                 // 排除依赖包的 MANIFEST，避免覆盖项目自己的
                 exclude 'META-INF/MANIFEST.MF'
@@ -68,4 +69,69 @@ jar {
     }
 }
 
+// ── Launch4j：将 Fat JAR 打包成 Windows .exe 双击运行程序 ──
+launch4j {
+    // 输出目录（明确指定避免配置缓存警告）
+    outputDir = layout.buildDirectory.dir("launch4j").get().asFile.absolutePath
+    // 输出文件名
+    outfile = 'DataSync.exe'
+    // 主类
+    mainClassName = 'com.datasync.Main'
+    // 使用 Fat JAR（执行 gradlew jar 后生成）
+    jarTask = tasks.jar
+    // 图标（使用正斜杠路径避免 windres RC 转义问题）
+    icon = layout.buildDirectory.file("tmp/app.ico").get().asFile.absolutePath.replace('\\', '/')
+    // 窗口标题
+    headerType = 'gui'
+    // 捆绑 JRE 路径（留空则使用系统 JRE）
+    bundledJrePath = '%JAVA_HOME%'
+    // 最低 JRE 版本
+    jreMinVersion = '17'
+    // JVM 启动参数
+    jvmOptions = ['-Dfile.encoding=UTF-8']
+    // 启动时不显示控制台
+    dontWrapJar = false
+    // 程序版本
+    fileDescription = 'DataSync- 数据库同步工具'
+    productName = 'DataSync'
+    internalName = 'DataSync'
+    copyright = 'DataSync'
+    // 要求管理员权限（可选）
+    // requiresAdmin = false
+}
 
+// 生成 ICO 图标（优先使用 src/main/resources/app.ico，否则渲染 icon.svg 风格图标）
+tasks.register('generateIcon') {
+    def customIco = file("${projectDir}/src/main/resources/app.ico")
+    def outputFileProvider = layout.buildDirectory.file("tmp/app.ico")
+
+    outputs.file(outputFileProvider)
+
+    doLast {
+        def outputFile = outputFileProvider.get().asFile
+        outputFile.parentFile.mkdirs()
+        if (customIco.exists()) {
+            outputFile.bytes = customIco.bytes
+        }
+    }
+}
+
+
+// 让 createExe 依赖图标生成
+tasks.named('createExe') {
+    dependsOn 'generateIcon'
+    outputs.dir(layout.buildDirectory.dir("launch4j"))
+    outputs.upToDateWhen { false }
+}
+
+// distZip/distTar 依赖 createExe
+tasks.named('distZip') {
+    dependsOn 'createExe'
+}
+tasks.named('distTar') {
+    dependsOn 'createExe'
+}
+
+tasks.named('build') {
+    dependsOn 'createExe'
+}
