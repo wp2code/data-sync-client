@@ -1,5 +1,6 @@
 package com.datasync.ui;
 
+import com.datasync.components.CustomTextField;
 import com.datasync.core.ConnectionWrapper;
 import com.datasync.core.DataSource;
 import com.datasync.core.DataSyncService;
@@ -18,6 +19,7 @@ import java.util.function.Consumer;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.TitledBorder;
+import javax.swing.event.DocumentEvent;
 
 /**
  * Swing 主界面 — 聚焦数据同步操作，数据源配置通过管理对话框维护
@@ -85,7 +87,7 @@ public class DataSyncUI extends JFrame {
     private void initUI() {
         setTitle("DataSync Client — 数据同步工具 v1.0");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setSize(960, 780);
+        setSize(980, 780);
         setLocationRelativeTo(null);
         setLayout(new BorderLayout(10, 10));
         
@@ -113,10 +115,10 @@ public class DataSyncUI extends JFrame {
         GridBagConstraints gbcCenter = new GridBagConstraints();
         gbcCenter.fill = GridBagConstraints.BOTH;
         gbcCenter.weighty = 1.0;
-        gbcCenter.insets = new Insets(0, 0, 0, 5);
+        gbcCenter.insets = new Insets(0, 0, 0, 0);
         
         gbcCenter.gridx = 0;
-        gbcCenter.weightx = 1.0;
+        gbcCenter.weightx = 1;
         centerPanel.add(srcPanel, gbcCenter);
         
         gbcCenter.gridx = 1;
@@ -125,8 +127,8 @@ public class DataSyncUI extends JFrame {
         centerPanel.add(syncPanel, gbcCenter);
         
         gbcCenter.gridx = 2;
-        gbcCenter.weightx = 1.0;
-        gbcCenter.insets = new Insets(0, 5, 0, 0);
+        gbcCenter.weightx = 1;
+        gbcCenter.insets = new Insets(0, 0, 0, 0);
         centerPanel.add(tgtPanel, gbcCenter);
         
         add(centerPanel, BorderLayout.CENTER);
@@ -183,12 +185,13 @@ public class DataSyncUI extends JFrame {
         
         // ── 数据源选择行 ──
         JPanel configRow = new JPanel(new BorderLayout(5, 0));
+        
         JLabel configLabel = new JLabel("数据源:", SwingConstants.RIGHT);
         configLabel.setFont(labelFont);
         configLabel.setPreferredSize(labelDim);
         configRow.add(configLabel, BorderLayout.WEST);
         JComboBox<String> configCombo = new JComboBox<>();
-        configCombo.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        configCombo.setFont(labelFont);
         configRow.add(configCombo, BorderLayout.CENTER);
         
         // ── Schema 选择行（单选）──
@@ -199,11 +202,11 @@ public class DataSyncUI extends JFrame {
         schemaRow.add(schemaLabel, BorderLayout.WEST);
         JComboBox<String> schemaCombo = new JComboBox<>(new String[] {"（请先连接）"});
         schemaCombo.setEditable(false); // 仅单选，不允许编辑
-        schemaCombo.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        schemaCombo.setFont(labelFont);
         schemaRow.add(schemaCombo, BorderLayout.CENTER);
         // ── 连接状态标签 ──
         JLabel infoLabel = new JLabel("请选择数据源", SwingConstants.CENTER);
-        infoLabel.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        infoLabel.setFont(labelFont);
         infoLabel.setForeground(Color.GRAY);
         infoLabel.setBorder(new EmptyBorder(4, 0, 2, 0));
         // ── 按钮行 ──
@@ -224,10 +227,28 @@ public class DataSyncUI extends JFrame {
             JScrollPane tableScrollPane = new JScrollPane(tableCheckPanel);
             tableScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
             tableRow.add(tableScrollPane, BorderLayout.CENTER);
-            
+            final JPanel finalTableCheckPanelForExport = tableCheckPanel;
+            // ── 表筛选框──
+            final JTextField searchText = new CustomTextField("输入关键字过滤表");
+            searchText.setPreferredSize(new Dimension(120, 25));
+            searchText.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+                @Override
+                public void insertUpdate(DocumentEvent e) {
+                    filterTables(searchText, finalTableCheckPanelForExport);
+                }
+                
+                @Override
+                public void removeUpdate(DocumentEvent e) {
+                    filterTables(searchText, finalTableCheckPanelForExport);
+                }
+                
+                @Override
+                public void changedUpdate(DocumentEvent e) {
+                    filterTables(searchText, finalTableCheckPanelForExport);
+                }
+            });
             JButton exportBtn = new JButton("导出脚本");
             exportBtn.setFont(new Font("SansSerif", Font.PLAIN, 11));
-            final JPanel finalTableCheckPanelForExport = tableCheckPanel;
             exportBtn.addActionListener(e -> DataSyncUI.this.exportInsertScript(finalTableCheckPanelForExport));
             JButton selectAllTablesBtn = new JButton("全选");
             selectAllTablesBtn.setFont(new Font("SansSerif", Font.PLAIN, 11));
@@ -235,6 +256,7 @@ public class DataSyncUI extends JFrame {
             JButton deselectAllTablesBtn = new JButton("取消选中");
             deselectAllTablesBtn.setFont(new Font("SansSerif", Font.PLAIN, 11));
             deselectAllTablesBtn.addActionListener(e -> clearTableSelection(finalTableCheckPanelForExport));
+            btnRow.add(searchText);
             btnRow.add(exportBtn);
             btnRow.add(selectAllTablesBtn);
             btnRow.add(deselectAllTablesBtn);
@@ -250,7 +272,6 @@ public class DataSyncUI extends JFrame {
         gbc.insets = new Insets(0, 0, 5, 0);
         gbc.gridx = 0;
         gbc.weightx = 1.0;
-        
         gbc.gridy = 0;
         formPanel.add(configRow, gbc);
         gbc.gridy = 1;
@@ -322,6 +343,18 @@ public class DataSyncUI extends JFrame {
         return sourcePanel;
     }
     
+    private void filterTables(JTextField searchText, JPanel tableCheckPanel) {
+        String keyword = searchText.getText().trim().toLowerCase();
+        for (Component comp : tableCheckPanel.getComponents()) {
+            if (comp instanceof JCheckBox) {
+                JCheckBox cb = (JCheckBox) comp;
+                boolean visible = keyword.isEmpty() || cb.getText().toLowerCase().contains(keyword);
+                cb.setVisible(visible);
+            }
+        }
+        tableCheckPanel.revalidate();
+        tableCheckPanel.repaint();
+    }
     // ────────── 自动连接 ──────────
     
     /**
@@ -928,33 +961,33 @@ public class DataSyncUI extends JFrame {
             }
         });
         btnPanel.add(cancelIncrementBtn);
-//        JButton selectAllBtn = new JButton("全部全选");
-//        selectAllBtn.setFont(new Font("SansSerif", Font.PLAIN, 11));
-//        selectAllBtn.addActionListener(e -> {
-//            for (List<JCheckBox> cbs : allCheckBoxes.values()) {
-//                for (JCheckBox cb : cbs) {
-//                    cb.setSelected(true);
-//                }
-//            }
-//        });
+        //        JButton selectAllBtn = new JButton("全部全选");
+        //        selectAllBtn.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        //        selectAllBtn.addActionListener(e -> {
+        //            for (List<JCheckBox> cbs : allCheckBoxes.values()) {
+        //                for (JCheckBox cb : cbs) {
+        //                    cb.setSelected(true);
+        //                }
+        //            }
+        //        });
         
-//        JButton deselectAllBtn = new JButton("全部取消");
-//        deselectAllBtn.setFont(new Font("SansSerif", Font.PLAIN, 11));
-//        deselectAllBtn.addActionListener(e -> {
-//            for (List<JCheckBox> cbs : allCheckBoxes.values()) {
-//                for (JCheckBox cb : cbs) {
-//                    cb.setSelected(false);
-//                }
-//            }
-//        });
+        //        JButton deselectAllBtn = new JButton("全部取消");
+        //        deselectAllBtn.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        //        deselectAllBtn.addActionListener(e -> {
+        //            for (List<JCheckBox> cbs : allCheckBoxes.values()) {
+        //                for (JCheckBox cb : cbs) {
+        //                    cb.setSelected(false);
+        //                }
+        //            }
+        //        });
         
         JButton okBtn = new JButton("确定导出");
         okBtn.setFont(new Font("SansSerif", Font.BOLD, 12));
         JButton cancelBtn = new JButton("取消");
         cancelBtn.setFont(new Font("SansSerif", Font.PLAIN, 12));
         cancelBtn.addActionListener(e -> dialog.dispose());
-//        btnPanel.add(selectAllBtn);
-//        btnPanel.add(deselectAllBtn);
+        //        btnPanel.add(selectAllBtn);
+        //        btnPanel.add(deselectAllBtn);
         btnPanel.add(Box.createHorizontalStrut(20));
         btnPanel.add(okBtn);
         btnPanel.add(cancelBtn);
@@ -995,7 +1028,6 @@ public class DataSyncUI extends JFrame {
             result[0] = selected;
             dialog.dispose();
         });
-
         
         dialog.setVisible(true);
         return result[0];
