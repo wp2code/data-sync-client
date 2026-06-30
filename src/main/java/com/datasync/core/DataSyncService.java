@@ -98,7 +98,7 @@ public class DataSyncService {
             log.accept("[INFO] 表 [" + tableName + "] 共 " + columnCount + " 个字段: " + String.join(", ", columnNames));
             
             // ── 5. 动态构建 INSERT SQL ──
-            String insertSql = buildInsertSql(target, tableName, columnNames);
+            String insertSql = buildInsertSql(target, tableName, columnNames, tgtConn);
             log.accept("[INFO] 目标库 INSERT SQL: " + insertSql);
             
             // ── 6. 开启事务 + 批量插入 ──
@@ -106,7 +106,6 @@ public class DataSyncService {
             tgtPstmt = tgtConn.prepareStatement(insertSql);
             
             int totalRows = 0;
-            int skippedRows = 0;
             int batchCount = 0;
             
             while (rs.next()) {
@@ -118,10 +117,9 @@ public class DataSyncService {
                 
                 if (batchCount >= BATCH_SIZE) {
                     int[] results = tgtPstmt.executeBatch();
-                    int inserted = countInserted(results);
-                    totalRows += inserted;
-                    skippedRows += (batchCount - inserted);
-                    log.accept("[INFO] 已同步 " + totalRows + " 条（跳过 " + skippedRows + " 条主键冲突）...");
+                    int affected = countAffected(results);
+                    totalRows += affected;
+                    log.accept("[INFO] 已同步 " + totalRows + " 条（含主键冲突自动更新）...");
                     batchCount = 0;
                 }
             }
@@ -129,9 +127,8 @@ public class DataSyncService {
             // 处理最后一批
             if (batchCount > 0) {
                 int[] results = tgtPstmt.executeBatch();
-                int inserted = countInserted(results);
-                totalRows += inserted;
-                skippedRows += (batchCount - inserted);
+                int affected = countAffected(results);
+                totalRows += affected;
             }
             
             // ── 7. 提交事务 ──
@@ -139,10 +136,7 @@ public class DataSyncService {
             StringBuilder summaryBuilder = new StringBuilder();
             summaryBuilder.append("<html><body><span style='font-weight:bold;color:green;'>[SUCCESS] 同步完成！共同步 ")
                     .append(totalRows).append(" 条数据");
-            if (skippedRows > 0) {
-                summaryBuilder.append("，跳过 ").append(skippedRows).append(" 条（主键冲突）");
-            }
-            summaryBuilder.append(" 到表 [").append(tableName).append("]</span></body></html>");
+            summaryBuilder.append(" 到表 [").append(tableName).append("]（遇主键冲突自动更新）</span></body></html>");
             String summary = summaryBuilder.toString();
             log.accept(summary);
             return totalRows;
@@ -188,9 +182,11 @@ public class DataSyncService {
     // ────────── 私有辅助方法 ──────────
     
     /**
-     * 动态构建 INSERT 语句（遇主键冲突自动跳过） MySQL: INSERT IGNORE INTO ... | PostgreSQL: INSERT INTO ... ON CONFLICT DO NOTHING
+     * 动态构建 INSERT 语句（遇主键冲突自动更新字段）
+     * MySQL: INSERT INTO ... ON DUPLICATE KEY UPDATE col1=VALUES(col1), ...
+     * PostgreSQL: INSERT INTO ... ON CONFLICT (pk_cols) DO UPDATE SET col1=EXCLUDED.col1, ...
      */
-    private String buildInsertSql(DataSource ds, String tableName, String[] columns) {
+    private String buildInsertSql(DataSource ds, String tableName, String[] columns, Connection tgtConn) throws SQLException {
         String dbType = ds.getDbType();
         String qualifiedTable = qualifiedTableName(ds, tableName);
         StringBuilder cols = new StringBuilder();
@@ -204,12 +200,46 @@ public class DataSyncService {
             placeholders.append("?");
         }
         String baseSql = "INSERT INTO " + qualifiedTable + " (" + cols + ") VALUES (" + placeholders + ")";
-        
+
         if ("postgresql".equalsIgnoreCase(dbType)) {
-            return baseSql + " ON CONFLICT DO NOTHING";
+            // PostgreSQL: 通过 JDBC 元数据获取主键列作为 ON CONFLICT 冲突目标
+            String conflictTarget = getConflictTarget(ds, tableName, tgtConn);
+            StringBuilder updateSet = new StringBuilder();
+            for (int i = 0; i < columns.length; i++) {
+                if (i > 0) updateSet.append(", ");
+                String col = quoteIdentifier(columns[i], dbType);
+                updateSet.append(col).append(" = EXCLUDED.").append(col);
+            }
+            return baseSql + " ON CONFLICT (" + conflictTarget + ") DO UPDATE SET " + updateSet;
         }
-        // MySQL: INSERT IGNORE
-        return "INSERT IGNORE INTO " + qualifiedTable + " (" + cols + ") VALUES (" + placeholders + ")";
+        // MySQL: INSERT ... ON DUPLICATE KEY UPDATE
+        StringBuilder updateSet = new StringBuilder();
+        for (int i = 0; i < columns.length; i++) {
+            if (i > 0) updateSet.append(", ");
+            String col = quoteIdentifier(columns[i], dbType);
+            updateSet.append(col).append(" = VALUES(").append(col).append(")");
+        }
+        return baseSql + " ON DUPLICATE KEY UPDATE " + updateSet;
+    }
+
+    /**
+     * 通过 JDBC 元数据获取表的主键列名，拼接为逗号分隔的带引号标识符
+     */
+    private String getConflictTarget(DataSource ds, String tableName, Connection conn) throws SQLException {
+        String schema = ds.getSchema();
+        java.sql.DatabaseMetaData meta = conn.getMetaData();
+        // PostgreSQL 中 schema 可能为 null（默认 public），传入 null 让 JDBC 使用当前 schema
+        try (ResultSet pkRs = meta.getPrimaryKeys(null, schema, tableName)) {
+            StringBuilder pkCols = new StringBuilder();
+            while (pkRs.next()) {
+                if (pkCols.length() > 0) pkCols.append(", ");
+                pkCols.append(quoteIdentifier(pkRs.getString("COLUMN_NAME"), ds.getDbType()));
+            }
+            if (pkCols.length() == 0) {
+                throw new SQLException("表 [" + qualifiedTableName(ds, tableName) + "] 未找到主键，无法构建 ON CONFLICT 语句");
+            }
+            return pkCols.toString();
+        }
     }
     
     /**
@@ -243,9 +273,10 @@ public class DataSyncService {
     }
     
     /**
-     * 统计批量插入结果中实际成功的条数 Statement.SUCCESS_NO_INFO（-2）视为成功，Statement.EXECUTE_FAILED（-3）视为失败
+     * 统计批量操作中实际影响的行数
+     * Statement.SUCCESS_NO_INFO（-2）视为成功（计1），Statement.EXECUTE_FAILED（-3）视为失败（不计）
      */
-    private int countInserted(int[] results) {
+    private int countAffected(int[] results) {
         int count = 0;
         for (int r : results) {
             if (r == Statement.EXECUTE_FAILED) {
