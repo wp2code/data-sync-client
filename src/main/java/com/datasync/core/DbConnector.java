@@ -14,6 +14,30 @@ import java.util.List;
  */
 public class DbConnector {
 
+    /**
+     * 列详细信息
+     */
+    public static class ColumnDetail {
+        public String columnName;
+        public String dataType;
+        public int columnSize;
+        public boolean nullable;
+        public String defaultValue;
+        public boolean isPrimaryKey;
+        public boolean isAutoIncrement;
+        public int ordinalPosition;
+        public String comment;
+
+        @Override
+        public String toString() {
+            return columnName + " " + dataType + (columnSize > 0 ? "(" + columnSize + ")" : "")
+                    + (isPrimaryKey ? " PK" : "") + (nullable ? " NULL" : " NOT NULL")
+                    + (isAutoIncrement ? " AUTO_INCREMENT" : "")
+                    + (defaultValue != null ? " DEFAULT " + defaultValue : "")
+                    + (comment != null && !comment.isEmpty() ? " COMMENT '" + comment + "'" : "");
+        }
+    }
+
     private DbConnector() {
         // 工具类，禁止实例化
     }
@@ -195,6 +219,56 @@ public class DbConnector {
                 // 忽略关闭时的异常
             }
         }
+    }
+
+    /**
+     * 查询指定表的列详细信息（列名、类型、是否可空、默认值、是否主键）
+     *
+     * @param ds        数据源配置
+     * @param tableName 表名
+     * @param schema    PostgreSQL 时为 schema 名，MySQL 时为 null
+     * @return 列详情列表
+     */
+    public static List<ColumnDetail> fetchColumnDetails(DataSource ds, String tableName, String schema) {
+        List<ColumnDetail> columns = new ArrayList<>();
+        if (!ds.isValid() || tableName == null || tableName.isBlank()) return columns;
+        try (Connection conn = getConnection(ds)) {
+            String catalog = null;
+            String schemaPattern = schema;
+            if (!"postgresql".equalsIgnoreCase(ds.getDbType())) {
+                catalog = ds.getDbName();
+                schemaPattern = null;
+            }
+
+            // 获取主键列集合
+            java.util.Set<String> pkColumns = new java.util.HashSet<>();
+            try (ResultSet pkRs = conn.getMetaData().getPrimaryKeys(catalog, schemaPattern, tableName)) {
+                while (pkRs.next()) {
+                    pkColumns.add(pkRs.getString("COLUMN_NAME"));
+                }
+            }
+
+            // 获取列详细信息
+            try (ResultSet rs = conn.getMetaData().getColumns(catalog, schemaPattern, tableName, "%")) {
+                while (rs.next()) {
+                    ColumnDetail col = new ColumnDetail();
+                    col.columnName = rs.getString("COLUMN_NAME");
+                    col.dataType = rs.getString("TYPE_NAME");
+                    col.columnSize = rs.getInt("COLUMN_SIZE");
+                    col.nullable = "YES".equalsIgnoreCase(rs.getString("IS_NULLABLE"))
+                            || "1".equals(rs.getString("NULLABLE"));
+                    col.defaultValue = rs.getString("COLUMN_DEF");
+                    col.isPrimaryKey = pkColumns.contains(col.columnName);
+                    col.isAutoIncrement = "YES".equalsIgnoreCase(rs.getString("IS_AUTOINCREMENT"));
+                    col.ordinalPosition = rs.getInt("ORDINAL_POSITION");
+                    col.comment = rs.getString("REMARKS");
+                    columns.add(col);
+                }
+            }
+        } catch (Exception e) {
+            // 不抛异常，返回空列表
+        }
+        return columns;
     }
 
     /**

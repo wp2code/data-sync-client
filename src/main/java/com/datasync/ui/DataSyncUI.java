@@ -1,6 +1,7 @@
 package com.datasync.ui;
 
 import com.datasync.components.CustomTextField;
+import com.datasync.components.LinkJLabel;
 import com.datasync.core.ConnectionWrapper;
 import com.datasync.core.DataSource;
 import com.datasync.core.DataSyncService;
@@ -10,6 +11,8 @@ import com.datasync.util.GlobalUtil;
 import java.awt.*;
 import java.awt.event.*;
 import java.sql.Connection;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -50,6 +53,8 @@ public class DataSyncUI extends JFrame {
     private JLabel tgtSchemaLabel;
     
     private JButton syncButton;
+    
+    private LinkJLabel diffLink;
     
     private JCheckBox truncateCheckBox;
     
@@ -418,6 +423,14 @@ public class DataSyncUI extends JFrame {
         arrowLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
         
         syncButton = new JButton("开始同步");
+        diffLink = new LinkJLabel("比较结构差异", null);
+        diffLink.setAlignmentX(Component.CENTER_ALIGNMENT);
+        diffLink.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                compareTableStructure();
+            }
+        });
         syncButton.setFont(new Font("SansSerif", Font.BOLD, 16));
         syncButton.setAlignmentX(Component.CENTER_ALIGNMENT);
         syncButton.addActionListener(e -> startSync());
@@ -433,6 +446,8 @@ public class DataSyncUI extends JFrame {
         panel.add(truncateCheckBox);
         panel.add(Box.createRigidArea(new Dimension(0, 8)));
         panel.add(syncButton);
+        panel.add(Box.createRigidArea(new Dimension(0, 8)));
+        panel.add(diffLink);
         panel.add(Box.createVerticalGlue());
         
         return panel;
@@ -1400,5 +1415,451 @@ public class DataSyncUI extends JFrame {
                 });
             }
         }
+    }
+    
+    // ────────── 表结构比较 ──────────
+    
+    /**
+     * 比较源库和目标库选中表的结构差异，弹窗展示差异并生成 ALTER TABLE 脚本
+     */
+    private void compareTableStructure() {
+        // 获取勾选的源表列表
+        List<String> srcTables = getCheckedTables(srcSyncTablePanel);
+        if (srcTables.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "请先在源库勾选需要比较的表", "提示", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        
+        DataSource source = getSelectedSource(true);
+        DataSource target = getSelectedSource(false);
+        if (source == null || !source.isValid()) {
+            JOptionPane.showMessageDialog(this, "请先选择并连接源数据库", "提示", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        if (target == null || !target.isValid()) {
+            JOptionPane.showMessageDialog(this, "请先选择并连接目标数据库", "提示", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        
+        // 等待连接就绪
+        ConnectionWrapper srcWrapper = waitForConnection(srcConn, true);
+        ConnectionWrapper tgtWrapper = waitForConnection(tgtConn, false);
+        if (srcWrapper == null || srcWrapper.getConnection() == null) {
+            JOptionPane.showMessageDialog(this, "源数据库未连接，请先连接", "提示", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        if (tgtWrapper == null || tgtWrapper.getConnection() == null) {
+            JOptionPane.showMessageDialog(this, "目标数据库未连接，请先连接", "提示", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        
+        String srcSchema = getSelectedSchema(true);
+        String tgtSchema = getSelectedSchema(false);
+        
+        // 后台执行比较
+        new Thread(() -> {
+            try {
+                StringBuilder allScripts = new StringBuilder();
+                StringBuilder summaryDetailHtml = new StringBuilder();
+                summaryDetailHtml.append("<html><body style='font-family:SansSerif;font-size:12px;'>");
+                boolean hasAnyDiff = false;
+                int totalDiffs = 0;
+                
+                for (String tableName : srcTables) {
+                    List<DbConnector.ColumnDetail> srcCols = DbConnector.fetchColumnDetails(source, tableName, srcSchema);
+                    List<DbConnector.ColumnDetail> tgtCols = DbConnector.fetchColumnDetails(target, tableName, tgtSchema);
+                    
+                    if (tgtCols.isEmpty()) {
+                        // 目标表不存在
+                        summaryDetailHtml.append("<p style='color:red;'><b>").append(tableName).append("</b>: 目标表不存在，需要创建</p>");
+                        hasAnyDiff = true;
+                        totalDiffs++;
+                        continue;
+                    }
+                    
+                    List<DataSyncService.ColumnDiff> diffs = syncService.compareTableStructure(srcCols, tgtCols, source, target);
+                    
+                    if (diffs.isEmpty()) {
+                        summaryDetailHtml.append("<p style='color:green;'><b>").append(tableName).append("</b>: 结构一致 ✓</p>");
+                    } else {
+                        hasAnyDiff = true;
+                        totalDiffs += diffs.size();
+                        summaryDetailHtml.append("<p><b>").append(tableName).append("</b>: ").append(diffs.size()).append(" 处差异</p>");
+                        summaryDetailHtml.append("<ul>");
+                        for (DataSyncService.ColumnDiff diff : diffs) {
+                            String icon = diff.type == DataSyncService.DiffType.ADD_COLUMN ? "+"
+                                    : diff.type == DataSyncService.DiffType.DROP_COLUMN ? "-"
+                                            : diff.type == DataSyncService.DiffType.COMMENT_DIFF ? "💬" : "~";
+                            String color = diff.type == DataSyncService.DiffType.ADD_COLUMN ? "green"
+                                    : diff.type == DataSyncService.DiffType.DROP_COLUMN ? "red"
+                                            : diff.type == DataSyncService.DiffType.COMMENT_DIFF ? "#6B7280" : "orange";
+                            summaryDetailHtml.append("<li style='color:").append(color).append(";'>").append(icon).append(" ")
+                                    .append(diff.type.getLabel()).append(": <code>").append(diff.columnName).append("</code>");
+                            if (diff.type == DataSyncService.DiffType.MODIFY_COLUMN && diff.tgtColumn != null) {
+                                summaryDetailHtml.append(" (").append(diff.tgtColumn.dataType)
+                                        .append(diff.tgtColumn.columnSize > 0 ? "(" + diff.tgtColumn.columnSize + ")" : "").append(" → ")
+                                        .append(diff.srcColumn.dataType)
+                                        .append(diff.srcColumn.columnSize > 0 ? "(" + diff.srcColumn.columnSize + ")" : "").append(")");
+                            }
+                            if (diff.type == DataSyncService.DiffType.COMMENT_DIFF && diff.tgtColumn != null && diff.srcColumn != null) {
+                                String tgtCmt = diff.tgtColumn.comment != null && !diff.tgtColumn.comment.isBlank() ? diff.tgtColumn.comment : "(空)";
+                                String srcCmt = diff.srcColumn.comment != null && !diff.srcColumn.comment.isBlank() ? diff.srcColumn.comment : "(空)";
+                                summaryDetailHtml.append(" (注释: \"").append(tgtCmt).append("\" → \"").append(srcCmt).append("\")");
+                            }
+                            summaryDetailHtml.append("</li>");
+                        }
+                        summaryDetailHtml.append("</ul>");
+                        
+                        // 生成 ALTER TABLE 脚本（传入目标库 schema）
+                        String alterScript = syncService.generateAlterScript(tableName, diffs, target.getDbType(), tgtSchema);
+                        allScripts.append(alterScript).append("\n");
+                    }
+                }
+                summaryDetailHtml.append("</body></html>");
+                StringBuilder summaryHtml = new StringBuilder();
+                summaryHtml.append("<html><body  style='font-family:SansSerif;font-size:13px;'>共检查 <b>").append(srcTables.size()).append("</b> 个表");
+                if (hasAnyDiff) {
+                    summaryHtml.append("，发现 <b style='color:red;'>").append(totalDiffs).append("</b> 处差异");
+                } else {
+                    summaryHtml.append("，结构全部一致");
+                }
+                summaryHtml.append("</body></html>");
+                final boolean finalHasDiff = hasAnyDiff;
+                final String finalSummaryDetail = summaryDetailHtml.toString();
+                final String finalSummary = summaryHtml.toString();
+                final String finalScripts = allScripts.toString();
+                
+                SwingUtilities.invokeLater(
+                        () -> showDiffResultDialog(finalSummaryDetail, finalSummary, finalScripts, finalHasDiff, target.getDbType()));
+                
+            } catch (Exception ex) {
+                SwingUtilities.invokeLater(() -> {
+                    appendLog(ConfigUtil.logLine("[ERROR] 表结构比较失败: " + ex.getMessage()));
+                    JOptionPane.showMessageDialog(this, "比较失败: " + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
+                });
+            }
+        }).start();
+    }
+    
+    /**
+     * 获取当前选中的 Schema（PostgreSQL）或 null（MySQL）
+     */
+    private String getSelectedSchema(boolean isSource) {
+        JComboBox<String> combo = isSource ? srcSyncSchemaCombo : tgtSyncSchemaCombo;
+        if (combo == null) {
+            return null;
+        }
+        Object item = combo.getSelectedItem();
+        if (item == null) {
+            return null;
+        }
+        String schema = item.toString().trim();
+        // 排除占位文本
+        if (schema.startsWith("（")) {
+            return null;
+        }
+        return schema;
+    }
+    
+    /**
+     * 弹窗展示结构差异结果和 ALTER 脚本
+     */
+    private void showDiffResultDialog(String summaryDetailHtml, String summaryHtml, String alterScript, boolean hasDiff, String tgtDbType) {
+        JDialog dialog = new JDialog(this, "表结构差异比较结果", false);
+        dialog.setSize(850, 750);
+        dialog.setLocationRelativeTo(this);
+        
+        JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
+        mainPanel.setBorder(new EmptyBorder(12, 12, 12, 12));
+        
+        // 底部面板：差异摘要 + 按钮
+        JPanel bottomPanel = new JPanel(new BorderLayout(0, 5));
+        JPanel topPanel = new JPanel(new BorderLayout());
+        topPanel.setBorder(BorderFactory.createTitledBorder("差异摘要"));
+        JEditorPane summaryPane = new JEditorPane();
+        summaryPane.setContentType("text/html");
+        summaryPane.setEditable(false);
+        summaryPane.setText(summaryHtml);
+        topPanel.add(summaryPane, BorderLayout.NORTH);
+        JEditorPane summaryDetailPane = new JEditorPane();
+        summaryDetailPane.setContentType("text/html");
+        summaryDetailPane.setEditable(false);
+        summaryDetailPane.setText(summaryDetailHtml);
+        JScrollPane summaryScroll = new JScrollPane(summaryDetailPane);
+        summaryScroll.setPreferredSize(new Dimension(810, 150));
+        topPanel.add(summaryScroll, BorderLayout.CENTER);
+        mainPanel.add(topPanel, BorderLayout.NORTH);
+        
+        if (hasDiff && !alterScript.trim().isEmpty()) {
+            // 中部：使用 JSplitPane 上下分栏（脚本 + 日志）
+            JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT);
+            splitPane.setResizeWeight(0.5);
+            
+            // 上侧：ALTER TABLE 脚本
+            JTextArea scriptArea = new JTextArea();
+            scriptArea.setFont(new Font("Monospaced", Font.PLAIN, 11));
+            scriptArea.setEditable(false);
+            scriptArea.setText(alterScript);
+            scriptArea.setBackground(new Color(30, 30, 30));
+            JScrollPane scriptScroll = new JScrollPane(scriptArea);
+            scriptScroll.setBorder(BorderFactory.createTitledBorder("ALTER TABLE 同步脚本"));
+            
+            // 下侧：执行日志
+            JTextArea execLogArea = new JTextArea();
+            execLogArea.setFont(new Font("Monospaced", Font.PLAIN, 11));
+            execLogArea.setEditable(false);
+            execLogArea.setBackground(new Color(30, 30, 30));
+            JScrollPane execLogScroll = new JScrollPane(execLogArea);
+            execLogScroll.setBorder(BorderFactory.createTitledBorder("执行日志"));
+            
+            splitPane.setTopComponent(scriptScroll);
+            splitPane.setBottomComponent(execLogScroll);
+            mainPanel.add(splitPane, BorderLayout.CENTER);
+            
+            // Consumer 用于向弹窗日志区域追加日志
+            Consumer<String> dialogLogConsumer = msg -> SwingUtilities.invokeLater(() -> {
+                execLogArea.append(msg + "\n");
+                // 自动滚动到底部
+                execLogArea.setCaretPosition(execLogArea.getDocument().getLength());
+            });
+            
+            // 按钮行
+            JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 5));
+            
+            JButton copyBtn = new JButton("复制脚本到剪贴板");
+            copyBtn.addActionListener(e -> {
+                java.awt.Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new java.awt.datatransfer.StringSelection(alterScript), null);
+                JOptionPane.showMessageDialog(dialog, "已复制到剪贴板！", "提示", JOptionPane.INFORMATION_MESSAGE);
+            });
+            btnPanel.add(copyBtn);
+            
+            JButton applyBtn = new JButton("应用到目标库");
+            applyBtn.setBackground(new Color(0x3E4EDC));
+            applyBtn.setForeground(Color.WHITE);
+            applyBtn.addActionListener(e -> {
+                int confirm = JOptionPane.showConfirmDialog(dialog, "确定要在目标库执行以下 ALTER TABLE 脚本吗？\n此操作将修改目标库表结构！",
+                        "确认执行", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+                if (confirm == JOptionPane.YES_OPTION) {
+                    applyBtn.setEnabled(false);
+                    copyBtn.setEnabled(false);
+                    dialogLogConsumer.accept("[INFO] ======== 开始执行结构同步脚本 ========");
+                    executeAlterScript(alterScript, tgtDbType, dialogLogConsumer, () -> {
+                        SwingUtilities.invokeLater(() -> {
+                            applyBtn.setEnabled(true);
+                            copyBtn.setEnabled(true);
+                        });
+                    });
+                }
+            });
+            btnPanel.add(applyBtn);
+            btnPanel.add(Box.createHorizontalStrut(20));
+            JButton closeBtn = new JButton("关闭");
+            closeBtn.addActionListener(e -> dialog.dispose());
+            btnPanel.add(closeBtn);
+            
+            bottomPanel.add(btnPanel, BorderLayout.SOUTH);
+        } else {
+            JButton closeBtn = new JButton("关闭");
+            closeBtn.addActionListener(e -> dialog.dispose());
+            JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+            btnPanel.add(closeBtn);
+            bottomPanel.add(btnPanel, BorderLayout.SOUTH);
+        }
+        
+        mainPanel.add(bottomPanel, BorderLayout.SOUTH);
+        
+        dialog.setContentPane(mainPanel);
+        dialog.setVisible(true);
+    }
+    
+    /**
+     * 在目标库执行 ALTER TABLE 脚本
+     *
+     * @param alterScript ALTER TABLE 脚本
+     * @param tgtDbType   目标库类型
+     * @param logConsumer 日志回调（输出到弹窗日志区域）
+     * @param onComplete  执行完成回调（恢复按钮状态）
+     */
+    private void executeAlterScript(String alterScript, String tgtDbType, Consumer<String> logConsumer, Runnable onComplete) {
+        ConnectionWrapper wrapper = tgtConn;
+        if (wrapper == null || wrapper.getConnection() == null) {
+            logConsumer.accept("[ERROR] 目标库未连接");
+            if (onComplete != null) {
+                onComplete.run();
+            }
+            return;
+        }
+        
+        new Thread(() -> {
+            Connection conn = wrapper.getConnection();
+            try (Statement stmt = conn.createStatement()) {
+                conn.setAutoCommit(false);
+                
+                // 按分号拆分 SQL 语句，跳过空行和注释
+                String[] rawStatements = alterScript.split(";");
+                int executed = 0;
+                int failed = 0;
+                String currentPgTable = null; // PG 模式下跟踪当前表名
+                
+                for (String raw : rawStatements) {
+                    // 清洗每段：去掉注释行，提取真正的 SQL
+                    String sql = cleanSql(raw);
+                    if (sql == null) {
+                        continue; // 纯注释或空
+                    }
+                    
+                    // 处理 PG 的多条语句合并（用 \n    缩进分隔的子语句，如 ALTER COLUMN）
+                    if ("postgresql".equalsIgnoreCase(tgtDbType)) {
+                        // 如果是完整的 ALTER TABLE 语句，记录表名
+                        if (sql.startsWith("ALTER TABLE")) {
+                            currentPgTable = extractTableNameFromAlter(sql);
+                        }
+                        
+                        // COMMENT ON COLUMN 是独立语句，直接执行，不拆分不加前缀
+                        if (sql.startsWith("COMMENT ON COLUMN")) {
+                            try {
+                                stmt.executeUpdate(sql);
+                                executed++;
+                                logConsumer.accept("[OK] " + truncateSql(sql));
+                            } catch (SQLException ex) {
+                                failed++;
+                                logConsumer.accept("[FAILED] " + ex.getMessage() + " | SQL: " + truncateSql(sql));
+                            }
+                            continue;
+                        }
+                        
+                        // 按 \n    (4空格缩进) 拆分为独立子语句
+                        String[] subStatements = sql.split("\n    ");
+                        for (int i = 0; i < subStatements.length; i++) {
+                            String subSql = subStatements[i].trim();
+                            if (subSql.isEmpty()) {
+                                continue;
+                            }
+                            
+                            if (i == 0) {
+                                // 第一条子语句：保持原样（可能是完整 ALTER TABLE 或独立子句）
+                                // 如果不是 ALTER TABLE 也不是 COMMENT ON COLUMN，需要补表名前缀
+                                if (!subSql.startsWith("ALTER TABLE") && !subSql.startsWith("COMMENT ON COLUMN") && currentPgTable != null) {
+                                    subSql = "ALTER TABLE " + currentPgTable + " " + subSql;
+                                }
+                            } else {
+                                // 后续子语句：补 "ALTER TABLE xxx " 前缀
+                                if (currentPgTable != null) {
+                                    subSql = "ALTER TABLE " + currentPgTable + " " + subSql;
+                                }
+                            }
+                            
+                            try {
+                                stmt.executeUpdate(subSql);
+                                executed++;
+                                logConsumer.accept("[OK] " + truncateSql(subSql));
+                            } catch (SQLException ex) {
+                                failed++;
+                                logConsumer.accept("[FAILED] " + ex.getMessage() + " | SQL: " + truncateSql(subSql));
+                            }
+                        }
+                    } else {
+                        // MySQL 模式：直接执行
+                        try {
+                            stmt.executeUpdate(sql);
+                            executed++;
+                            logConsumer.accept("[OK] " + truncateSql(sql));
+                        } catch (SQLException ex) {
+                            failed++;
+                            logConsumer.accept("[FAILED] " + ex.getMessage() + " | SQL: " + truncateSql(sql));
+                        }
+                    }
+                }
+                
+                conn.commit();
+                final int finalExecuted = executed;
+                final int finalFailed = failed;
+                SwingUtilities.invokeLater(() -> {
+                    logConsumer.accept("[STRUCT SYNC] 执行完成: 成功 " + finalExecuted + " 条, 失败 " + finalFailed + " 条");
+                    if (finalFailed == 0) {
+                        logConsumer.accept("[SUCCESS] 表结构同步成功！共执行 " + finalExecuted + " 条 ALTER 语句");
+                    } else {
+                        logConsumer.accept("[WARN] 部分语句执行失败，成功: " + finalExecuted + " 条, 失败: " + finalFailed + " 条");
+                    }
+                    // 同时写入主窗口日志
+                    appendLog(ConfigUtil.logLine("[STRUCT SYNC] 执行完成: 成功 " + finalExecuted + " 条, 失败 " + finalFailed + " 条"));
+                    if (onComplete != null) {
+                        onComplete.run();
+                    }
+                });
+                
+            } catch (SQLException ex) {
+                try {
+                    conn.rollback();
+                } catch (SQLException ignored) {
+                }
+                SwingUtilities.invokeLater(() -> {
+                    logConsumer.accept("[ERROR] 结构同步失败: " + ex.getMessage());
+                    appendLog(ConfigUtil.logLine("[ERROR] 结构同步失败: " + ex.getMessage()));
+                    if (onComplete != null) {
+                        onComplete.run();
+                    }
+                });
+            } finally {
+                try {
+                    conn.setAutoCommit(true);
+                } catch (SQLException ignored) {
+                }
+            }
+        }).start();
+    }
+    
+    /**
+     * 从 ALTER TABLE 语句中提取完整表名（含 schema 前缀） 如 ALTER TABLE "public"."users" → "public"."users"
+     */
+    private String extractTableNameFromAlter(String alterSql) {
+        String upper = alterSql.toUpperCase();
+        int idx = upper.indexOf("ALTER TABLE ");
+        if (idx < 0) {
+            return null;
+        }
+        String rest = alterSql.substring(idx + 12).trim();
+        
+        // 提取到下一个空格或行尾（即完整表名部分）
+        int spaceIdx = rest.indexOf(' ');
+        if (spaceIdx > 0) {
+            rest = rest.substring(0, spaceIdx);
+        }
+        // 去掉末尾可能的分号
+        if (rest.endsWith(";")) {
+            rest = rest.substring(0, rest.length() - 1);
+        }
+        return rest;
+    }
+    
+    /**
+     * 截断 SQL 用于日志显示
+     */
+    private String truncateSql(String sql) {
+        return sql.length() > 80 ? sql.substring(0, 77) + "..." : sql;
+    }
+    
+    /**
+     * 清洗按分号拆分后的 SQL 片段：去掉注释行，提取真正的 SQL 语句。 返回 null 表示该片段是纯注释或空白，应跳过。
+     */
+    private String cleanSql(String rawFragment) {
+        if (rawFragment == null) {
+            return null;
+        }
+        // 按行拆分，过滤掉注释行和空行
+        String[] lines = rawFragment.split("\n");
+        StringBuilder result = new StringBuilder();
+        for (String line : lines) {
+            String trimmed = line.trim();
+            if (trimmed.isEmpty() || trimmed.startsWith("--")) {
+                continue;
+            }
+            if (!result.isEmpty()) {
+                result.append("\n");
+            }
+            result.append(line); // 保留原始缩进
+        }
+        String sql = result.toString().trim();
+        return sql.isEmpty() ? null : sql;
     }
 }
