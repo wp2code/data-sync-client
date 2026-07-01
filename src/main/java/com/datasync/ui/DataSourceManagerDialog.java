@@ -2,7 +2,9 @@ package com.datasync.ui;
 
 import com.datasync.core.DataSource;
 import com.datasync.core.DbConnector;
+import com.datasync.core.DbType;
 import com.datasync.util.ConfigUtil;
+import com.datasync.util.LogUtil;
 import java.awt.*;
 import java.util.ArrayList;
 import java.util.List;
@@ -113,9 +115,10 @@ public class DataSourceManagerDialog extends JDialog {
         
         editDbTypeCombo.addActionListener(e -> {
             String type = (String) editDbTypeCombo.getSelectedItem();
-            editPortField.setText(DataSource.getDefaultPort(type != null ? type.toLowerCase() : "PostgreSQL"));
+            DbType dbType = DbType.fromString(type);
+            editPortField.setText(String.valueOf(dbType.getDefaultPort()));
             // 仅在选中 PostgreSQL 时显示 Schema 行
-            boolean isPg = "PostgreSQL".equals(type);
+            boolean isPg = dbType == DbType.POSTGRESQL;
             editSchemaLabel.setVisible(isPg);
             editSchemaField.setVisible(isPg);
         });
@@ -251,14 +254,15 @@ public class DataSourceManagerDialog extends JDialog {
     private void loadConfigToForm(DataSource ds) {
         editingOriginalName = ds.getSourceName();
         editNameField.setText(ds.getSourceName());
-        String displayType = ds.getDbType().equalsIgnoreCase("postgresql") ? "PostgreSQL" : "MySQL";
+        DbType dbType = ds.getDbTypeEnum();
+        String displayType = dbType == DbType.POSTGRESQL ? "PostgreSQL" : "MySQL";
         editDbTypeCombo.setSelectedItem(displayType);
         editHostField.setText(ds.getHost());
         editPortField.setText(ds.getPort());
         editDbNameField.setText(ds.getDbName());
         editSchemaField.setText(ds.getSchema() != null ? ds.getSchema() : "public");
         // 根据数据库类型设置 Schema 行可见性
-        boolean isPg = "postgresql".equalsIgnoreCase(ds.getDbType());
+        boolean isPg = ds.isPostgresql();
         editSchemaLabel.setVisible(isPg);
         editSchemaField.setVisible(isPg);
         editUserField.setText(ds.getUsername());

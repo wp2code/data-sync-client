@@ -11,7 +11,7 @@ public class DataSource {
     // ────────── 基础字段 ──────────
     private Long id;                      // SQLite 主键（持久化场景）
     private String sourceName;            // 自定义数据源名称（唯一，用于持久化识别）
-    private String dbType;                // 数据库类型：mysql / postgresql
+    private DbType dbType = DbType.MYSQL; // 数据库类型枚举
     private String host;                  // 主机地址
     private String port;                  // 端口
     private String dbName;                // 数据库名称
@@ -28,7 +28,7 @@ public class DataSource {
     /**
      * 快捷构造（用于临时录入，无 SQLite 持久化字段）
      */
-    public DataSource(String dbType, String host, String port, String dbName, String username, String password) {
+    public DataSource(DbType dbType, String host, String port, String dbName, String username, String password) {
         this.dbType = dbType;
         this.host = host;
         this.port = port;
@@ -38,14 +38,21 @@ public class DataSource {
     }
 
     /**
-     * 完整构造（含持久化字段）
+     * 快捷构造（兼容字符串类型，内部转为枚举）
+     */
+    public DataSource(String dbType, String host, String port, String dbName, String username, String password) {
+        this(DbType.fromString(dbType), host, port, dbName, username, password);
+    }
+
+    /**
+     * 完整构造（含持久化字段，兼容字符串类型）
      */
     public DataSource(Long id, String sourceName, String dbType, String host, String port,
                       String dbName, String username, String password,
                       LocalDateTime createTime, LocalDateTime updateTime) {
         this.id = id;
         this.sourceName = sourceName;
-        this.dbType = dbType;
+        this.dbType = DbType.fromString(dbType);
         this.host = host;
         this.port = port;
         this.dbName = dbName;
@@ -58,10 +65,17 @@ public class DataSource {
     // ────────── 核心方法 ──────────
 
     /**
+     * 判断是否为 PostgreSQL
+     */
+    public boolean isPostgresql() {
+        return dbType == DbType.POSTGRESQL;
+    }
+
+    /**
      * 根据数据库类型自动生成对应格式的 JDBC 连接 URL
      */
     public String buildJdbcUrl() {
-        if ("postgresql".equalsIgnoreCase(dbType)) {
+        if (isPostgresql()) {
             String url = String.format("jdbc:postgresql://%s:%s/%s", host, port, dbName);
             if (schema != null && !schema.isBlank()) {
                 url += "?currentSchema=" + schema;
@@ -76,27 +90,21 @@ public class DataSource {
      * 获取 JDBC 驱动类名
      */
     public String getDriverClassName() {
-        if ("postgresql".equalsIgnoreCase(dbType)) {
-            return "org.postgresql.Driver";
-        }
-        return "com.mysql.cj.jdbc.Driver";
+        return dbType.getDriverClass();
     }
 
     /**
-     * 获取默认端口
+     * 获取默认端口（静态方法，兼容字符串类型）
      */
     public static String getDefaultPort(String dbType) {
-        if ("postgresql".equalsIgnoreCase(dbType)) {
-            return "5432";
-        }
-        return "3306"; // MySQL 默认
+        return String.valueOf(DbType.fromString(dbType).getDefaultPort());
     }
 
     /**
      * 参数校验 —— 所有必填字段不得为空
      */
     public boolean isValid() {
-        return dbType != null && !dbType.isBlank()
+        return dbType != null
             && host != null && !host.isBlank()
             && port != null && !port.isBlank()
             && dbName != null && !dbName.isBlank()
@@ -111,8 +119,17 @@ public class DataSource {
     public String getSourceName() { return sourceName; }
     public void setSourceName(String sourceName) { this.sourceName = sourceName; }
 
-    public String getDbType() { return dbType; }
-    public void setDbType(String dbType) { this.dbType = dbType; }
+    /** @return 数据库类型字符串（兼容旧代码），使用枚举的 key */
+    public String getDbType() { return dbType != null ? dbType.getKey() : "mysql"; }
+
+    /** @deprecated 使用 setDbTypeEnum(DbType) 替代 */
+    public void setDbType(String dbType) { this.dbType = DbType.fromString(dbType); }
+
+    /** 设置数据库类型（推荐使用枚举） */
+    public void setDbTypeEnum(DbType dbType) { this.dbType = dbType; }
+
+    /** 获取数据库类型枚举 */
+    public DbType getDbTypeEnum() { return dbType; }
 
     public String getHost() { return host; }
     public void setHost(String host) { this.host = host; }

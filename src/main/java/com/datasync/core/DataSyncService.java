@@ -202,7 +202,7 @@ public class DataSyncService {
         }
         String baseSql = "INSERT INTO " + qualifiedTable + " (" + cols + ") VALUES (" + placeholders + ")";
 
-        if ("postgresql".equalsIgnoreCase(dbType)) {
+        if (ds.isPostgresql()) {
             // PostgreSQL: 通过 JDBC 元数据获取主键列作为 ON CONFLICT 冲突目标
             String conflictTarget = getConflictTarget(ds, tableName, tgtConn);
             StringBuilder updateSet = new StringBuilder();
@@ -247,8 +247,8 @@ public class DataSyncService {
      * 生成 schema 限定的表名（PostgreSQL 专属；MySQL 返回纯表名）
      */
     private String qualifiedTableName(DataSource ds, String tableName) {
-        if ("postgresql".equalsIgnoreCase(ds.getDbType()) && ds.getSchema() != null && !ds.getSchema().isBlank()) {
-            return quoteIdentifier(ds.getSchema(), "postgresql") + "." + quoteIdentifier(tableName, "postgresql");
+        if (ds.isPostgresql() && ds.getSchema() != null && !ds.getSchema().isBlank()) {
+            return quoteIdentifier(ds.getSchema(), ds.getDbType()) + "." + quoteIdentifier(tableName, ds.getDbType());
         }
         return quoteIdentifier(tableName, ds.getDbType());
     }
@@ -262,6 +262,11 @@ public class DataSyncService {
         }
         // MySQL 使用反引号
         return "`" + name + "`";
+    }
+
+    /** 使用 DataSource 对象判断是否用 PG 引号 */
+    private String quoteIdentifier(String name, DataSource ds) {
+        return quoteIdentifier(name, ds.getDbType());
     }
     
     private void closeStatement(Statement stmt) {
@@ -602,6 +607,10 @@ public class DataSyncService {
         return true;
     }
 
+    private static boolean isPostgresqlType(String dbType) {
+        return "postgresql".equalsIgnoreCase(dbType);
+    }
+
     /**
      * 构建 CREATE INDEX 语句
      */
@@ -614,7 +623,7 @@ public class DataSyncService {
             sql.append("UNIQUE ");
         }
         sql.append("INDEX ");
-        if ("postgresql".equalsIgnoreCase(dbType)) {
+        if (isPostgresqlType(dbType)) {
             sql.append("\"").append(indexName).append("\"");
         } else {
             sql.append("`").append(indexName).append("`");
@@ -625,7 +634,7 @@ public class DataSyncService {
         StringBuilder colList = new StringBuilder();
         for (DbConnector.IndexDetail col : cols) {
             if (!colList.isEmpty()) colList.append(", ");
-            String quotedCol = "postgresql".equalsIgnoreCase(dbType)
+            String quotedCol = isPostgresqlType(dbType)
                     ? "\"" + col.columnName + "\"" : "`" + col.columnName + "`";
             colList.append(quotedCol);
             if ("D".equals(col.ascOrDesc)) {
@@ -641,7 +650,7 @@ public class DataSyncService {
      * 构建 DROP INDEX 语句
      */
     private String buildDropIndexSql(String indexName, String dbType, String schema) {
-        if ("postgresql".equalsIgnoreCase(dbType)) {
+        if (isPostgresqlType(dbType)) {
             // PostgreSQL: DROP INDEX 需要带上 schema 前缀
             if (schema != null && !schema.isBlank()) {
                 return "DROP INDEX IF EXISTS \"" + schema + "\".\"" + indexName + "\"";
@@ -691,7 +700,7 @@ public class DataSyncService {
             script.append("-- ").append(diff.type.getLabel()).append(": ").append(diff.columnName).append("\n");
 
             if (diff.type == DiffType.COMMENT_DIFF) {
-                if ("postgresql".equalsIgnoreCase(tgtDbType)) {
+                if (isPostgresqlType(tgtDbType)) {
                     String commentSql = buildPgCommentSql(diff.srcColumn, diff.tgtColumn, fullName);
                     if (commentSql != null) {
                         script.append(commentSql).append(";\n\n");
@@ -701,7 +710,7 @@ public class DataSyncService {
                 }
             } else if (diff.type == DiffType.MODIFY_COLUMN) {
                 script.append("ALTER TABLE ").append(fullName).append(" ").append(diff.alterSql).append(";\n\n");
-                if ("postgresql".equalsIgnoreCase(tgtDbType) && diff.srcColumn != null && diff.tgtColumn != null) {
+                if (isPostgresqlType(tgtDbType) && diff.srcColumn != null && diff.tgtColumn != null) {
                     String commentSql = buildPgCommentSql(diff.srcColumn, diff.tgtColumn, fullName);
                     if (commentSql != null) {
                         script.append(commentSql).append(";\n\n");
@@ -709,7 +718,7 @@ public class DataSyncService {
                 }
             } else {
                 script.append("ALTER TABLE ").append(fullName).append(" ").append(diff.alterSql).append(";\n\n");
-                if (diff.type == DiffType.ADD_COLUMN && "postgresql".equalsIgnoreCase(tgtDbType)
+                if (diff.type == DiffType.ADD_COLUMN && isPostgresqlType(tgtDbType)
                         && diff.srcColumn != null && diff.srcColumn.comment != null && !diff.srcColumn.comment.isBlank()) {
                     String quotedCol = "\"" + diff.srcColumn.columnName + "\"";
                     script.append("COMMENT ON COLUMN ").append(fullName).append(".").append(quotedCol)
@@ -745,7 +754,7 @@ public class DataSyncService {
                     String dropSql = buildDropIndexSql(idxDiff.indexName, tgtDbType, schema);
                     String addSql = buildAddIndexSql(idxDiff.indexName, idxDiff.srcIndexColumns, tgtDbType);
                     // DROP INDEX 对于 MySQL 需要表名
-                    if ("postgresql".equalsIgnoreCase(tgtDbType)) {
+                    if (isPostgresqlType(tgtDbType)) {
                         script.append(dropSql).append(";\n");
                     } else {
                         script.append("ALTER TABLE ").append(fullName).append(" ").append(dropSql).append(";\n");
@@ -756,7 +765,7 @@ public class DataSyncService {
                     script.append(addSql.replace(" ON ", " ON " + fullName + " ")).append(";\n\n");
                 } else if (idxDiff.type == DiffType.DROP_INDEX) {
                     String dropSql = buildDropIndexSql(idxDiff.indexName, tgtDbType, schema);
-                    if ("postgresql".equalsIgnoreCase(tgtDbType)) {
+                    if (isPostgresqlType(tgtDbType)) {
                         script.append(dropSql).append(";\n\n");
                     } else {
                         script.append("ALTER TABLE ").append(fullName).append(" ").append(dropSql).append(";\n\n");
@@ -780,10 +789,10 @@ public class DataSyncService {
      * 构建带 schema 前缀的完整表名
      */
     private String buildFullTableName(String tableName, String dbType, String schema) {
-        String quotedTable = "postgresql".equalsIgnoreCase(dbType)
+        String quotedTable = isPostgresqlType(dbType)
                 ? "\"" + tableName + "\"" : "`" + tableName + "`";
         if (schema != null && !schema.isBlank()) {
-            String quotedSchema = "postgresql".equalsIgnoreCase(dbType)
+            String quotedSchema = isPostgresqlType(dbType)
                     ? "\"" + schema + "\"" : "`" + schema + "`";
             return quotedSchema + "." + quotedTable;
         }
@@ -801,7 +810,7 @@ public class DataSyncService {
      * 构建 DROP COLUMN 子句
      */
     private String buildDropColumnSql(DbConnector.ColumnDetail col, String dbType) {
-        String quotedName = "postgresql".equalsIgnoreCase(dbType) ? "\"" + col.columnName + "\"" : "`" + col.columnName + "`";
+        String quotedName = isPostgresqlType(dbType) ? "\"" + col.columnName + "\"" : "`" + col.columnName + "`";
         return "DROP COLUMN " + quotedName;
     }
 
@@ -809,7 +818,7 @@ public class DataSyncService {
      * 构建 MODIFY COLUMN 子句
      */
     private String buildModifyColumnSql(DbConnector.ColumnDetail srcCol, DbConnector.ColumnDetail tgtCol, String dbType) {
-        if ("postgresql".equalsIgnoreCase(dbType)) {
+        if (isPostgresqlType(dbType)) {
             return buildPgModifyColumnSql(srcCol, tgtCol);
         }
         // MySQL: MODIFY COLUMN
@@ -890,7 +899,7 @@ public class DataSyncService {
      */
     private String buildColumnDefinition(DbConnector.ColumnDetail col, String dbType) {
         StringBuilder def = new StringBuilder();
-        String quotedName = "postgresql".equalsIgnoreCase(dbType) ? "\"" + col.columnName + "\"" : "`" + col.columnName + "`";
+        String quotedName = isPostgresqlType(dbType) ? "\"" + col.columnName + "\"" : "`" + col.columnName + "`";
         def.append(quotedName).append(" ");
 
         String type = col.dataType;
@@ -910,7 +919,7 @@ public class DataSyncService {
         }
 
         if (col.isAutoIncrement) {
-            if ("postgresql".equalsIgnoreCase(dbType)) {
+            if (isPostgresqlType(dbType)) {
                 // PG 自增列已经通过 SERIAL 类型处理，不需要额外子句
             } else {
                 def.append(" AUTO_INCREMENT");
@@ -918,7 +927,7 @@ public class DataSyncService {
         }
 
         // MySQL: MODIFY/ADD COLUMN 支持 COMMENT 子句
-        if (!"postgresql".equalsIgnoreCase(dbType)) {
+        if (!isPostgresqlType(dbType)) {
             if (col.comment != null && !col.comment.isBlank()) {
                 def.append(" COMMENT '").append(escapeSqlString(col.comment)).append("'");
             }

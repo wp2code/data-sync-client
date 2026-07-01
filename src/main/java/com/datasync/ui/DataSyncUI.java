@@ -6,8 +6,13 @@ import com.datasync.core.ConnectionWrapper;
 import com.datasync.core.DataSource;
 import com.datasync.core.DataSyncService;
 import com.datasync.core.DbConnector;
+import com.datasync.core.DbType;
+import com.datasync.core.Side;
 import com.datasync.util.ConfigUtil;
 import com.datasync.util.GlobalUtil;
+import com.datasync.util.IconUtil;
+import com.datasync.util.LogUtil;
+import com.datasync.util.SQLiteConfigUtil;
 import java.awt.*;
 import java.awt.event.*;
 import java.sql.Connection;
@@ -83,7 +88,7 @@ public class DataSyncUI extends JFrame {
     
     public DataSyncUI() {
         initUI();
-        ConfigUtil.initialize();
+        SQLiteConfigUtil.getInstance().initialize();
         refreshConfigCombos();
     }
     
@@ -102,8 +107,8 @@ public class DataSyncUI extends JFrame {
         addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
-                closeConnection(true, true);
-                closeConnection(false, true);
+                closeConnection(Side.SOURCE, true);
+                closeConnection(Side.TARGET, true);
             }
         });
         
@@ -113,9 +118,9 @@ public class DataSyncUI extends JFrame {
         JPanel centerPanel = new JPanel(new GridBagLayout());
         centerPanel.setBorder(new EmptyBorder(5, 12, 5, 12));
         
-        JPanel srcPanel = createDbSidePanel(true);
+        JPanel srcPanel = createDbSidePanel(Side.SOURCE);
         JPanel syncPanel = createSyncActionPanel();
-        JPanel tgtPanel = createDbSidePanel(false);
+        JPanel tgtPanel = createDbSidePanel(Side.TARGET);
         
         GridBagConstraints gbcCenter = new GridBagConstraints();
         gbcCenter.fill = GridBagConstraints.BOTH;
@@ -144,7 +149,7 @@ public class DataSyncUI extends JFrame {
     
     private void setAppIcon() {
         try {
-            setIconImage(ConfigUtil.createAppIcon());
+            setIconImage(IconUtil.createAppIcon().getImage());
         } catch (Exception ignored) {
         }
     }
@@ -176,9 +181,9 @@ public class DataSyncUI extends JFrame {
     /**
      * 创建源库或目标库的侧边面板，包含：数据源选择、Schema（单选）、表（多选）、刷新连接
      */
-    private JPanel createDbSidePanel(boolean isSource) {
-        String title = isSource ? "源数据库 (Source)" : "目标数据库 (Target)";
-        Color accentColor = isSource ? new Color(0x4F46E5) : new Color(0x059669); // 源=蓝紫, 目标=绿
+    private JPanel createDbSidePanel(Side side) {
+        String title = side == Side.SOURCE ? "源数据库 (Source)" : "目标数据库 (Target)";
+        Color accentColor = side == Side.SOURCE ? new Color(0x4F46E5) : new Color(0x059669); // 源=蓝紫, 目标=绿
         JPanel sourcePanel = new JPanel(new BorderLayout(5, 5));
         TitledBorder titledBorder = BorderFactory.createTitledBorder(title);
         titledBorder.setTitleColor(accentColor);
@@ -205,21 +210,23 @@ public class DataSyncUI extends JFrame {
         schemaLabel.setFont(labelFont);
         schemaLabel.setPreferredSize(labelDim);
         schemaRow.add(schemaLabel, BorderLayout.WEST);
-        JComboBox<String> schemaCombo = new JComboBox<>(new String[] {"（请先连接）"});
+        JComboBox<String> schemaCombo = new JComboBox<>(new String[] {UiConstants.PLACEHOLDER_CONNECT_FIRST});
         schemaCombo.setEditable(false); // 仅单选，不允许编辑
         schemaCombo.setFont(labelFont);
         schemaRow.add(schemaCombo, BorderLayout.CENTER);
         // ── 连接状态标签 ──
-        JLabel infoLabel = new JLabel("请选择数据源", SwingConstants.CENTER);
+        JLabel infoLabel = new JLabel(UiConstants.PLACEHOLDER_SELECT_SOURCE, SwingConstants.CENTER);
         infoLabel.setFont(labelFont);
         infoLabel.setForeground(Color.GRAY);
         infoLabel.setBorder(new EmptyBorder(4, 0, 2, 0));
         // ── 按钮行 ──
-        JPanel btnRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
-        btnRow.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, -10));
+        JPanel btnRow = new JPanel(new GridBagLayout());
+        //        JPanel btnRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 5));
+        //        btnRow.setBackground(Color.WHITE);
+        //        btnRow.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, -10));
         JPanel tableRow = null;
         JPanel tableCheckPanel = null;
-        if (isSource) {
+        if (side == Side.SOURCE) {
             // ── 表选择行（复选框多选）──
             tableRow = new JPanel(new BorderLayout(5, 0));
             JLabel tableLabel = new JLabel("表:", SwingConstants.RIGHT);
@@ -261,10 +268,20 @@ public class DataSyncUI extends JFrame {
             JButton deselectAllTablesBtn = new JButton("取消选中");
             deselectAllTablesBtn.setFont(new Font("SansSerif", Font.PLAIN, 11));
             deselectAllTablesBtn.addActionListener(e -> clearTableSelection(finalTableCheckPanelForExport));
-            btnRow.add(searchText);
-            btnRow.add(exportBtn);
-            btnRow.add(selectAllTablesBtn);
-            btnRow.add(deselectAllTablesBtn);
+            GridBagConstraints c = new GridBagConstraints();
+            c.insets = new Insets(5, 5, 5, 0);
+            c.gridx = 0;
+            c.gridy = 0;
+            c.fill = GridBagConstraints.HORIZONTAL;
+            btnRow.add(exportBtn, c);
+            //            btnRow.add(exportBtn);
+            c.gridx = 1;
+            btnRow.add(deselectAllTablesBtn, c);
+            c.gridx = 2;
+            btnRow.add(selectAllTablesBtn, c);
+            c.gridx = 3;
+            c.weightx = 1.0;
+            btnRow.add(searchText, c);
         }
         //        JButton refreshBtn = new JButton("刷新连接");
         //        refreshBtn.setFont(new Font("SansSerif", Font.PLAIN, 11));
@@ -287,10 +304,12 @@ public class DataSyncUI extends JFrame {
         if (tableRow != null) {
             formPanel.add(tableRow, gbc);
         }
-        gbc.gridy = 3;
-        gbc.weighty = 0;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        formPanel.add(btnRow, gbc);
+        if (side == Side.SOURCE) {
+            gbc.gridy = 3;
+            gbc.weighty = 0;
+            gbc.fill = GridBagConstraints.HORIZONTAL;
+            formPanel.add(btnRow, gbc);
+        }
         
         sourcePanel.add(formPanel, BorderLayout.CENTER);
         sourcePanel.add(infoLabel, BorderLayout.SOUTH);
@@ -301,20 +320,21 @@ public class DataSyncUI extends JFrame {
                 return;
             }
             Object sel = configCombo.getSelectedItem();
-            if (sel != null && !"请选择数据源".equals(sel.toString()) && !"（无）".equals(sel.toString()) && !"（无同类型配置）".equals(sel.toString())) {
+            if (sel != null && !UiConstants.PLACEHOLDER_SELECT_SOURCE.equals(sel.toString()) && !UiConstants.PLACEHOLDER_NONE.equals(sel.toString())
+                    && !UiConstants.PLACEHOLDER_NO_MATCHING.equals(sel.toString())) {
                 DataSource ds = ConfigUtil.loadDataSourceByName(sel.toString());
                 final String srcDataSource = GlobalUtil.getSrcDataSource();
                 if (ds != null && (srcDataSource == null || !srcDataSource.equals(ds.getSourceName()))) {
-                    doAutoConnect(ds, title, isSource, infoLabel);
+                    doAutoConnect(ds, title, side, infoLabel);
                 }
             } else {
-                infoLabel.setText("请选择数据源");
-                infoLabel.setFont(new Font("SansSerif", Font.PLAIN, 11));
+                infoLabel.setText(UiConstants.PLACEHOLDER_SELECT_SOURCE);
+                infoLabel.setFont(UiConstants.FONT_SANS_11);
                 infoLabel.setHorizontalAlignment(SwingConstants.CENTER);
                 infoLabel.setForeground(Color.GRAY);
-                closeConnection(isSource, false);
+                closeConnection(side, false);
             }
-            if (isSource) {
+            if (side == Side.SOURCE) {
                 onSourceConfigChanged();
             }
         });
@@ -322,12 +342,12 @@ public class DataSyncUI extends JFrame {
         // ── Schema ItemListener ──
         schemaCombo.addItemListener(e -> {
             if (e.getStateChange() == ItemEvent.SELECTED) {
-                onSchemaSelected(isSource);
+                onSchemaSelected(side);
             }
         });
         
         // ── 保存引用 ──
-        if (isSource) {
+        if (side == Side.SOURCE) {
             srcConfigCombo = configCombo;
             srcInfoLabel = infoLabel;
             srcSyncSchemaCombo = schemaCombo;
@@ -365,16 +385,16 @@ public class DataSyncUI extends JFrame {
     /**
      * 关闭指定端的旧连接
      */
-    private void closeConnection(boolean isSource, boolean isCloseWindow) {
-        ConnectionWrapper oldConn = isSource ? srcConn : tgtConn;
+    private void closeConnection(Side side, boolean isCloseWindow) {
+        ConnectionWrapper oldConn = side == Side.SOURCE ? srcConn : tgtConn;
         if (oldConn != null) {
-            String side = isSource ? "源数据库" : "目标数据库";
+            String sideLabel = side.label();
             if (oldConn.getDataSource() != null) {
-                side += "[" + oldConn.getDataSource().getSourceName() + "]";
+                sideLabel += "[" + oldConn.getDataSource().getSourceName() + "]";
             }
-            appendLog(ConfigUtil.logLine("[DISCONNECT] 正在关闭" + side + "连接…"));
+            appendLog(LogUtil.logLine(UiConstants.LOG_DISCONNECT + "正在关闭" + sideLabel + "连接…"));
             DbConnector.closeQuietly(oldConn.getConnection());
-            if (isSource) {
+            if (side == Side.SOURCE) {
                 srcConn = null;
                 if (isCloseWindow) {
                     GlobalUtil.removeSrcDataSource();
@@ -385,27 +405,27 @@ public class DataSyncUI extends JFrame {
                     GlobalUtil.removeTargetDataSource();
                 }
             }
-            appendLog(ConfigUtil.logLine("[DISCONNECT] " + side + "连接已关闭"));
+            appendLog(LogUtil.logLine(UiConstants.LOG_DISCONNECT + sideLabel + "连接已关闭"));
         }
     }
     
     /**
      * 选中数据源后自动连接：先关闭旧连接，再建立新连接
      */
-    private void doAutoConnect(DataSource ds, String title, boolean isSource, JLabel infoLabel) {
+    private void doAutoConnect(DataSource ds, String title, Side side, JLabel infoLabel) {
         if (ds == null || !ds.isValid()) {
             return;
         }
         
         // 先关闭旧连接
-        closeConnection(isSource, false);
+        closeConnection(side, false);
         
-        appendLog(ConfigUtil.logLine("[CONNECT] 正在连接 " + title + "…"));
+        appendLog(LogUtil.logLine(UiConstants.LOG_CONNECT + "正在连接 " + title + "…"));
         infoLabel.setText("连接中…");
         infoLabel.setFont(new Font("SansSerif", Font.BOLD, 14));
         infoLabel.setHorizontalAlignment(SwingConstants.CENTER);
         infoLabel.setForeground(Color.ORANGE);
-        final ConnectThread connectThread = new ConnectThread(this, ds, infoLabel, isSource, false);
+        final ConnectThread connectThread = new ConnectThread(this, ds, infoLabel, side, false);
         connectThread.start();
     }
     
@@ -462,7 +482,7 @@ public class DataSyncUI extends JFrame {
         
         logArea = new JEditorPane();
         logArea.setEditable(false);
-        logArea.setContentType("text/plain");
+        logArea.setContentType("text/html");
         logArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
         logArea.setBackground(new Color(30, 30, 30));
         logArea.setForeground(new Color(200, 200, 200));
@@ -473,7 +493,7 @@ public class DataSyncUI extends JFrame {
         
         JButton clearBtn = new JButton("清空日志");
         clearBtn.addActionListener(e -> {
-            ConfigUtil.clearLog(logArea);
+            LogUtil.clearLog(logArea);
         });
         JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         btnPanel.add(clearBtn);
@@ -499,7 +519,7 @@ public class DataSyncUI extends JFrame {
             refreshSingleCombo(srcConfigCombo, null, null);
             // 目标库根据源库类型过滤，同时排除和源库同名的配置
             String srcType = getSelectedSourceDbType();
-            DataSource srcDs = getSelectedSource(true);
+            DataSource srcDs = getSelectedSource(Side.SOURCE);
             String excludeName = srcDs != null ? srcDs.getSourceName() : null;
             refreshSingleCombo(tgtConfigCombo, srcType, excludeName);
         } finally {
@@ -511,7 +531,7 @@ public class DataSyncUI extends JFrame {
         String selected = (String) combo.getSelectedItem();
         combo.removeAllItems();
         // 始终在第一项添加提示
-        combo.addItem("请选择数据源");
+        combo.addItem(UiConstants.PLACEHOLDER_SELECT_SOURCE);
         List<String> names = ConfigUtil.loadAllSourceNames();
         List<String> filtered = new ArrayList<>();
         for (String name : names) {
@@ -529,25 +549,26 @@ public class DataSyncUI extends JFrame {
             }
         }
         if (filtered.isEmpty()) {
-            combo.addItem(filterDbType != null ? "（无同类型配置）" : "（无）");
+            combo.addItem(filterDbType != null ? UiConstants.PLACEHOLDER_NO_MATCHING : UiConstants.PLACEHOLDER_NONE);
         } else {
             filtered.forEach(combo::addItem);
         }
         // 尝试恢复之前的选中项（被排除的项不能恢复），否则选中提示项
-        if (selected != null && !selected.equals(excludeName) && !"请选择数据源".equals(selected) && !"（无）".equals(selected)
-                && !"（无同类型配置）".equals(selected)) {
+        if (selected != null && !selected.equals(excludeName) && !UiConstants.PLACEHOLDER_SELECT_SOURCE.equals(selected)
+                && !UiConstants.PLACEHOLDER_NONE.equals(selected) && !UiConstants.PLACEHOLDER_NO_MATCHING.equals(selected)) {
             combo.setSelectedItem(selected);
         } else {
-            combo.setSelectedItem("请选择数据源");
+            combo.setSelectedItem(UiConstants.PLACEHOLDER_SELECT_SOURCE);
         }
     }
     
     // ────────── 获取选中数据源 ──────────
     
-    private DataSource getSelectedSource(boolean isSource) {
-        JComboBox<String> combo = isSource ? srcConfigCombo : tgtConfigCombo;
+    private DataSource getSelectedSource(Side side) {
+        JComboBox<String> combo = side == Side.SOURCE ? srcConfigCombo : tgtConfigCombo;
         Object sel = combo.getSelectedItem();
-        if (sel == null || "请选择数据源".equals(sel.toString()) || "（无）".equals(sel.toString()) || "（无同类型配置）".equals(sel.toString())) {
+        if (sel == null || UiConstants.PLACEHOLDER_SELECT_SOURCE.equals(sel.toString()) || UiConstants.PLACEHOLDER_NONE.equals(sel.toString())
+                || UiConstants.PLACEHOLDER_NO_MATCHING.equals(sel.toString())) {
             return null;
         }
         return ConfigUtil.loadDataSourceByName(sel.toString());
@@ -557,7 +578,7 @@ public class DataSyncUI extends JFrame {
      * 获取当前源库的数据库类型（mysql / postgresql），未选择时返回 null
      */
     private String getSelectedSourceDbType() {
-        DataSource ds = getSelectedSource(true);
+        DataSource ds = getSelectedSource(Side.SOURCE);
         return ds != null ? ds.getDbType() : null;
     }
     
@@ -566,23 +587,23 @@ public class DataSyncUI extends JFrame {
      */
     private void onSourceConfigChanged() {
         String srcType = getSelectedSourceDbType();
-        boolean isPostgres = "postgresql".equalsIgnoreCase(srcType);
+        boolean isPostgres = DbType.fromString(srcType) == DbType.POSTGRESQL;
         // 显示/隐藏 Schema 行
         srcSchemaPanel.setVisible(isPostgres);
         tgtSchemaPanel.setVisible(isPostgres);
         
         // 如果目标库已选中但类型与源库不一致，关闭目标连接
-        DataSource tgtDs = getSelectedSource(false);
+        DataSource tgtDs = getSelectedSource(Side.TARGET);
         if (tgtDs != null && tgtConn != null && srcType != null && !srcType.equalsIgnoreCase(tgtDs.getDbType())) {
-            closeConnection(false, false);
-            tgtInfoLabel.setText("请选择数据源");
+            closeConnection(Side.TARGET, false);
+            tgtInfoLabel.setText(UiConstants.PLACEHOLDER_SELECT_SOURCE);
             tgtInfoLabel.setFont(new Font("SansSerif", Font.PLAIN, 11));
             tgtInfoLabel.setHorizontalAlignment(SwingConstants.CENTER);
             tgtInfoLabel.setForeground(Color.GRAY);
         }
         
         // 过滤目标库下拉：同类型 + 排除与源库同名
-        DataSource srcDs = getSelectedSource(true);
+        DataSource srcDs = getSelectedSource(Side.SOURCE);
         String excludeName = srcDs != null ? srcDs.getSourceName() : null;
         suppressComboEvents = true;
         try {
@@ -596,16 +617,16 @@ public class DataSyncUI extends JFrame {
             srcSyncSchemaCombo.setSelectedItem("");
             tgtSyncSchemaCombo.setSelectedItem("");
         }
-        String tableHint = isPostgres ? "（请先选择 Schema）" : "（请先连接）";
+        String tableHint = isPostgres ? UiConstants.PLACEHOLDER_SELECT_SCHEMA : UiConstants.PLACEHOLDER_CONNECT_FIRST;
         setTableCheckItems(srcSyncTablePanel, tableHint);
         setTableCheckItems(tgtSyncTablePanel, tableHint);
     }
     
     // ────────── Schema → Table 联动 ──────────
     
-    private void onSchemaSelected(boolean isSource) {
-        JComboBox<String> schemaCombo = isSource ? srcSyncSchemaCombo : tgtSyncSchemaCombo;
-        JPanel tablePanel = isSource ? srcSyncTablePanel : tgtSyncTablePanel;
+    private void onSchemaSelected(Side side) {
+        JComboBox<String> schemaCombo = side == Side.SOURCE ? srcSyncSchemaCombo : tgtSyncSchemaCombo;
+        JPanel tablePanel = side == Side.SOURCE ? srcSyncTablePanel : tgtSyncTablePanel;
         Object sel = schemaCombo.getSelectedItem();
         if (sel == null) {
             return;
@@ -613,19 +634,19 @@ public class DataSyncUI extends JFrame {
         String schema = sel.toString().trim();
         if (schema.isEmpty() || schema.startsWith("（")) {
             // 未选中有效 Schema，清空表列表
-            setTableCheckItems(tablePanel, "（请先选择 Schema）");
+            setTableCheckItems(tablePanel, UiConstants.PLACEHOLDER_SELECT_SCHEMA);
             return;
         }
         
-        DataSource ds = getSelectedSource(isSource);
+        DataSource ds = getSelectedSource(side);
         if (ds == null) {
             return;
         }
         ds.setSchema(schema);
         
         // 切换已有连接的 search_path，确保后续查询使用用户选中的 schema
-        ConnectionWrapper connWrapper = isSource ? srcConn : tgtConn;
-        if (connWrapper != null && connWrapper.getConnection() != null && "postgresql".equalsIgnoreCase(ds.getDbType())) {
+        ConnectionWrapper connWrapper = side == Side.SOURCE ? srcConn : tgtConn;
+        if (connWrapper != null && connWrapper.getConnection() != null && ds.isPostgresql()) {
             try {
                 connWrapper.getConnection().createStatement().execute("SET search_path TO " + schema + ", public");
             } catch (Exception ignored) {
@@ -637,12 +658,12 @@ public class DataSyncUI extends JFrame {
     }
     
     private void fetchTablesInBackground(JPanel tablePanel, DataSource ds, String schema) {
-        setTableCheckItems(tablePanel, "（查询中…）");
+        setTableCheckItems(tablePanel, UiConstants.PLACEHOLDER_QUERYING);
         new Thread(() -> {
             List<String> tables = DbConnector.fetchTables(ds, schema);
             SwingUtilities.invokeLater(() -> {
                 if (tables.isEmpty()) {
-                    setTableCheckItems(tablePanel, "（无表）");
+                    setTableCheckItems(tablePanel, UiConstants.PLACEHOLDER_NO_TABLES);
                 } else {
                     setTableCheckItems(tablePanel, tables.toArray(new String[0]));
                 }
@@ -724,7 +745,7 @@ public class DataSyncUI extends JFrame {
             return;
         }
         
-        DataSource ds = getSelectedSource(true);
+        DataSource ds = getSelectedSource(Side.SOURCE);
         if (ds == null || !ds.isValid()) {
             JOptionPane.showMessageDialog(this, "请先选择并连接源数据库", "提示", JOptionPane.WARNING_MESSAGE);
             return;
@@ -738,7 +759,7 @@ public class DataSyncUI extends JFrame {
         }
         
         // 设置 Schema（PostgreSQL）
-        boolean isPg = "postgresql".equalsIgnoreCase(ds.getDbType());
+        boolean isPg = ds.isPostgresql();
         if (isPg) {
             Object schemaObj = srcSyncSchemaCombo.getSelectedItem();
             if (schemaObj == null || schemaObj.toString().startsWith("（")) {
@@ -774,7 +795,7 @@ public class DataSyncUI extends JFrame {
         final Map<String, List<String>> finalTableColumnMap = tableColumnMap;
         
         syncButton.setEnabled(false);
-        appendLog(ConfigUtil.logLine("[EXPORT] 开始导出 " + checkedTables.size() + " 个表的 INSERT 脚本…"));
+        appendLog(LogUtil.logLine(UiConstants.LOG_EXPORT + "开始导出 " + checkedTables.size() + " 个表的 INSERT 脚本…"));
         
         new Thread(() -> {
             try (java.io.BufferedWriter writer = new java.io.BufferedWriter(
@@ -796,8 +817,8 @@ public class DataSyncUI extends JFrame {
                 for (int i = 0; i < checkedTables.size(); i++) {
                     String tableName = checkedTables.get(i);
                     final int idx = i;
-                    SwingUtilities.invokeLater(() -> appendLog(
-                            ConfigUtil.logLine("[EXPORT] 正在导出表 [" + (idx + 1) + "/" + checkedTables.size() + "]: " + tableName + "…")));
+                    SwingUtilities.invokeLater(() -> appendLog(LogUtil.logLine(
+                            UiConstants.LOG_EXPORT + "正在导出表 [" + (idx + 1) + "/" + checkedTables.size() + "]: " + tableName + "…")));
                     
                     List<String> cols = finalTableColumnMap.get(tableName);
                     String script = syncService.exportInsertScript(finalDs, tableName, wrapper, cols);
@@ -815,9 +836,9 @@ public class DataSyncUI extends JFrame {
                 
                 final int finalTotalRows = totalRows;
                 SwingUtilities.invokeLater(() -> {
-                    appendLog(ConfigUtil.logLine(
-                            "<html><body><span style=\"color: green; font-weight: bold;\">[EXPORT] 导出完成！共 " + checkedTables.size() + " 个表, "
-                                    + finalTotalRows + " 条数据 → " + finalFile.getAbsolutePath() + "</span></body></html>"));
+                    appendLog(LogUtil.logLine("<html><body><span style=\"color: green; font-weight: bold;\">" + UiConstants.LOG_EXPORT + "导出完成！共 "
+                            + checkedTables.size() + " 个表, " + finalTotalRows + " 条数据 → " + finalFile.getAbsolutePath()
+                            + "</span></body></html>"));
                     syncButton.setEnabled(true);
                     JOptionPane.showMessageDialog(DataSyncUI.this,
                             "导出成功！\n" + checkedTables.size() + " 个表, 共 " + finalTotalRows + " 条数据\n保存至: " + finalFile.getAbsolutePath(),
@@ -826,8 +847,8 @@ public class DataSyncUI extends JFrame {
                 
             } catch (Exception ex) {
                 SwingUtilities.invokeLater(() -> {
-                    appendLog(ConfigUtil.logLine(
-                            "<html><body><span style=\"color: red;\">[EXPORT] 导出失败: " + ex.getMessage() + "</span></body></html>"));
+                    appendLog(LogUtil.logLine("<html><body><span style=\"color: red;\">" + UiConstants.LOG_EXPORT + "导出失败: " + ex.getMessage()
+                            + "</span></body></html>"));
                     syncButton.setEnabled(true);
                     JOptionPane.showMessageDialog(DataSyncUI.this, "导出失败: " + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
                 });
@@ -843,7 +864,7 @@ public class DataSyncUI extends JFrame {
      * @return Map<表名, 该表选中的列列表>（空列表=该表全选），取消返回 null
      */
     private Map<String, List<String>> showColumnSelectionDialog(DataSource ds, List<String> tables) {
-        String schema = "postgresql".equalsIgnoreCase(ds.getDbType()) ? ds.getSchema() : null;
+        String schema = ds.isPostgresql() ? ds.getSchema() : null;
         
         // 获取每张表的列信息
         java.util.LinkedHashMap<String, List<String>> allTableColumns = new java.util.LinkedHashMap<>();
@@ -1013,7 +1034,6 @@ public class DataSyncUI extends JFrame {
         cancelBtn.addActionListener(e -> dialog.dispose());
         //        btnPanel.add(selectAllBtn);
         //        btnPanel.add(deselectAllBtn);
-        btnPanel.add(Box.createHorizontalStrut(20));
         btnPanel.add(okBtn);
         btnPanel.add(cancelBtn);
         dialog.add(btnPanel, BorderLayout.SOUTH);
@@ -1104,45 +1124,45 @@ public class DataSyncUI extends JFrame {
     /**
      * 刷新连接：先关闭旧连接，再重新连接数据库，然后重新加载元数据
      */
-    private void refreshConnection(boolean isSource, JLabel infoLabel) {
-        String side = isSource ? "源数据库" : "目标数据库";
-        DataSource ds = getSelectedSource(isSource);
+    private void refreshConnection(Side side, JLabel infoLabel) {
+        String sideLabel = side.label();
+        DataSource ds = getSelectedSource(side);
         if (ds == null || !ds.isValid()) {
-            appendLog(ConfigUtil.logLine(
-                    "<html><body><span style=\"color: red;\">[REFRESH] " + side + "：未选择有效数据源，跳过刷新</span></body></html>"));
+            appendLog(LogUtil.logLine("<html><body><span style=\"color: red;\">" + UiConstants.LOG_REFRESH + sideLabel
+                    + "：未选择有效数据源，跳过刷新</span></body></html>"));
             return;
         }
         
-        appendLog(ConfigUtil.logLine("[REFRESH] 正在刷新" + side + "连接…"));
+        appendLog(LogUtil.logLine(UiConstants.LOG_REFRESH + "正在刷新" + sideLabel + "连接…"));
         
         // 重置 Schema 和表选择
-        JComboBox<String> schemaCombo = isSource ? srcSyncSchemaCombo : tgtSyncSchemaCombo;
-        JPanel tablePanel = isSource ? srcSyncTablePanel : tgtSyncTablePanel;
-        boolean isPg = "postgresql".equalsIgnoreCase(ds.getDbType());
+        JComboBox<String> schemaCombo = side == Side.SOURCE ? srcSyncSchemaCombo : tgtSyncSchemaCombo;
+        JPanel tablePanel = side == Side.SOURCE ? srcSyncTablePanel : tgtSyncTablePanel;
+        boolean isPg = ds.isPostgresql();
         if (isPg) {
-            setModelQuietly(schemaCombo, new DefaultComboBoxModel<>(new String[] {"（查询中…）"}));
-            setTableCheckItems(tablePanel, "（请先选择 Schema）");
+            setModelQuietly(schemaCombo, new DefaultComboBoxModel<>(new String[] {UiConstants.PLACEHOLDER_QUERYING}));
+            setTableCheckItems(tablePanel, UiConstants.PLACEHOLDER_SELECT_SCHEMA);
         } else {
-            setModelQuietly(schemaCombo, new DefaultComboBoxModel<>(new String[] {"（请先连接）"}));
-            setTableCheckItems(tablePanel, "（查询中…）");
+            setModelQuietly(schemaCombo, new DefaultComboBoxModel<>(new String[] {UiConstants.PLACEHOLDER_CONNECT_FIRST}));
+            setTableCheckItems(tablePanel, UiConstants.PLACEHOLDER_QUERYING);
         }
         
         // 先关闭旧连接
-        closeConnection(isSource, false);
+        closeConnection(side, false);
         // 重新连接
         infoLabel.setText("连接中…");
         infoLabel.setFont(new Font("SansSerif", Font.BOLD, 14));
         infoLabel.setHorizontalAlignment(SwingConstants.CENTER);
         infoLabel.setForeground(Color.ORANGE);
-        final ConnectThread connectThread = new ConnectThread(this, ds, infoLabel, isSource, true);
+        final ConnectThread connectThread = new ConnectThread(this, ds, infoLabel, side, true);
         connectThread.start();
     }
     
     // ────────── 同步执行 ──────────
     
     private void startSync() {
-        final DataSource source = getSelectedSource(true);
-        final DataSource target = getSelectedSource(false);
+        final DataSource source = getSelectedSource(Side.SOURCE);
+        final DataSource target = getSelectedSource(Side.TARGET);
         if (source == null) {
             JOptionPane.showMessageDialog(this, "请先选择源数据库", "参数不完整", JOptionPane.WARNING_MESSAGE);
             return;
@@ -1151,6 +1171,7 @@ public class DataSyncUI extends JFrame {
             JOptionPane.showMessageDialog(this, "请先选择目标数据库", "参数不完整", JOptionPane.WARNING_MESSAGE);
             return;
         }
+        
         // 源和目标不能是同一个数据源
         String srcName = source.getSourceName();
         String tgtName = target.getSourceName();
@@ -1158,15 +1179,9 @@ public class DataSyncUI extends JFrame {
             JOptionPane.showMessageDialog(this, "源数据库和目标数据库不能是同一个数据源", "配置错误", JOptionPane.WARNING_MESSAGE);
             return;
         }
-        
-        boolean isPostgres = "postgresql".equalsIgnoreCase(source.getDbType());
-        
+        boolean isPostgres = source.isPostgresql();
         // ── 获取复选框选中的源表列表 ──
         List<String> srcTables = getCheckedTables(srcSyncTablePanel);
-        
-        // ── 获取复选框选中的目标表列表 ──
-        List<String> tgtTables = srcTables;
-        
         String srcSchema = "";
         String tgtSchema = "";
         if (isPostgres) {
@@ -1179,23 +1194,14 @@ public class DataSyncUI extends JFrame {
                 JOptionPane.showMessageDialog(this, "请选择目标Schema", "参数不完整", JOptionPane.WARNING_MESSAGE);
                 return;
             }
+            if (!srcSchema.equals(tgtSchema)) {
+                JOptionPane.showMessageDialog(this, "选择的目标数据库模式和源数据库模式不一致", "参数不完整", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
         }
         if (srcTables.isEmpty()) {
             JOptionPane.showMessageDialog(this, "请勾选源表", "参数不完整", JOptionPane.WARNING_MESSAGE);
             return;
-        }
-        // 校验源表和目标表数量一致，且名称一一对应
-        if (srcTables.size() != tgtTables.size()) {
-            JOptionPane.showMessageDialog(this, "源表和目标表选择数量不一致（源: " + srcTables.size() + " 个, 目标: " + tgtTables.size() + " 个）",
-                    "参数不完整", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-        for (int i = 0; i < srcTables.size(); i++) {
-            if (!srcTables.get(i).equals(tgtTables.get(i))) {
-                JOptionPane.showMessageDialog(this, "第 " + (i + 1) + " 个表名不一致: 源=[" + srcTables.get(i) + "], 目标=[" + tgtTables.get(i) + "]",
-                        "参数不完整", JOptionPane.WARNING_MESSAGE);
-                return;
-            }
         }
         
         source.setSchema(srcSchema);
@@ -1235,12 +1241,12 @@ public class DataSyncUI extends JFrame {
         final String finalSrcSchema = srcSchema;
         final String finalTgtSchema = tgtSchema;
         
-        appendLog(ConfigUtil.logLine("[SYNC] ======== 开始批量同步 " + finalSrcTables.size() + " 个表 ========"));
+        appendLog(LogUtil.logLine(UiConstants.LOG_SYNC + "======== 开始批量同步 " + finalSrcTables.size() + " 个表 ========"));
         if (truncateBeforeSync) {
-            appendLog(ConfigUtil.logLine("[SYNC] 已开启\"同步前清空目标表\"，将先清空目标表数据"));
+            appendLog(LogUtil.logLine(UiConstants.LOG_SYNC + "已开启\"同步前清空目标表\"，将先清空目标表数据"));
         }
         
-        Consumer<String> logConsumer = msg -> SwingUtilities.invokeLater(() -> appendLog(ConfigUtil.logLine(msg)));
+        Consumer<String> logConsumer = msg -> SwingUtilities.invokeLater(() -> appendLog(LogUtil.logLine(msg)));
         
         // 捕获当前连接引用
         final ConnectionWrapper[] wrappers = new ConnectionWrapper[] {srcConn, tgtConn};
@@ -1250,8 +1256,8 @@ public class DataSyncUI extends JFrame {
             int failedTables = 0;
             
             try {
-                ConnectionWrapper srcWrapper = waitForConnection(wrappers[0], true);
-                ConnectionWrapper tgtWrapper = waitForConnection(wrappers[1], false);
+                ConnectionWrapper srcWrapper = waitForConnection(wrappers[0], Side.SOURCE);
+                ConnectionWrapper tgtWrapper = waitForConnection(wrappers[1], Side.TARGET);
                 
                 for (int i = 0; i < finalSrcTables.size(); i++) {
                     String tableName = finalSrcTables.get(i);
@@ -1259,16 +1265,16 @@ public class DataSyncUI extends JFrame {
                             isPostgres ? "[" + (i + 1) + "/" + finalSrcTables.size() + "] 源[" + source.getSourceName() + "][" + finalSrcSchema + "."
                                     + tableName + "] → 目标[" + target.getSourceName() + "][" + finalTgtSchema + "." + tableName + "]"
                                     : "[" + (i + 1) + "/" + finalSrcTables.size() + "] 源[" + tableName + "] → 目标[" + tableName + "]";
-                    appendLog(ConfigUtil.logLine("[SYNC] " + logPrefix + " 开始…"));
+                    appendLog(LogUtil.logLine(UiConstants.LOG_SYNC + logPrefix + " 开始…"));
                     
                     int rows = syncService.syncTableWithConn(source, target, tableName, tableName, truncateBeforeSync, srcWrapper, tgtWrapper,
                             logConsumer);
                     if (rows >= 0) {
                         totalSyncedRows += rows;
-                        appendLog(ConfigUtil.logLine("[SYNC] " + logPrefix + " 完成，同步 " + rows + " 条"));
+                        appendLog(LogUtil.logLine(UiConstants.LOG_SYNC + logPrefix + " 完成，同步 " + rows + " 条"));
                     } else {
                         failedTables++;
-                        appendLog(ConfigUtil.logLine("[SYNC] " + logPrefix + " 失败！"));
+                        appendLog(LogUtil.logLine(UiConstants.LOG_SYNC + logPrefix + " 失败！"));
                     }
                 }
                 
@@ -1287,7 +1293,7 @@ public class DataSyncUI extends JFrame {
                 });
             } catch (Exception ex) {
                 SwingUtilities.invokeLater(() -> {
-                    appendLog(ConfigUtil.logLine("[ERROR] 同步异常: " + ex.getMessage()));
+                    appendLog(LogUtil.logLine(UiConstants.LOG_ERROR + "同步异常: " + ex.getMessage()));
                     syncButton.setEnabled(true);
                 });
             }
@@ -1299,23 +1305,23 @@ public class DataSyncUI extends JFrame {
     /**
      * 等待异步连接就绪。如果已有连接则直接返回；否则轮询等待直到连接建立或超时。
      *
-     * @param current  当前已知的连接引用
-     * @param isSource true=源库, false=目标库
+     * @param current 当前已知的连接引用
+     * @param side    数据库侧
      * @return 就绪的 ConnectionWrapper，超时仍为 null
      */
-    private ConnectionWrapper waitForConnection(ConnectionWrapper current, boolean isSource) {
+    private ConnectionWrapper waitForConnection(ConnectionWrapper current, Side side) {
         if (current != null && current.getConnection() != null) {
             return current;
         }
         
-        String side = isSource ? "源数据库" : "目标数据库";
-        appendLog(ConfigUtil.logLine("[WAIT] 等待" + side + "连接就绪…"));
+        String sideLabel = side.label();
+        appendLog(LogUtil.logLine(UiConstants.LOG_WAIT + "等待" + sideLabel + "连接就绪…"));
         
-        long deadline = System.currentTimeMillis() + 30_000; // 30 秒超时
+        long deadline = System.currentTimeMillis() + UiConstants.CONNECT_TIMEOUT_MS;
         while (System.currentTimeMillis() < deadline) {
-            ConnectionWrapper conn = isSource ? srcConn : tgtConn;
+            ConnectionWrapper conn = side == Side.SOURCE ? srcConn : tgtConn;
             if (conn != null && conn.getConnection() != null) {
-                appendLog(ConfigUtil.logLine("[WAIT] " + side + "连接已就绪"));
+                appendLog(LogUtil.logLine(UiConstants.LOG_WAIT + sideLabel + "连接已就绪"));
                 return conn;
             }
             try {
@@ -1327,7 +1333,7 @@ public class DataSyncUI extends JFrame {
         }
         
         // 超时：返回 null，syncTableWithConn 内部会自动创建连接
-        appendLog(ConfigUtil.logLine("[WAIT] " + side + "连接等待超时，将自动创建新连接"));
+        appendLog(LogUtil.logLine(UiConstants.LOG_WAIT + sideLabel + "连接等待超时，将自动创建新连接"));
         return null;
     }
     
@@ -1351,7 +1357,7 @@ public class DataSyncUI extends JFrame {
     
     
     public void appendLog(String msg) {
-        ConfigUtil.appendLog(msg, logArea);
+        LogUtil.appendLog(msg, logArea);
     }
     
     public static class ConnectThread extends Thread {
@@ -1362,15 +1368,15 @@ public class DataSyncUI extends JFrame {
         
         private final JLabel infoLabel;
         
-        private final boolean isSource;
+        private final Side side;
         
         private final boolean isReset;
         
-        public ConnectThread(DataSyncUI dataSyncUI, DataSource ds, JLabel infoLabel, boolean isSource, boolean isReset) {
+        public ConnectThread(DataSyncUI dataSyncUI, DataSource ds, JLabel infoLabel, Side side, boolean isReset) {
             this.dataSyncUI = dataSyncUI;
             this.ds = ds;
             this.infoLabel = infoLabel;
-            this.isSource = isSource;
+            this.side = side;
             this.isReset = isReset;
         }
         
@@ -1381,15 +1387,15 @@ public class DataSyncUI extends JFrame {
                 SwingUtilities.invokeLater(() -> {
                     String result;
                     if (isReset) {
-                        result = "[REFRESH] [SUCCESS] 重新连接成功[" + ds.getSourceName() + "] → " + ds.getDbType().toUpperCase() + " " + ds.getHost()
-                                + ":" + ds.getPort() + "/" + ds.getDbName();
+                        result = UiConstants.LOG_REFRESH + UiConstants.LOG_SUCCESS + "重新连接成功[" + ds.getSourceName() + "] → " + ds.getDbType()
+                                .toUpperCase() + " " + ds.getHost() + ":" + ds.getPort() + "/" + ds.getDbName();
                     } else {
-                        result = "[CONNECT] [SUCCESS] 连接成功[" + ds.getSourceName() + "] → " + ds.getDbType().toUpperCase() + " " + ds.getHost()
-                                + ":" + ds.getPort() + "/" + ds.getDbName();
+                        result = UiConstants.LOG_CONNECT + UiConstants.LOG_SUCCESS + "连接成功[" + ds.getSourceName() + "] → " + ds.getDbType()
+                                .toUpperCase() + " " + ds.getHost() + ":" + ds.getPort() + "/" + ds.getDbName();
                     }
-                    dataSyncUI.appendLog(ConfigUtil.logLine(result));
+                    dataSyncUI.appendLog(LogUtil.logLine(result));
                     // 保存连接
-                    if (isSource) {
+                    if (side == Side.SOURCE) {
                         dataSyncUI.srcConn = new ConnectionWrapper(ds, conn);
                         GlobalUtil.addSrcDataSource(ds);
                     } else {
@@ -1397,22 +1403,22 @@ public class DataSyncUI extends JFrame {
                         GlobalUtil.addTargetDataSource(ds);
                     }
                     infoLabel.setText(ds.getDbType().toUpperCase() + " | " + ds.getHost() + ":" + ds.getPort() + "/" + ds.getDbName());
-                    infoLabel.setFont(new Font("SansSerif", Font.PLAIN, 11));
+                    infoLabel.setFont(UiConstants.FONT_SANS_11);
                     infoLabel.setHorizontalAlignment(SwingConstants.LEADING);
-                    infoLabel.setForeground(Color.GREEN.darker());
+                    infoLabel.setForeground(UiConstants.COLOR_CONNECTED);
                     
                     // 加载元数据
-                    boolean isPg = "postgresql".equalsIgnoreCase(ds.getDbType());
-                    JComboBox<String> sCombo = isSource ? dataSyncUI.srcSyncSchemaCombo : dataSyncUI.tgtSyncSchemaCombo;
-                    JPanel tPanel = isSource ? dataSyncUI.srcSyncTablePanel : dataSyncUI.tgtSyncTablePanel;
+                    boolean isPg = ds.isPostgresql();
+                    JComboBox<String> sCombo = side == Side.SOURCE ? dataSyncUI.srcSyncSchemaCombo : dataSyncUI.tgtSyncSchemaCombo;
+                    JPanel tPanel = side == Side.SOURCE ? dataSyncUI.srcSyncTablePanel : dataSyncUI.tgtSyncTablePanel;
                     
                     // 重置为默认状态
                     if (isPg) {
-                        setModelQuietly(sCombo, new DefaultComboBoxModel<>(new String[] {"（查询中…）"}));
-                        dataSyncUI.setTableCheckItems(tPanel, "（请先选择 Schema）");
+                        setModelQuietly(sCombo, new DefaultComboBoxModel<>(new String[] {UiConstants.PLACEHOLDER_QUERYING}));
+                        dataSyncUI.setTableCheckItems(tPanel, UiConstants.PLACEHOLDER_SELECT_SCHEMA);
                     } else {
-                        setModelQuietly(sCombo, new DefaultComboBoxModel<>(new String[] {"（请先连接）"}));
-                        dataSyncUI.setTableCheckItems(tPanel, "（查询中…）");
+                        setModelQuietly(sCombo, new DefaultComboBoxModel<>(new String[] {UiConstants.PLACEHOLDER_CONNECT_FIRST}));
+                        dataSyncUI.setTableCheckItems(tPanel, UiConstants.PLACEHOLDER_QUERYING);
                     }
                     
                     if (isPg) {
@@ -1425,14 +1431,14 @@ public class DataSyncUI extends JFrame {
                 String failMsg = e.getMessage();
                 SwingUtilities.invokeLater(() -> {
                     if (isReset) {
-                        dataSyncUI.appendLog(ConfigUtil.logLine("[REFRESH] [FAILED] 连接失败" + failMsg));
+                        dataSyncUI.appendLog(LogUtil.logLine(UiConstants.LOG_REFRESH + UiConstants.LOG_FAILED + "连接失败" + failMsg));
                     } else {
-                        dataSyncUI.appendLog(ConfigUtil.logLine("[CONNECT] [FAILED] 连接失败" + failMsg));
+                        dataSyncUI.appendLog(LogUtil.logLine(UiConstants.LOG_CONNECT + UiConstants.LOG_FAILED + "连接失败" + failMsg));
                     }
                     infoLabel.setText("连接失败");
                     infoLabel.setFont(new Font("SansSerif", Font.BOLD, 14));
                     infoLabel.setHorizontalAlignment(SwingConstants.CENTER);
-                    infoLabel.setForeground(Color.RED);
+                    infoLabel.setForeground(UiConstants.COLOR_ERROR);
                 });
             }
         }
@@ -1451,8 +1457,8 @@ public class DataSyncUI extends JFrame {
             return;
         }
         
-        DataSource source = getSelectedSource(true);
-        DataSource target = getSelectedSource(false);
+        DataSource source = getSelectedSource(Side.SOURCE);
+        DataSource target = getSelectedSource(Side.TARGET);
         if (source == null || !source.isValid()) {
             JOptionPane.showMessageDialog(this, "请先选择并连接源数据库", "提示", JOptionPane.WARNING_MESSAGE);
             return;
@@ -1463,8 +1469,8 @@ public class DataSyncUI extends JFrame {
         }
         
         // 等待连接就绪
-        ConnectionWrapper srcWrapper = waitForConnection(srcConn, true);
-        ConnectionWrapper tgtWrapper = waitForConnection(tgtConn, false);
+        ConnectionWrapper srcWrapper = waitForConnection(srcConn, Side.SOURCE);
+        ConnectionWrapper tgtWrapper = waitForConnection(tgtConn, Side.TARGET);
         if (srcWrapper == null || srcWrapper.getConnection() == null) {
             JOptionPane.showMessageDialog(this, "源数据库未连接，请先连接", "提示", JOptionPane.WARNING_MESSAGE);
             return;
@@ -1474,17 +1480,20 @@ public class DataSyncUI extends JFrame {
             return;
         }
         
-        String srcSchema = getSelectedSchema(true);
-        String tgtSchema = getSelectedSchema(false);
+        String srcSchema = getSelectedSchema(Side.SOURCE);
+        String tgtSchema = getSelectedSchema(Side.TARGET);
         
         // 将用户选择的 schema 设置到 DataSource 对象上，确保连接使用正确的 schema
         if (srcSchema != null) {
             source.setSchema(srcSchema);
+            if (!srcSchema.equals(tgtSchema)) {
+                JOptionPane.showMessageDialog(this, "选择的目标数据库模式和源数据库模式不一致", "参数不完整", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
         }
         if (tgtSchema != null) {
             target.setSchema(tgtSchema);
         }
-        
         // 后台执行比较
         new Thread(() -> {
             try {
@@ -1599,7 +1608,7 @@ public class DataSyncUI extends JFrame {
                 
             } catch (Exception ex) {
                 SwingUtilities.invokeLater(() -> {
-                    appendLog(ConfigUtil.logLine("[ERROR] 表结构比较失败: " + ex.getMessage()));
+                    appendLog(LogUtil.logLine(UiConstants.LOG_ERROR + "表结构比较失败: " + ex.getMessage()));
                     JOptionPane.showMessageDialog(this, "比较失败: " + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
                 });
             }
@@ -1609,8 +1618,8 @@ public class DataSyncUI extends JFrame {
     /**
      * 获取当前选中的 Schema（PostgreSQL）或 null（MySQL）
      */
-    private String getSelectedSchema(boolean isSource) {
-        JComboBox<String> combo = isSource ? srcSyncSchemaCombo : tgtSyncSchemaCombo;
+    private String getSelectedSchema(Side side) {
+        JComboBox<String> combo = side == Side.SOURCE ? srcSyncSchemaCombo : tgtSyncSchemaCombo;
         if (combo == null) {
             return null;
         }
@@ -1780,7 +1789,7 @@ public class DataSyncUI extends JFrame {
                     }
                     
                     // 处理 PG 的多条语句合并（用 \n    缩进分隔的子语句，如 ALTER COLUMN）
-                    if ("postgresql".equalsIgnoreCase(tgtDbType)) {
+                    if (DbType.fromString(tgtDbType) == DbType.POSTGRESQL) {
                         // 如果是完整的 ALTER TABLE 语句，记录表名
                         if (sql.startsWith("ALTER TABLE")) {
                             currentPgTable = extractTableNameFromAlter(sql);
@@ -1853,7 +1862,7 @@ public class DataSyncUI extends JFrame {
                         logConsumer.accept("[WARN] 部分语句执行失败，成功: " + finalExecuted + " 条, 失败: " + finalFailed + " 条");
                     }
                     // 同时写入主窗口日志
-                    appendLog(ConfigUtil.logLine("[STRUCT SYNC] 执行完成: 成功 " + finalExecuted + " 条, 失败 " + finalFailed + " 条"));
+                    appendLog(LogUtil.logLine("[STRUCT SYNC] 执行完成: 成功 " + finalExecuted + " 条, 失败 " + finalFailed + " 条"));
                     if (onComplete != null) {
                         onComplete.run();
                     }
@@ -1866,7 +1875,7 @@ public class DataSyncUI extends JFrame {
                 }
                 SwingUtilities.invokeLater(() -> {
                     logConsumer.accept("[ERROR] 结构同步失败: " + ex.getMessage());
-                    appendLog(ConfigUtil.logLine("[ERROR] 结构同步失败: " + ex.getMessage()));
+                    appendLog(LogUtil.logLine(UiConstants.LOG_ERROR + "结构同步失败: " + ex.getMessage()));
                     if (onComplete != null) {
                         onComplete.run();
                     }

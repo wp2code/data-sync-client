@@ -88,7 +88,7 @@ public class DbConnector {
     public static List<String> fetchSchemas(DataSource ds) {
         List<String> schemas = new ArrayList<>();
         schemas.add("public"); // 始终包含默认值
-        if (!"postgresql".equalsIgnoreCase(ds.getDbType()) || !ds.isValid()) {
+        if (!ds.isPostgresql() || !ds.isValid()) {
             return schemas;
         }
         try (Connection conn = getConnection(ds);
@@ -117,7 +117,7 @@ public class DbConnector {
         List<String> tables = new ArrayList<>();
         if (!ds.isValid()) return tables;
         try (Connection conn = getConnection(ds)) {
-            if ("postgresql".equalsIgnoreCase(ds.getDbType())) {
+            if (ds.isPostgresql()) {
                 // PostgreSQL: 使用 schema 模式查询
                 try (ResultSet rs = conn.getMetaData().getTables(null, schema, "%", new String[]{"TABLE"})) {
                     while (rs.next()) {
@@ -159,7 +159,7 @@ public class DbConnector {
         try (Connection conn = getConnection(ds)) {
             String catalog = null;
             String schemaPattern = schema;
-            if (!"postgresql".equalsIgnoreCase(ds.getDbType())) {
+            if (!ds.isPostgresql()) {
                 catalog = ds.getDbName();
                 schemaPattern = null;
             }
@@ -190,7 +190,7 @@ public class DbConnector {
         try (Connection conn = getConnection(ds)) {
             String catalog = null;
             String schemaPattern = schema;
-            if (!"postgresql".equalsIgnoreCase(ds.getDbType())) {
+            if (!ds.isPostgresql()) {
                 catalog = ds.getDbName();
                 schemaPattern = null;
             }
@@ -235,7 +235,7 @@ public class DbConnector {
         try (Connection conn = getConnection(ds)) {
             String catalog = null;
             String schemaPattern = schema;
-            if (!"postgresql".equalsIgnoreCase(ds.getDbType())) {
+            if (!ds.isPostgresql()) {
                 catalog = ds.getDbName();
                 schemaPattern = null;
             }
@@ -302,7 +302,7 @@ public class DbConnector {
         try (Connection conn = getConnection(ds)) {
             String catalog = null;
             String schemaPattern = schema;
-            if (!"postgresql".equalsIgnoreCase(ds.getDbType())) {
+            if (!ds.isPostgresql()) {
                 catalog = ds.getDbName();
                 schemaPattern = null;
             }
