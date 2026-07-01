@@ -1195,7 +1195,7 @@ public class DataSyncUI extends JFrame {
                 return;
             }
             if (!srcSchema.equals(tgtSchema)) {
-                JOptionPane.showMessageDialog(this, "选择的目标数据库模式和源数据库模式不一致", "参数不完整", JOptionPane.WARNING_MESSAGE);
+                JOptionPane.showMessageDialog(this, "选择的目标数据库模式和源数据库模式不一致", "提示", JOptionPane.WARNING_MESSAGE);
                 return;
             }
         }
@@ -1487,7 +1487,7 @@ public class DataSyncUI extends JFrame {
         if (srcSchema != null) {
             source.setSchema(srcSchema);
             if (!srcSchema.equals(tgtSchema)) {
-                JOptionPane.showMessageDialog(this, "选择的目标数据库模式和源数据库模式不一致", "参数不完整", JOptionPane.WARNING_MESSAGE);
+                JOptionPane.showMessageDialog(this, "选择的目标数据库模式和源数据库模式不一致", "提示", JOptionPane.WARNING_MESSAGE);
                 return;
             }
         }
