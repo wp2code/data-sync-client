@@ -31,6 +31,10 @@ public class DataSourceManagerDialog extends JDialog {
     
     private final JTextField editDbNameField;
     
+    private final JLabel editSchemaLabel;
+    
+    private final JTextField editSchemaField;
+    
     private final JTextField editUserField;
     
     private final JPasswordField editPassField;
@@ -75,7 +79,7 @@ public class DataSourceManagerDialog extends JDialog {
         });
         
         JScrollPane tableScroll = new JScrollPane(configTable);
-        tableScroll.setPreferredSize(new Dimension(680, 150));
+        tableScroll.setPreferredSize(new Dimension(680, 125));
         topPanel.add(tableScroll, BorderLayout.CENTER);
         
         // 表格右侧按钮
@@ -96,17 +100,24 @@ public class DataSourceManagerDialog extends JDialog {
         gbc.insets = new Insets(8, 12, 8, 12);
         
         editNameField = new JTextField(20);
-        editDbTypeCombo = new JComboBox<>(new String[] {"MySQL", "PostgreSQL"});
+        editDbTypeCombo = new JComboBox<>(new String[] {"PostgreSQL", "MySQL"});
         editDbTypeCombo.setPreferredSize(new Dimension(200, 26));
         editHostField = new JTextField("localhost", 20);
-        editPortField = new JTextField("3306", 8);
+        editPortField = new JTextField("5432", 8);
         editDbNameField = new JTextField(20);
+        editSchemaField = new JTextField("public", 20);
         editUserField = new JTextField(20);
         editPassField = new JPasswordField(20);
         
+        editSchemaLabel = new JLabel("Schema：");
+        
         editDbTypeCombo.addActionListener(e -> {
             String type = (String) editDbTypeCombo.getSelectedItem();
-            editPortField.setText(DataSource.getDefaultPort(type != null ? type.toLowerCase() : "mysql"));
+            editPortField.setText(DataSource.getDefaultPort(type != null ? type.toLowerCase() : "PostgreSQL"));
+            // 仅在选中 PostgreSQL 时显示 Schema 行
+            boolean isPg = "PostgreSQL".equals(type);
+            editSchemaLabel.setVisible(isPg);
+            editSchemaField.setVisible(isPg);
         });
         
         int row = 0;
@@ -115,6 +126,21 @@ public class DataSourceManagerDialog extends JDialog {
         addFormRow(formPanel, gbc, row++, "主机地址：", editHostField);
         addFormRow(formPanel, gbc, row++, "端　　口：", editPortField);
         addFormRow(formPanel, gbc, row++, "数据库名：", editDbNameField);
+        // Schema 行：手动添加以便单独控制 label/field 可见性
+        {
+            gbc.gridy = row++;
+            gbc.gridx = 0;
+            gbc.weightx = 0.12;
+            gbc.ipady = 4;
+            gbc.anchor = GridBagConstraints.EAST;
+            editSchemaLabel.setBorder(new EmptyBorder(0, 0, 0, 0));
+            formPanel.add(editSchemaLabel, gbc);
+            gbc.gridx = 1;
+            gbc.weightx = 0.88;
+            gbc.anchor = GridBagConstraints.WEST;
+            formPanel.add(editSchemaField, gbc);
+            gbc.ipady = 0;
+        }
         addFormRow(formPanel, gbc, row++, "用户名：", editUserField);
         addFormRow(formPanel, gbc, row++, "密　　码：", editPassField);
         
@@ -230,6 +256,11 @@ public class DataSourceManagerDialog extends JDialog {
         editHostField.setText(ds.getHost());
         editPortField.setText(ds.getPort());
         editDbNameField.setText(ds.getDbName());
+        editSchemaField.setText(ds.getSchema() != null ? ds.getSchema() : "public");
+        // 根据数据库类型设置 Schema 行可见性
+        boolean isPg = "postgresql".equalsIgnoreCase(ds.getDbType());
+        editSchemaLabel.setVisible(isPg);
+        editSchemaField.setVisible(isPg);
         editUserField.setText(ds.getUsername());
         editPassField.setText(ds.getPassword());
         setStatus("已加载配置: " + ds.getSourceName());
@@ -240,8 +271,11 @@ public class DataSourceManagerDialog extends JDialog {
         editNameField.setText("");
         editDbTypeCombo.setSelectedIndex(0);
         editHostField.setText("localhost");
-        editPortField.setText("3306");
+        editPortField.setText("5432");
         editDbNameField.setText("");
+        editSchemaField.setText("public");
+        editSchemaLabel.setVisible(true);
+        editSchemaField.setVisible(true);
         editUserField.setText("");
         editPassField.setText("");
         configTable.clearSelection();
@@ -255,6 +289,7 @@ public class DataSourceManagerDialog extends JDialog {
         ds.setHost(editHostField.getText().trim());
         ds.setPort(editPortField.getText().trim());
         ds.setDbName(editDbNameField.getText().trim());
+        ds.setSchema(editSchemaField.getText().trim());
         ds.setUsername(editUserField.getText().trim());
         ds.setPassword(new String(editPassField.getPassword()));
         return ds;

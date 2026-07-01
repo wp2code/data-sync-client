@@ -272,6 +272,66 @@ public class DbConnector {
     }
 
     /**
+     * 索引详细信息
+     */
+    public static class IndexDetail {
+        public String indexName;
+        public String columnName;
+        public boolean nonUnique;      // true=非唯一索引, false=唯一索引
+        public short ordinalPosition;  // 列在索引中的位置（1-based）
+        public String ascOrDesc;       // "A"=升序, "D"=降序
+
+        @Override
+        public String toString() {
+            return indexName + (nonUnique ? " (INDEX)" : " (UNIQUE)") + " ON " + columnName
+                    + ("D".equals(ascOrDesc) ? " DESC" : "");
+        }
+    }
+
+    /**
+     * 查询指定表的所有索引信息
+     *
+     * @param ds        数据源配置
+     * @param tableName 表名
+     * @param schema    PostgreSQL 时为 schema 名，MySQL 时为 null
+     * @return 索引详情列表
+     */
+    public static List<IndexDetail> fetchIndexes(DataSource ds, String tableName, String schema) {
+        List<IndexDetail> indexes = new ArrayList<>();
+        if (!ds.isValid() || tableName == null || tableName.isBlank()) return indexes;
+        try (Connection conn = getConnection(ds)) {
+            String catalog = null;
+            String schemaPattern = schema;
+            if (!"postgresql".equalsIgnoreCase(ds.getDbType())) {
+                catalog = ds.getDbName();
+                schemaPattern = null;
+            }
+            try (ResultSet rs = conn.getMetaData().getIndexInfo(catalog, schemaPattern, tableName, false, false)) {
+                while (rs.next()) {
+                    // 排除统计类索引和表统计行
+                    short type = rs.getShort("TYPE");
+                    if (type == java.sql.DatabaseMetaData.tableIndexStatistic) continue;
+
+                    String indexName = rs.getString("INDEX_NAME");
+                    // 排除主键索引（主键索引由列比较处理）
+                    if (indexName == null || "PRIMARY".equalsIgnoreCase(indexName)) continue;
+
+                    IndexDetail idx = new IndexDetail();
+                    idx.indexName = indexName;
+                    idx.columnName = rs.getString("COLUMN_NAME");
+                    idx.nonUnique = rs.getBoolean("NON_UNIQUE");
+                    idx.ordinalPosition = rs.getShort("ORDINAL_POSITION");
+                    idx.ascOrDesc = rs.getString("ASC_OR_DESC");
+                    indexes.add(idx);
+                }
+            }
+        } catch (Exception e) {
+            // 不抛异常，返回空列表
+        }
+        return indexes;
+    }
+
+    /**
      * 批量关闭数据库资源（Statement、ResultSet、Connection）
      */
     public static void closeResources(Connection conn, Statement stmt, ResultSet rs) {

@@ -448,7 +448,6 @@ public class DataSyncService {
                                                    DataSource srcDs, DataSource tgtDs) {
         List<ColumnDiff> diffs = new ArrayList<>();
         String tgtDbType = tgtDs.getDbType();
-        String srcDbType = srcDs.getDbType();
 
         // 源表列名 -> 列详情映射
         java.util.Map<String, DbConnector.ColumnDetail> srcMap = new java.util.LinkedHashMap<>();
@@ -508,26 +507,177 @@ public class DataSyncService {
     }
 
     /**
-     * 根据差异列表生成完整的 ALTER TABLE 脚本
+     * 比较源表和目标表的索引差异，返回索引差异列表
      *
-     * @param tableName 表名（裸表名）
-     * @param diffs     差异列表
-     * @param tgtDbType 目标库类型
-     * @param schema    目标库 schema（MySQL 为 null，PostgreSQL 为 schema 名）
+     * @param srcIndexes 源表索引详情
+     * @param tgtIndexes 目标表索引详情
+     * @param tgtDbType  目标库类型（用于 SQL 生成）
+     * @param tgtSchema  目标库 schema（PostgreSQL 时为 schema 名，MySQL 时为 null）
+     * @return 索引差异列表
      */
-    public String generateAlterScript(String tableName, List<ColumnDiff> diffs, String tgtDbType, String schema) {
-        if (diffs.isEmpty()) {
-            return "-- 表结构一致，无需修改\n";
+    public List<IndexDiff> compareIndexes(List<DbConnector.IndexDetail> srcIndexes,
+                                           List<DbConnector.IndexDetail> tgtIndexes,
+                                           String tgtDbType, String tgtSchema) {
+        List<IndexDiff> diffs = new ArrayList<>();
+
+        // 按索引名分组: 索引名 → 列名列表（保持顺序）
+        java.util.Map<String, List<DbConnector.IndexDetail>> srcIdxMap = groupIndexesByName(srcIndexes);
+        java.util.Map<String, List<DbConnector.IndexDetail>> tgtIdxMap = groupIndexesByName(tgtIndexes);
+
+        // 1. 目标表缺少的索引（需 ADD）
+        for (String idxName : srcIdxMap.keySet()) {
+            if (!tgtIdxMap.containsKey(idxName)) {
+                List<DbConnector.IndexDetail> idxCols = srcIdxMap.get(idxName);
+                IndexDiff diff = new IndexDiff();
+                diff.type = DiffType.ADD_INDEX;
+                diff.indexName = idxName;
+                diff.srcIndexColumns = idxCols;
+                diff.alterSql = buildAddIndexSql(idxName, idxCols, tgtDbType);
+                diffs.add(diff);
+            }
         }
+
+        // 2. 目标表多余的索引（需 DROP）
+        for (String idxName : tgtIdxMap.keySet()) {
+            if (!srcIdxMap.containsKey(idxName)) {
+                IndexDiff diff = new IndexDiff();
+                diff.type = DiffType.DROP_INDEX;
+                diff.indexName = idxName;
+                diff.tgtIndexColumns = tgtIdxMap.get(idxName);
+                diff.alterSql = buildDropIndexSql(idxName, tgtDbType, tgtSchema);
+                diffs.add(diff);
+            }
+        }
+
+        // 3. 同名索引但定义不同（列或唯一性不同）
+        for (String idxName : srcIdxMap.keySet()) {
+            List<DbConnector.IndexDetail> srcCols = srcIdxMap.get(idxName);
+            List<DbConnector.IndexDetail> tgtCols = tgtIdxMap.get(idxName);
+            if (tgtCols != null && !indexesEqual(srcCols, tgtCols)) {
+                IndexDiff diff = new IndexDiff();
+                diff.type = DiffType.MODIFY_INDEX;
+                diff.indexName = idxName;
+                diff.srcIndexColumns = srcCols;
+                diff.tgtIndexColumns = tgtCols;
+                // 修改索引 = 先 DROP 再 ADD
+                diff.alterSql = buildDropIndexSql(idxName, tgtDbType, tgtSchema) + ";\n"
+                        + buildAddIndexSql(idxName, srcCols, tgtDbType);
+                diffs.add(diff);
+            }
+        }
+
+        return diffs;
+    }
+
+    /**
+     * 按索引名分组，同一索引的多列按 ordinalPosition 排序
+     */
+    private java.util.Map<String, List<DbConnector.IndexDetail>> groupIndexesByName(List<DbConnector.IndexDetail> indexes) {
+        java.util.Map<String, List<DbConnector.IndexDetail>> map = new java.util.LinkedHashMap<>();
+        for (DbConnector.IndexDetail idx : indexes) {
+            map.computeIfAbsent(idx.indexName, k -> new ArrayList<>()).add(idx);
+        }
+        // 每组内按 ordinalPosition 排序
+        for (List<DbConnector.IndexDetail> cols : map.values()) {
+            cols.sort((a, b) -> Short.compare(a.ordinalPosition, b.ordinalPosition));
+        }
+        return map;
+    }
+
+    /**
+     * 判断两个索引是否相同（比较列列表和唯一性）
+     */
+    private boolean indexesEqual(List<DbConnector.IndexDetail> a, List<DbConnector.IndexDetail> b) {
+        if (a.size() != b.size()) return false;
+        for (int i = 0; i < a.size(); i++) {
+            DbConnector.IndexDetail ia = a.get(i);
+            DbConnector.IndexDetail ib = b.get(i);
+            if (!ia.columnName.equalsIgnoreCase(ib.columnName)) return false;
+            if (ia.nonUnique != ib.nonUnique) return false;
+            // 比较排序方向（null 视为 "A"）
+            String dirA = ia.ascOrDesc != null ? ia.ascOrDesc : "A";
+            String dirB = ib.ascOrDesc != null ? ib.ascOrDesc : "A";
+            if (!dirA.equals(dirB)) return false;
+        }
+        return true;
+    }
+
+    /**
+     * 构建 CREATE INDEX 语句
+     */
+    private String buildAddIndexSql(String indexName, List<DbConnector.IndexDetail> cols, String dbType) {
+        StringBuilder sql = new StringBuilder();
+        boolean isUnique = !cols.isEmpty() && !cols.get(0).nonUnique;
+
+        sql.append("CREATE ");
+        if (isUnique) {
+            sql.append("UNIQUE ");
+        }
+        sql.append("INDEX ");
+        if ("postgresql".equalsIgnoreCase(dbType)) {
+            sql.append("\"").append(indexName).append("\"");
+        } else {
+            sql.append("`").append(indexName).append("`");
+        }
+        sql.append(" ON "); // 表名由 generateAlterScript 拼接
+
+        // 列列表
+        StringBuilder colList = new StringBuilder();
+        for (DbConnector.IndexDetail col : cols) {
+            if (!colList.isEmpty()) colList.append(", ");
+            String quotedCol = "postgresql".equalsIgnoreCase(dbType)
+                    ? "\"" + col.columnName + "\"" : "`" + col.columnName + "`";
+            colList.append(quotedCol);
+            if ("D".equals(col.ascOrDesc)) {
+                colList.append(" DESC");
+            }
+        }
+        sql.append("(").append(colList).append(")");
+
+        return sql.toString();
+    }
+
+    /**
+     * 构建 DROP INDEX 语句
+     */
+    private String buildDropIndexSql(String indexName, String dbType, String schema) {
+        if ("postgresql".equalsIgnoreCase(dbType)) {
+            // PostgreSQL: DROP INDEX 需要带上 schema 前缀
+            if (schema != null && !schema.isBlank()) {
+                return "DROP INDEX IF EXISTS \"" + schema + "\".\"" + indexName + "\"";
+            }
+            return "DROP INDEX IF EXISTS \"" + indexName + "\"";
+        }
+        // MySQL: DROP INDEX ON table
+        return "DROP INDEX `" + indexName + "`";
+    }
+
+    /**
+     * 根据差异列表生成完整的 ALTER TABLE 脚本（含索引差异）
+     *
+     * @param tableName  表名（裸表名）
+     * @param diffs      列差异列表
+     * @param tgtDbType  目标库类型
+     * @param schema     目标库 schema（MySQL 为 null，PostgreSQL 为 schema 名）
+     * @param indexDiffs 索引差异列表（可为 null 或空）
+     */
+    public String generateAlterScript(String tableName, List<ColumnDiff> diffs, String tgtDbType, String schema,
+                                       List<IndexDiff> indexDiffs) {
         StringBuilder script = new StringBuilder();
         String fullName = buildFullTableName(tableName, tgtDbType, schema);
+
+        int totalDiffs = diffs.size() + (indexDiffs != null ? indexDiffs.size() : 0);
+        if (totalDiffs == 0) {
+            return "-- 表结构一致，无需修改\n";
+        }
+
         script.append("-- ============================================\n");
         script.append("-- 表结构同步脚本: ").append(fullName).append("\n");
         script.append("-- 目标库类型: ").append(tgtDbType.toUpperCase()).append("\n");
-        script.append("-- 差异数: ").append(diffs.size()).append("\n");
+        script.append("-- 差异数: ").append(totalDiffs).append("\n");
         script.append("-- ============================================\n\n");
 
-        // 按类型排序：ADD 在前，MODIFY/COMMENT 在中，DROP 在后
+        // 按类型排序：ADD 在前，MODIFY/COMMENT 在中，DROP 在后，索引在列之后
         java.util.List<ColumnDiff> sorted = new java.util.ArrayList<>(diffs);
         sorted.sort((a, b) -> {
             int orderA = a.type == DiffType.ADD_COLUMN ? 0 :
@@ -542,20 +692,15 @@ public class DataSyncService {
 
             if (diff.type == DiffType.COMMENT_DIFF) {
                 if ("postgresql".equalsIgnoreCase(tgtDbType)) {
-                    // PG: COMMENT ON COLUMN 是独立语句
                     String commentSql = buildPgCommentSql(diff.srcColumn, diff.tgtColumn, fullName);
                     if (commentSql != null) {
                         script.append(commentSql).append(";\n\n");
                     }
                 } else {
-                    // MySQL: COMMENT 子句包含在 MODIFY COLUMN 中，但 COMMENT_DIFF 说明只有注释不同
-                    // 仍然需要 MODIFY COLUMN 来修改注释
                     script.append("ALTER TABLE ").append(fullName).append(" ").append(diff.alterSql).append(";\n\n");
                 }
             } else if (diff.type == DiffType.MODIFY_COLUMN) {
-                // ALTER TABLE 子句
                 script.append("ALTER TABLE ").append(fullName).append(" ").append(diff.alterSql).append(";\n\n");
-                // PG: 如果注释也有变化，额外输出独立的 COMMENT ON COLUMN 语句
                 if ("postgresql".equalsIgnoreCase(tgtDbType) && diff.srcColumn != null && diff.tgtColumn != null) {
                     String commentSql = buildPgCommentSql(diff.srcColumn, diff.tgtColumn, fullName);
                     if (commentSql != null) {
@@ -563,9 +708,7 @@ public class DataSyncService {
                     }
                 }
             } else {
-                // ADD_COLUMN / DROP_COLUMN
                 script.append("ALTER TABLE ").append(fullName).append(" ").append(diff.alterSql).append(";\n\n");
-                // PG ADD COLUMN 后也设置注释
                 if (diff.type == DiffType.ADD_COLUMN && "postgresql".equalsIgnoreCase(tgtDbType)
                         && diff.srcColumn != null && diff.srcColumn.comment != null && !diff.srcColumn.comment.isBlank()) {
                     String quotedCol = "\"" + diff.srcColumn.columnName + "\"";
@@ -575,8 +718,62 @@ public class DataSyncService {
             }
         }
 
+        // 索引差异 DDL
+        if (indexDiffs != null && !indexDiffs.isEmpty()) {
+            script.append("-- ============================================\n");
+            script.append("-- 索引差异\n");
+            script.append("-- ============================================\n\n");
+
+            // 先 DROP 后 ADD/新建
+            List<IndexDiff> sortedIdx = new java.util.ArrayList<>(indexDiffs);
+            sortedIdx.sort((a, b) -> {
+                int orderA = a.type == DiffType.DROP_INDEX ? 0 :
+                             a.type == DiffType.ADD_INDEX ? 2 : 1;
+                int orderB = b.type == DiffType.DROP_INDEX ? 0 :
+                             b.type == DiffType.ADD_INDEX ? 2 : 1;
+                return Integer.compare(orderA, orderB);
+            });
+
+            for (IndexDiff idxDiff : sortedIdx) {
+                script.append("-- ").append(idxDiff.type.getLabel()).append(": ").append(idxDiff.indexName)
+                        .append(" (").append(idxDiff.getColumnNames()).append(")");
+                if (idxDiff.isUnique()) script.append(" UNIQUE");
+                script.append("\n");
+
+                if (idxDiff.type == DiffType.MODIFY_INDEX) {
+                    // 先 DROP 再 CREATE
+                    String dropSql = buildDropIndexSql(idxDiff.indexName, tgtDbType, schema);
+                    String addSql = buildAddIndexSql(idxDiff.indexName, idxDiff.srcIndexColumns, tgtDbType);
+                    // DROP INDEX 对于 MySQL 需要表名
+                    if ("postgresql".equalsIgnoreCase(tgtDbType)) {
+                        script.append(dropSql).append(";\n");
+                    } else {
+                        script.append("ALTER TABLE ").append(fullName).append(" ").append(dropSql).append(";\n");
+                    }
+                    script.append(addSql.replace(" ON ", " ON " + fullName + " ")).append(";\n\n");
+                } else if (idxDiff.type == DiffType.ADD_INDEX) {
+                    String addSql = buildAddIndexSql(idxDiff.indexName, idxDiff.srcIndexColumns, tgtDbType);
+                    script.append(addSql.replace(" ON ", " ON " + fullName + " ")).append(";\n\n");
+                } else if (idxDiff.type == DiffType.DROP_INDEX) {
+                    String dropSql = buildDropIndexSql(idxDiff.indexName, tgtDbType, schema);
+                    if ("postgresql".equalsIgnoreCase(tgtDbType)) {
+                        script.append(dropSql).append(";\n\n");
+                    } else {
+                        script.append("ALTER TABLE ").append(fullName).append(" ").append(dropSql).append(";\n\n");
+                    }
+                }
+            }
+        }
+
         script.append("-- 脚本生成完毕\n");
         return script.toString();
+    }
+
+    /**
+     * 根据差异列表生成完整的 ALTER TABLE 脚本（仅列差异，向后兼容）
+     */
+    public String generateAlterScript(String tableName, List<ColumnDiff> diffs, String tgtDbType, String schema) {
+        return generateAlterScript(tableName, diffs, tgtDbType, schema, null);
     }
 
     /**
@@ -795,13 +992,16 @@ public class DataSyncService {
     }
 
     /**
-     * 列差异类型
+     * 差异类型（列 + 索引）
      */
     public enum DiffType {
         ADD_COLUMN("新增列"),
         DROP_COLUMN("删除多余列"),
         MODIFY_COLUMN("修改列"),
-        COMMENT_DIFF("注释差异");
+        COMMENT_DIFF("注释差异"),
+        ADD_INDEX("新增索引"),
+        DROP_INDEX("删除多余索引"),
+        MODIFY_INDEX("修改索引");
 
         private final String label;
 
@@ -836,6 +1036,45 @@ public class DataSyncService {
                 sb.append("\n  SQL: ").append(alterSql);
             }
             return sb.toString();
+        }
+    }
+
+    /**
+     * 索引差异详情
+     */
+    public static class IndexDiff {
+        public DiffType type;
+        public String indexName;
+        public List<DbConnector.IndexDetail> srcIndexColumns;
+        public List<DbConnector.IndexDetail> tgtIndexColumns;
+        public String alterSql;
+
+        /**
+         * 获取索引包含的列名（逗号分隔）
+         */
+        public String getColumnNames() {
+            List<DbConnector.IndexDetail> cols = srcIndexColumns != null ? srcIndexColumns : tgtIndexColumns;
+            if (cols == null || cols.isEmpty()) return "";
+            StringBuilder sb = new StringBuilder();
+            for (DbConnector.IndexDetail col : cols) {
+                if (!sb.isEmpty()) sb.append(", ");
+                sb.append(col.columnName);
+            }
+            return sb.toString();
+        }
+
+        /**
+         * 是否为唯一索引
+         */
+        public boolean isUnique() {
+            List<DbConnector.IndexDetail> cols = srcIndexColumns != null ? srcIndexColumns : tgtIndexColumns;
+            return cols != null && !cols.isEmpty() && !cols.get(0).nonUnique;
+        }
+
+        @Override
+        public String toString() {
+            return "[" + type.getLabel() + "] " + indexName + " (" + getColumnNames() + ")"
+                    + (isUnique() ? " UNIQUE" : "");
         }
     }
 }

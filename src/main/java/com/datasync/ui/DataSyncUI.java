@@ -623,6 +623,16 @@ public class DataSyncUI extends JFrame {
         }
         ds.setSchema(schema);
         
+        // 切换已有连接的 search_path，确保后续查询使用用户选中的 schema
+        ConnectionWrapper connWrapper = isSource ? srcConn : tgtConn;
+        if (connWrapper != null && connWrapper.getConnection() != null && "postgresql".equalsIgnoreCase(ds.getDbType())) {
+            try {
+                connWrapper.getConnection().createStatement().execute("SET search_path TO " + schema + ", public");
+            } catch (Exception ignored) {
+                // 忽略 SET 失败
+            }
+        }
+        
         fetchTablesInBackground(tablePanel, ds, schema);
     }
     
@@ -1072,6 +1082,17 @@ public class DataSyncUI extends JFrame {
                 schemas.add(0, "（请选择 Schema）");
                 DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(schemas.toArray(new String[0]));
                 schemaCombo.setModel(model);
+                // 如果 DataSource 中已保存了 schema 配置，自动选中它
+                String savedSchema = ds.getSchema();
+                if (savedSchema != null && !savedSchema.isBlank() && !"public".equals(savedSchema)) {
+                    // 检查该 schema 是否在列表中
+                    for (int i = 1; i < schemas.size(); i++) {
+                        if (savedSchema.equals(schemas.get(i))) {
+                            schemaCombo.setSelectedItem(savedSchema);
+                            break;
+                        }
+                    }
+                }
             });
         }).start();
     }
@@ -1456,6 +1477,14 @@ public class DataSyncUI extends JFrame {
         String srcSchema = getSelectedSchema(true);
         String tgtSchema = getSelectedSchema(false);
         
+        // 将用户选择的 schema 设置到 DataSource 对象上，确保连接使用正确的 schema
+        if (srcSchema != null) {
+            source.setSchema(srcSchema);
+        }
+        if (tgtSchema != null) {
+            target.setSchema(tgtSchema);
+        }
+        
         // 后台执行比较
         new Thread(() -> {
             try {
@@ -1477,47 +1506,84 @@ public class DataSyncUI extends JFrame {
                         continue;
                     }
                     
+                    // 列差异
                     List<DataSyncService.ColumnDiff> diffs = syncService.compareTableStructure(srcCols, tgtCols, source, target);
                     
-                    if (diffs.isEmpty()) {
+                    // 索引差异
+                    List<DbConnector.IndexDetail> srcIndexes = DbConnector.fetchIndexes(source, tableName, srcSchema);
+                    List<DbConnector.IndexDetail> tgtIndexes = DbConnector.fetchIndexes(target, tableName, tgtSchema);
+                    List<DataSyncService.IndexDiff> indexDiffs = syncService.compareIndexes(srcIndexes, tgtIndexes, target.getDbType(), tgtSchema);
+                    
+                    boolean hasColDiff = !diffs.isEmpty();
+                    boolean hasIdxDiff = !indexDiffs.isEmpty();
+                    
+                    if (!hasColDiff && !hasIdxDiff) {
                         summaryDetailHtml.append("<p style='color:green;'><b>").append(tableName).append("</b>: 结构一致 ✓</p>");
                     } else {
                         hasAnyDiff = true;
-                        totalDiffs += diffs.size();
-                        summaryDetailHtml.append("<p><b>").append(tableName).append("</b>: ").append(diffs.size()).append(" 处差异</p>");
-                        summaryDetailHtml.append("<ul>");
-                        for (DataSyncService.ColumnDiff diff : diffs) {
-                            String icon = diff.type == DataSyncService.DiffType.ADD_COLUMN ? "+"
-                                    : diff.type == DataSyncService.DiffType.DROP_COLUMN ? "-"
-                                            : diff.type == DataSyncService.DiffType.COMMENT_DIFF ? "💬" : "~";
-                            String color = diff.type == DataSyncService.DiffType.ADD_COLUMN ? "green"
-                                    : diff.type == DataSyncService.DiffType.DROP_COLUMN ? "red"
-                                            : diff.type == DataSyncService.DiffType.COMMENT_DIFF ? "#6B7280" : "orange";
-                            summaryDetailHtml.append("<li style='color:").append(color).append(";'>").append(icon).append(" ")
-                                    .append(diff.type.getLabel()).append(": <code>").append(diff.columnName).append("</code>");
-                            if (diff.type == DataSyncService.DiffType.MODIFY_COLUMN && diff.tgtColumn != null) {
-                                summaryDetailHtml.append(" (").append(diff.tgtColumn.dataType)
-                                        .append(diff.tgtColumn.columnSize > 0 ? "(" + diff.tgtColumn.columnSize + ")" : "").append(" → ")
-                                        .append(diff.srcColumn.dataType)
-                                        .append(diff.srcColumn.columnSize > 0 ? "(" + diff.srcColumn.columnSize + ")" : "").append(")");
-                            }
-                            if (diff.type == DataSyncService.DiffType.COMMENT_DIFF && diff.tgtColumn != null && diff.srcColumn != null) {
-                                String tgtCmt = diff.tgtColumn.comment != null && !diff.tgtColumn.comment.isBlank() ? diff.tgtColumn.comment : "(空)";
-                                String srcCmt = diff.srcColumn.comment != null && !diff.srcColumn.comment.isBlank() ? diff.srcColumn.comment : "(空)";
-                                summaryDetailHtml.append(" (注释: \"").append(tgtCmt).append("\" → \"").append(srcCmt).append("\")");
-                            }
-                            summaryDetailHtml.append("</li>");
-                        }
-                        summaryDetailHtml.append("</ul>");
+                        int tableDiffs = diffs.size() + indexDiffs.size();
+                        totalDiffs += tableDiffs;
+                        summaryDetailHtml.append("<p><b>").append(tableName).append("</b>: ").append(tableDiffs).append(" 处差异（列 ")
+                                .append(diffs.size()).append(" / 索引 ").append(indexDiffs.size()).append("）</p>");
                         
-                        // 生成 ALTER TABLE 脚本（传入目标库 schema）
-                        String alterScript = syncService.generateAlterScript(tableName, diffs, target.getDbType(), tgtSchema);
+                        // 列差异详情
+                        if (hasColDiff) {
+                            summaryDetailHtml.append("<ul>");
+                            for (DataSyncService.ColumnDiff diff : diffs) {
+                                String icon = diff.type == DataSyncService.DiffType.ADD_COLUMN ? "+"
+                                        : diff.type == DataSyncService.DiffType.DROP_COLUMN ? "-"
+                                                : diff.type == DataSyncService.DiffType.COMMENT_DIFF ? "💬" : "~";
+                                String color = diff.type == DataSyncService.DiffType.ADD_COLUMN ? "green"
+                                        : diff.type == DataSyncService.DiffType.DROP_COLUMN ? "red"
+                                                : diff.type == DataSyncService.DiffType.COMMENT_DIFF ? "#6B7280" : "orange";
+                                summaryDetailHtml.append("<li style='color:").append(color).append(";'>").append(icon).append(" ")
+                                        .append(diff.type.getLabel()).append(": <code>").append(diff.columnName).append("</code>");
+                                if (diff.type == DataSyncService.DiffType.MODIFY_COLUMN && diff.tgtColumn != null) {
+                                    summaryDetailHtml.append(" (").append(diff.tgtColumn.dataType)
+                                            .append(diff.tgtColumn.columnSize > 0 ? "(" + diff.tgtColumn.columnSize + ")" : "").append(" → ")
+                                            .append(diff.srcColumn.dataType)
+                                            .append(diff.srcColumn.columnSize > 0 ? "(" + diff.srcColumn.columnSize + ")" : "").append(")");
+                                }
+                                if (diff.type == DataSyncService.DiffType.COMMENT_DIFF && diff.tgtColumn != null && diff.srcColumn != null) {
+                                    String tgtCmt =
+                                            diff.tgtColumn.comment != null && !diff.tgtColumn.comment.isBlank() ? diff.tgtColumn.comment : "(空)";
+                                    String srcCmt =
+                                            diff.srcColumn.comment != null && !diff.srcColumn.comment.isBlank() ? diff.srcColumn.comment : "(空)";
+                                    summaryDetailHtml.append(" (注释: \"").append(tgtCmt).append("\" → \"").append(srcCmt).append("\")");
+                                }
+                                summaryDetailHtml.append("</li>");
+                            }
+                            summaryDetailHtml.append("</ul>");
+                        }
+                        
+                        // 索引差异详情
+                        if (hasIdxDiff) {
+                            summaryDetailHtml.append("<ul>");
+                            for (DataSyncService.IndexDiff idxDiff : indexDiffs) {
+                                String icon = idxDiff.type == DataSyncService.DiffType.ADD_INDEX ? "+"
+                                        : idxDiff.type == DataSyncService.DiffType.DROP_INDEX ? "-" : "~";
+                                String color = idxDiff.type == DataSyncService.DiffType.ADD_INDEX ? "green"
+                                        : idxDiff.type == DataSyncService.DiffType.DROP_INDEX ? "red" : "orange";
+                                summaryDetailHtml.append("<li style='color:").append(color).append(";'>").append(icon).append(" ")
+                                        .append(idxDiff.type.getLabel()).append(": <code>").append(idxDiff.indexName).append("</code>").append(" (")
+                                        .append(idxDiff.getColumnNames()).append(")");
+                                if (idxDiff.isUnique()) {
+                                    summaryDetailHtml.append(" <b>UNIQUE</b>");
+                                }
+                                summaryDetailHtml.append("</li>");
+                            }
+                            summaryDetailHtml.append("</ul>");
+                        }
+                        
+                        // 生成 ALTER TABLE 脚本（含索引差异）
+                        String alterScript = syncService.generateAlterScript(tableName, diffs, target.getDbType(), tgtSchema, indexDiffs);
                         allScripts.append(alterScript).append("\n");
                     }
                 }
                 summaryDetailHtml.append("</body></html>");
                 StringBuilder summaryHtml = new StringBuilder();
-                summaryHtml.append("<html><body  style='font-family:SansSerif;font-size:13px;'>共检查 <b>").append(srcTables.size()).append("</b> 个表");
+                summaryHtml.append("<html><body style='font-family:SansSerif;font-size:13px;'>共检查 <b>").append(srcTables.size())
+                        .append("</b> 个表");
                 if (hasAnyDiff) {
                     summaryHtml.append("，发现 <b style='color:red;'>").append(totalDiffs).append("</b> 处差异");
                 } else {
@@ -1529,8 +1595,7 @@ public class DataSyncUI extends JFrame {
                 final String finalSummary = summaryHtml.toString();
                 final String finalScripts = allScripts.toString();
                 
-                SwingUtilities.invokeLater(
-                        () -> showDiffResultDialog(finalSummaryDetail, finalSummary, finalScripts, finalHasDiff, target.getDbType()));
+                SwingUtilities.invokeLater(() -> showDiffResultDialog(finalSummaryDetail, finalSummary, finalScripts, finalHasDiff, target));
                 
             } catch (Exception ex) {
                 SwingUtilities.invokeLater(() -> {
@@ -1564,7 +1629,7 @@ public class DataSyncUI extends JFrame {
     /**
      * 弹窗展示结构差异结果和 ALTER 脚本
      */
-    private void showDiffResultDialog(String summaryDetailHtml, String summaryHtml, String alterScript, boolean hasDiff, String tgtDbType) {
+    private void showDiffResultDialog(String summaryDetailHtml, String summaryHtml, String alterScript, boolean hasDiff, DataSource target) {
         JDialog dialog = new JDialog(this, "表结构差异比较结果", false);
         dialog.setSize(850, 750);
         dialog.setLocationRelativeTo(this);
@@ -1625,7 +1690,12 @@ public class DataSyncUI extends JFrame {
             
             // 按钮行
             JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 5));
-            
+            JButton clearBtn = new JButton("清空日志");
+            clearBtn.addActionListener(e -> {
+                execLogArea.setCaretPosition(0);
+                execLogArea.setText("");
+            });
+            btnPanel.add(clearBtn);
             JButton copyBtn = new JButton("复制脚本到剪贴板");
             copyBtn.addActionListener(e -> {
                 java.awt.Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new java.awt.datatransfer.StringSelection(alterScript), null);
@@ -1637,13 +1707,14 @@ public class DataSyncUI extends JFrame {
             applyBtn.setBackground(new Color(0x3E4EDC));
             applyBtn.setForeground(Color.WHITE);
             applyBtn.addActionListener(e -> {
-                int confirm = JOptionPane.showConfirmDialog(dialog, "确定要在目标库执行以下 ALTER TABLE 脚本吗？\n此操作将修改目标库表结构！",
-                        "确认执行", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+                int confirm = JOptionPane.showConfirmDialog(dialog,
+                        "确定要在目标库[" + target.getSourceName() + "]执行以下 ALTER TABLE 脚本吗？\n此操作将修改目标库表结构！", "确认执行",
+                        JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
                 if (confirm == JOptionPane.YES_OPTION) {
                     applyBtn.setEnabled(false);
                     copyBtn.setEnabled(false);
                     dialogLogConsumer.accept("[INFO] ======== 开始执行结构同步脚本 ========");
-                    executeAlterScript(alterScript, tgtDbType, dialogLogConsumer, () -> {
+                    executeAlterScript(alterScript, target.getDbType(), dialogLogConsumer, () -> {
                         SwingUtilities.invokeLater(() -> {
                             applyBtn.setEnabled(true);
                             copyBtn.setEnabled(true);
@@ -1715,8 +1786,8 @@ public class DataSyncUI extends JFrame {
                             currentPgTable = extractTableNameFromAlter(sql);
                         }
                         
-                        // COMMENT ON COLUMN 是独立语句，直接执行，不拆分不加前缀
-                        if (sql.startsWith("COMMENT ON COLUMN")) {
+                        // COMMENT ON COLUMN / CREATE INDEX / DROP INDEX 是独立语句，直接执行
+                        if (sql.startsWith("COMMENT ON COLUMN") || sql.startsWith("CREATE ") || sql.startsWith("DROP INDEX")) {
                             try {
                                 stmt.executeUpdate(sql);
                                 executed++;
