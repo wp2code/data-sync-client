@@ -117,7 +117,7 @@ public class DataSourceManagerDialog extends JDialog {
         editUserField = new JTextField(20);
         editPassField = new JPasswordField(20);
         
-        editSchemaLabel = new JLabel("Schema：");
+        editSchemaLabel = new JLabel("        模式：");
         
         editDbTypeCombo.addActionListener(e -> {
             IconItem item = editDbTypeCombo.getSelectedItem();
@@ -133,11 +133,11 @@ public class DataSourceManagerDialog extends JDialog {
         });
         
         int row = 0;
-        addFormRow(formPanel, gbc, row++, "配置名称：", editNameField);
+        addFormRow(formPanel, gbc, row++, "   配置名称：", editNameField);
         addFormRow(formPanel, gbc, row++, "数据库类型：", editDbTypeCombo);
-        addFormRow(formPanel, gbc, row++, "主机地址：", editHostField);
-        addFormRow(formPanel, gbc, row++, "端　　口：", editPortField);
-        addFormRow(formPanel, gbc, row++, "数据库名：", editDbNameField);
+        addFormRow(formPanel, gbc, row++, "  主机地址：", editHostField);
+        addFormRow(formPanel, gbc, row++, "  端　　口：", editPortField);
+        addFormRow(formPanel, gbc, row++, "  数据库名：", editDbNameField);
         // Schema 行：手动添加以便单独控制 label/field 可见性
         {
             gbc.gridy = row++;
@@ -153,8 +153,8 @@ public class DataSourceManagerDialog extends JDialog {
             formPanel.add(editSchemaField, gbc);
             gbc.ipady = 0;
         }
-        addFormRow(formPanel, gbc, row++, "用户名：", editUserField);
-        addFormRow(formPanel, gbc, row++, "密　　码：", editPassField);
+        addFormRow(formPanel, gbc, row++, "     用户名：", editUserField);
+        addFormRow(formPanel, gbc, row++, "   密　　码：", editPassField);
         
         // 在表单底部添加弹性空白，让表单内容靠上对齐
         gbc.gridy = row;

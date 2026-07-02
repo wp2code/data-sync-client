@@ -1,10 +1,18 @@
 package com.datasync.util;
 
 import com.datasync.core.DbType;
+import javax.swing.*;
+import org.apache.batik.transcoder.TranscoderInput;
+import org.apache.batik.transcoder.TranscoderOutput;
+import org.apache.batik.transcoder.image.PNGTranscoder;
+
+import javax.imageio.ImageIO;
+import javax.swing.ImageIcon;
 import java.awt.*;
 import java.awt.geom.*;
 import java.awt.image.*;
-import javax.swing.*;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 
 /**
  * 为 MySQL / PostgreSQL 生成小尺寸程序化图标，供 ComboBox、JTable、JLabel 等组件使用。
@@ -69,12 +77,12 @@ public final class IconUtil {
     public static ImageIcon getDbTypeIcon(DbType dbType) {
         if (dbType == DbType.POSTGRESQL) {
             if (postgresqlIcon == null) {
-                postgresqlIcon = createPostgreSqlIcon();
+                postgresqlIcon = loadSvgIcon("postgresql.svg");
             }
             return postgresqlIcon;
         }
         if (mysqlIcon == null) {
-            mysqlIcon = createMySqlIcon();
+            mysqlIcon = loadSvgIcon("mysql.svg");
         }
         return mysqlIcon;
     }
@@ -86,7 +94,46 @@ public final class IconUtil {
         return getDbTypeIcon(DbType.fromString(dbTypeStr));
     }
     
-    // ── 图标绘制 ──
+    /**
+     * 从 classpath 加载 SVG 图标文件，转换为指定尺寸的 ImageIcon
+     */
+    private static ImageIcon loadSvgIcon(String resourceName) {
+        try {
+            PNGTranscoder transcoder = new PNGTranscoder();
+            transcoder.addTranscodingHint(PNGTranscoder.KEY_WIDTH, (float) ICON_SIZE);
+            transcoder.addTranscodingHint(PNGTranscoder.KEY_HEIGHT, (float) ICON_SIZE);
+            
+            try (InputStream svgStream = IconUtil.class.getResourceAsStream("/" + resourceName)) {
+                if (svgStream != null) {
+                    TranscoderInput input = new TranscoderInput(svgStream);
+                    ByteArrayOutputStream pngStream = new ByteArrayOutputStream();
+                    TranscoderOutput output = new TranscoderOutput(pngStream);
+                    transcoder.transcode(input, output);
+                    
+                    byte[] pngBytes = pngStream.toByteArray();
+                    BufferedImage img = ImageIO.read(new java.io.ByteArrayInputStream(pngBytes));
+                    return new ImageIcon(img);
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Failed to load SVG icon: " + resourceName + ", falling back to generated icon");
+        }
+        
+        // SVG 加载失败时的后备图标
+        return createFallbackIcon(resourceName);
+    }
+    
+    /**
+     * SVG 加载失败时的后备图标
+     */
+    private static ImageIcon createFallbackIcon(String resourceName) {
+        if (resourceName.contains("postgresql")) {
+            return createPostgreSqlIcon();
+        }
+        return createMySqlIcon();
+    }
+    
+    // ── 后备图标绘制 ──
     
     private static ImageIcon createMySqlIcon() {
         BufferedImage img = new BufferedImage(ICON_SIZE, ICON_SIZE, BufferedImage.TYPE_INT_ARGB);

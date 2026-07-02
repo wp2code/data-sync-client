@@ -26,11 +26,9 @@ public enum DbType {
         this.displayName = displayName;
     }
     
-    public static IconItem POSTGRESQL_ITEM = new IconItem(IconUtil.getDbTypeIcon(DbType.POSTGRESQL), DbType.POSTGRESQL.getDisplayName());
+    public static final IconItem POSTGRESQL_ITEM = new IconItem(IconUtil.getDbTypeIcon(DbType.POSTGRESQL), DbType.POSTGRESQL.getDisplayName());
     
-    public static IconItem MYSQL_ITEM = new IconItem(IconUtil.getDbTypeIcon(DbType.MYSQL), DbType.MYSQL.getDisplayName());
-    
-    public static final IconItem FIRST_ITEM = new IconItem(null, UiConstants.PLACEHOLDER_SELECT_SOURCE);
+    public static final IconItem MYSQL_ITEM = new IconItem(IconUtil.getDbTypeIcon(DbType.MYSQL), DbType.MYSQL.getDisplayName());
     
     /**
      * 从字符串解析数据库类型，不区分大小写。默认返回 MYSQL。

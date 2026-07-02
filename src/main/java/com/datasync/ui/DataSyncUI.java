@@ -3,7 +3,8 @@ package com.datasync.ui;
 import com.datasync.components.ChildLayoutPanel;
 import com.datasync.components.CustomTextField;
 import com.datasync.components.LinkJLabel;
-import com.datasync.components.combobox.DbTypeListCellRenderer;
+import com.datasync.components.combobox.IconItem;
+import com.datasync.components.combobox.IconJComboBox;
 import com.datasync.core.ConnectionWrapper;
 import com.datasync.core.DataSource;
 import com.datasync.core.DataSyncService;
@@ -37,12 +38,12 @@ import javax.swing.event.DocumentEvent;
 public class DataSyncUI extends JFrame {
     
     // ────────── 源库选择组件 ──────────
-    private JComboBox<String> srcConfigCombo;
+    private IconJComboBox srcConfigCombo;
     
     private JLabel srcInfoLabel;
     
     // ────────── 目标库选择组件 ──────────
-    private JComboBox<String> tgtConfigCombo;
+    private IconJComboBox tgtConfigCombo;
     
     private JLabel tgtInfoLabel;
     
@@ -97,7 +98,7 @@ public class DataSyncUI extends JFrame {
     // ────────── UI 初始化 ──────────
     
     private void initUI() {
-        setTitle("DataSync Client — 数据同步工具 v1.0");
+        setTitle("DataSync");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setSize(980, 780);
         setLocationRelativeTo(null);
@@ -163,7 +164,7 @@ public class DataSyncUI extends JFrame {
         panel.setBorder(new EmptyBorder(12, 20, 8, 20));
         
         JLabel title = new JLabel("DataSync Client");
-        title.setFont(new Font("SansSerif", Font.BOLD, 22));
+        title.setFont(UiConstants.FONT_SANS_BOLD_22);
         panel.add(title, BorderLayout.WEST);
         
         JButton manageBtn = new JButton("管理数据源");
@@ -171,7 +172,7 @@ public class DataSyncUI extends JFrame {
         panel.add(manageBtn, BorderLayout.EAST);
         
         JLabel subtitle = new JLabel("不同环境数据同步工具");
-        subtitle.setFont(new Font("SansSerif", Font.PLAIN, 13));
+        subtitle.setFont(UiConstants.FONT_MONO_12);
         subtitle.setForeground(Color.GRAY);
         panel.add(subtitle, BorderLayout.SOUTH);
         
@@ -185,23 +186,21 @@ public class DataSyncUI extends JFrame {
      */
     private JPanel createDbSidePanel(Side side) {
         String title = side == Side.SOURCE ? "源数据库 (Source)" : "目标数据库 (Target)";
-        Color accentColor = side == Side.SOURCE ? new Color(0x4F46E5) : new Color(0x059669); // 源=蓝紫, 目标=绿
+        Color accentColor = side == Side.SOURCE ? UiConstants.COLOR_PRIMARY : UiConstants.COLOR_SUCCESS; // 源=蓝紫, 目标=绿
         JPanel sourcePanel = new JPanel(new BorderLayout(5, 5));
         TitledBorder titledBorder = BorderFactory.createTitledBorder(title);
         titledBorder.setTitleColor(accentColor);
-        titledBorder.setTitleFont(new Font("SansSerif", Font.BOLD, 13));
+        titledBorder.setTitleFont(UiConstants.FONT_SANS_BOLD_14);
         sourcePanel.setBorder(BorderFactory.createCompoundBorder(titledBorder, new EmptyBorder(6, 8, 6, 8)));
         // ── 标签固定宽度 ──
         Dimension labelDim = new Dimension(55, 25);
-        
         // ── 数据源选择行 ──
         JPanel configRow = new JPanel(new BorderLayout(5, 0));
-        
         JLabel configLabel = new JLabel("数据源:", SwingConstants.RIGHT);
         configLabel.setFont(UiConstants.FONT_MONO_12);
         configLabel.setPreferredSize(labelDim);
         configRow.add(configLabel, BorderLayout.WEST);
-        JComboBox<String> configCombo = new JComboBox<>();
+        IconJComboBox configCombo = new IconJComboBox();
         configCombo.setFont(UiConstants.FONT_MONO_12);
         configRow.add(configCombo, BorderLayout.CENTER);
         
@@ -318,9 +317,11 @@ public class DataSyncUI extends JFrame {
                 return;
             }
             Object sel = configCombo.getSelectedItem();
-            if (sel != null && !UiConstants.PLACEHOLDER_SELECT_SOURCE.equals(sel.toString()) && !UiConstants.PLACEHOLDER_NONE.equals(sel.toString())
-                    && !UiConstants.PLACEHOLDER_NO_MATCHING.equals(sel.toString())) {
-                DataSource ds = ConfigUtil.loadDataSourceByName(sel.toString());
+            // 获取显示文本（可能是 IconItem 或普通字符串）
+            String selText = sel instanceof IconItem item ? item.getText() : (sel != null ? sel.toString() : null);
+            if (selText != null && !UiConstants.PLACEHOLDER_SELECT_SOURCE.equals(selText) && !UiConstants.PLACEHOLDER_NONE.equals(selText)
+                    && !UiConstants.PLACEHOLDER_NO_MATCHING.equals(selText)) {
+                DataSource ds = ConfigUtil.loadDataSourceByName(selText);
                 final String srcDataSource = GlobalUtil.getSrcDataSource();
                 if (ds != null && (srcDataSource == null || !srcDataSource.equals(ds.getSourceName()))) {
                     doAutoConnect(ds, title, side, infoLabel);
@@ -422,9 +423,9 @@ public class DataSyncUI extends JFrame {
         appendLog(LogUtil.logLine(UiConstants.LOG_CONNECT + "正在连接 " + title + "…"));
         infoLabel.setIcon(null);
         infoLabel.setText("连接中…");
-        infoLabel.setFont(new Font("SansSerif", Font.BOLD, 14));
+        infoLabel.setFont(UiConstants.FONT_SANS_BOLD_14);
         infoLabel.setHorizontalAlignment(SwingConstants.CENTER);
-        infoLabel.setForeground(Color.ORANGE);
+        infoLabel.setForeground(UiConstants.COLOR_CONNECTING);
         final ConnectThread connectThread = new ConnectThread(this, ds, infoLabel, side, false);
         connectThread.start();
     }
@@ -438,8 +439,8 @@ public class DataSyncUI extends JFrame {
         
         // 同步图标/方向指示
         JLabel arrowLabel = new JLabel("→");
-        arrowLabel.setFont(new Font("SansSerif", Font.BOLD, 72));
-        arrowLabel.setForeground(new Color(0x4F46E5));
+        arrowLabel.setFont(UiConstants.FONT_SANS_BOLD_100);
+        arrowLabel.setForeground(UiConstants.COLOR_PRIMARY);
         arrowLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
         
         syncButton = new JButton("开始同步");
@@ -451,12 +452,12 @@ public class DataSyncUI extends JFrame {
                 compareTableStructure();
             }
         });
-        syncButton.setFont(new Font("SansSerif", Font.BOLD, 16));
+        syncButton.setFont(UiConstants.FONT_SANS_BOLD_16);
         syncButton.setAlignmentX(Component.CENTER_ALIGNMENT);
         syncButton.addActionListener(e -> startSync());
         
         truncateCheckBox = new JCheckBox("同步前先清空目标表");
-        truncateCheckBox.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        truncateCheckBox.setFont(UiConstants.FONT_SANS_12);
         truncateCheckBox.setAlignmentX(Component.CENTER_ALIGNMENT);
         truncateCheckBox.setToolTipText("勾选后，同步数据前会先清空（TRUNCATE）目标表所有数据");
         
@@ -476,27 +477,30 @@ public class DataSyncUI extends JFrame {
     // ────────── 日志面板 ──────────
     
     private JPanel createLogPanel() {
-        JPanel panel = new JPanel(new BorderLayout());
+        JPanel panel = new JPanel(new BorderLayout(0, 5));
         panel.setBorder(BorderFactory.createCompoundBorder(new TitledBorder("运行日志"), new EmptyBorder(5, 12, 8, 12)));
         panel.setPreferredSize(new Dimension(850, 350));
         
         logArea = new JEditorPane();
         logArea.setEditable(false);
         logArea.setContentType("text/html");
-        logArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
-        logArea.setBackground(new Color(30, 30, 30));
-        logArea.setForeground(new Color(200, 200, 200));
+        logArea.setFont(UiConstants.FONT_MONO_12);
+        logArea.setBackground(UiConstants.COLOR_LOG_BG);
+        logArea.setForeground(UiConstants.COLOR_LOG_FG);
         
         JScrollPane scrollPane = new JScrollPane(logArea);
         scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
         panel.add(scrollPane, BorderLayout.CENTER);
         
         JButton clearBtn = new JButton("清空日志");
+        
         clearBtn.addActionListener(e -> {
             LogUtil.clearLog(logArea);
         });
-        JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        btnPanel.add(clearBtn);
+        JPanel btnPanel = new JPanel(new BorderLayout());
+        final LinkJLabel versionLink = new LinkJLabel(UiConstants.VERSION, UiConstants.GITHUB_ADDR);
+        btnPanel.add(versionLink, BorderLayout.WEST);
+        btnPanel.add(clearBtn, BorderLayout.EAST);
         panel.add(btnPanel, BorderLayout.SOUTH);
         
         return panel;
@@ -527,11 +531,11 @@ public class DataSyncUI extends JFrame {
         }
     }
     
-    private void refreshSingleCombo(JComboBox<String> combo, String filterDbType, String excludeName) {
-        String selected = (String) combo.getSelectedItem();
+    private void refreshSingleCombo(IconJComboBox combo, String filterDbType, String excludeName) {
+        String selected = combo.getSelectedItem() != null ? combo.getSelectedItem().getText() : null;
         combo.removeAllItems();
-        // 始终在第一项添加提示
-        combo.addItem(UiConstants.PLACEHOLDER_SELECT_SOURCE);
+        // 始终在第一项添加提示（不带图标）
+        combo.addItem(new IconItem(null, UiConstants.PLACEHOLDER_SELECT_SOURCE));
         List<String> names = ConfigUtil.loadAllSourceNames();
         List<String> filtered = new ArrayList<>();
         for (String name : names) {
@@ -549,29 +553,34 @@ public class DataSyncUI extends JFrame {
             }
         }
         if (filtered.isEmpty()) {
-            combo.addItem(filterDbType != null ? UiConstants.PLACEHOLDER_NO_MATCHING : UiConstants.PLACEHOLDER_NONE);
+            combo.addItem(new IconItem(null, filterDbType != null ? UiConstants.PLACEHOLDER_NO_MATCHING : UiConstants.PLACEHOLDER_NONE));
         } else {
-            filtered.forEach(combo::addItem);
+            for (String name : filtered) {
+                DataSource ds = ConfigUtil.loadDataSourceByName(name);
+                DbType dbType = ds != null ? ds.getDbTypeEnum() : DbType.MYSQL;
+                combo.addItem(new IconItem(IconUtil.getDbTypeIcon(dbType), name));
+            }
         }
         // 尝试恢复之前的选中项（被排除的项不能恢复），否则选中提示项
         if (selected != null && !selected.equals(excludeName) && !UiConstants.PLACEHOLDER_SELECT_SOURCE.equals(selected)
                 && !UiConstants.PLACEHOLDER_NONE.equals(selected) && !UiConstants.PLACEHOLDER_NO_MATCHING.equals(selected)) {
-            combo.setSelectedItem(selected);
+            combo.setSelectedItem(new IconItem(null, selected));
         } else {
-            combo.setSelectedItem(UiConstants.PLACEHOLDER_SELECT_SOURCE);
+            combo.setSelectedItem(new IconItem(null, UiConstants.PLACEHOLDER_SELECT_SOURCE));
         }
     }
     
     // ────────── 获取选中数据源 ──────────
     
     private DataSource getSelectedSource(Side side) {
-        JComboBox<String> combo = side == Side.SOURCE ? srcConfigCombo : tgtConfigCombo;
+        IconJComboBox combo = side == Side.SOURCE ? srcConfigCombo : tgtConfigCombo;
         Object sel = combo.getSelectedItem();
+        String selText = sel instanceof IconItem item ? item.getText() : (sel != null ? sel.toString() : null);
         if (sel == null || UiConstants.PLACEHOLDER_SELECT_SOURCE.equals(sel.toString()) || UiConstants.PLACEHOLDER_NONE.equals(sel.toString())
-                || UiConstants.PLACEHOLDER_NO_MATCHING.equals(sel.toString())) {
+                || UiConstants.PLACEHOLDER_NO_MATCHING.equals(selText)) {
             return null;
         }
-        return ConfigUtil.loadDataSourceByName(sel.toString());
+        return ConfigUtil.loadDataSourceByName(selText);
     }
     
     /**
@@ -598,7 +607,7 @@ public class DataSyncUI extends JFrame {
             closeConnection(Side.TARGET, false);
             tgtInfoLabel.setIcon(null);
             tgtInfoLabel.setText(UiConstants.PLACEHOLDER_SELECT_SOURCE);
-            tgtInfoLabel.setFont(new Font("SansSerif", Font.PLAIN, 11));
+            tgtInfoLabel.setFont(UiConstants.FONT_SANS_11);
             tgtInfoLabel.setHorizontalAlignment(SwingConstants.CENTER);
             tgtInfoLabel.setForeground(Color.GRAY);
         }
@@ -676,7 +685,7 @@ public class DataSyncUI extends JFrame {
      * 导出选中表的 CREATE TABLE DDL（结构SQL），先弹窗预览，支持一键复制和导出到文件
      */
     private void exportStructureScript(JPanel tablePanel) {
-        List<String> checkedTables = getCheckedTables(tablePanel);
+        List<String> checkedTables = GlobalUtil.getCheckedTables(tablePanel);
         if (checkedTables.isEmpty()) {
             JOptionPane.showMessageDialog(this, "请先勾选需要导出的表", "提示", JOptionPane.INFORMATION_MESSAGE);
             return;
@@ -760,7 +769,7 @@ public class DataSyncUI extends JFrame {
         // ── DDL 文本区域 ──
         JTextArea textArea = new JTextArea(ddl);
         textArea.setEditable(false);
-        textArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
+        textArea.setFont(UiConstants.FONT_MONO_12);
         textArea.setTabSize(4);
         textArea.setCaretPosition(0);
         JScrollPane scrollPane = new JScrollPane(textArea);
@@ -829,14 +838,13 @@ public class DataSyncUI extends JFrame {
         if (items.length == 1 && items[0] != null && items[0].startsWith("（")) {
             // 提示文字
             JLabel hint = new JLabel(items[0], SwingConstants.CENTER);
-            hint.setFont(new Font("SansSerif", Font.PLAIN, 12));
+            hint.setFont(UiConstants.FONT_SANS_12);
             hint.setForeground(Color.GRAY);
             panel.add(hint);
         } else {
             for (String item : items) {
                 JCheckBox checkBox = new JCheckBox(item);
-                checkBox.setFont(new Font("SansSerif", Font.PLAIN, 12));
-                //                checkBox.setBackground(Color.WHITE);
+                checkBox.setFont(UiConstants.FONT_SANS_12);
                 panel.add(checkBox);
             }
         }
@@ -844,21 +852,6 @@ public class DataSyncUI extends JFrame {
         panel.repaint();
     }
     
-    /**
-     * 获取面板中所有勾选的复选框文本。
-     */
-    private List<String> getCheckedTables(JPanel panel) {
-        List<String> checked = new ArrayList<>();
-        for (Component comp : panel.getComponents()) {
-            if (comp instanceof JCheckBox) {
-                JCheckBox cb = (JCheckBox) comp;
-                if (cb.isSelected()) {
-                    checked.add(cb.getText());
-                }
-            }
-        }
-        return checked;
-    }
     
     /**
      * 全选面板中所有复选框。
@@ -886,7 +879,7 @@ public class DataSyncUI extends JFrame {
      * 导出选中表的 INSERT SQL 脚本到 .sql 文件，支持选择指定列
      */
     private void exportInsertScript(JPanel tablePanel) {
-        List<String> checkedTables = getCheckedTables(tablePanel);
+        List<String> checkedTables = GlobalUtil.getCheckedTables(tablePanel);
         if (checkedTables.isEmpty()) {
             JOptionPane.showMessageDialog(this, "请先勾选需要导出的表", "提示", JOptionPane.INFORMATION_MESSAGE);
             return;
@@ -1046,7 +1039,7 @@ public class DataSyncUI extends JFrame {
         // 提示标签
         JLabel hintLabel = new JLabel("按表选择要导出的列（默认全选）：");
         hintLabel.setBorder(new EmptyBorder(10, 12, 5, 12));
-        hintLabel.setFont(new Font("SansSerif", Font.BOLD, 12));
+        hintLabel.setFont(UiConstants.FONT_SANS_12_BOLD);
         dialog.add(hintLabel, BorderLayout.NORTH);
         
         // 按表分组展示列
@@ -1055,7 +1048,7 @@ public class DataSyncUI extends JFrame {
         // 存储所有复选框引用: 表名 → 该表的复选框列表
         LinkedHashMap<String, List<JCheckBox>> allCheckBoxes = new LinkedHashMap<>();
         
-        for (java.util.Map.Entry<String, List<String>> entry : allTableColumns.entrySet()) {
+        for (Map.Entry<String, List<String>> entry : allTableColumns.entrySet()) {
             String tableName = entry.getKey();
             List<String> columns = entry.getValue();
             
@@ -1065,17 +1058,17 @@ public class DataSyncUI extends JFrame {
             titleRow.setPreferredSize(new Dimension(400, 28));
             titleRow.setMinimumSize(new Dimension(200, 28));
             JLabel tableTitle = new JLabel("▸ " + tableName + "（" + columns.size() + " 列）");
-            tableTitle.setFont(new Font("SansSerif", Font.BOLD, 12));
-            tableTitle.setForeground(new Color(0x4F46E5));
+            tableTitle.setFont(UiConstants.FONT_SANS_12_BOLD);
+            tableTitle.setForeground(UiConstants.COLOR_PRIMARY);
             tableTitle.setVerticalAlignment(SwingConstants.CENTER);
             titleRow.add(tableTitle);
             
             // 该表的全选/全不选按钮
             if (columns.size() > 3) {
                 JButton tbSelectAll = new JButton("全选");
-                tbSelectAll.setFont(new Font("SansSerif", Font.PLAIN, 10));
+                tbSelectAll.setFont(UiConstants.FONT_SANS_10);
                 JButton tbDeselectAll = new JButton("全不选");
-                tbDeselectAll.setFont(new Font("SansSerif", Font.PLAIN, 10));
+                tbDeselectAll.setFont(UiConstants.FONT_SANS_10);
                 titleRow.add(tbSelectAll);
                 titleRow.add(tbDeselectAll);
                 
@@ -1102,7 +1095,7 @@ public class DataSyncUI extends JFrame {
             // 该表的列复选框（流式排列）
             if (columns.isEmpty()) {
                 JLabel noColLabel = new JLabel("   （无法获取列信息）");
-                noColLabel.setFont(new Font("SansSerif", Font.ITALIC, 11));
+                noColLabel.setFont(UiConstants.FONT_SANS_11);
                 noColLabel.setForeground(Color.GRAY);
                 mainPanel.add(noColLabel);
                 allCheckBoxes.put(tableName, new ArrayList<>());
@@ -1112,7 +1105,7 @@ public class DataSyncUI extends JFrame {
                 List<JCheckBox> checkBoxes = new ArrayList<>();
                 for (String col : columns) {
                     JCheckBox cb = new JCheckBox(col, true); // 默认全选
-                    cb.setFont(new Font("SansSerif", Font.PLAIN, 11));
+                    cb.setFont(UiConstants.FONT_SANS_11);
                     cb.setAlignmentX(Component.LEFT_ALIGNMENT);
                     colPanel.add(cb);
                     checkBoxes.add(cb);
@@ -1135,7 +1128,7 @@ public class DataSyncUI extends JFrame {
         // 底部按钮面板
         JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 10));
         JButton cancelIncrementBtn = new JButton("取消自增列");
-        cancelIncrementBtn.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        cancelIncrementBtn.setFont(UiConstants.FONT_SANS_11);
         cancelIncrementBtn.addActionListener(e -> {
             for (java.util.Map.Entry<String, List<String>> entry : allTableColumns.entrySet()) {
                 String tableName = entry.getKey();
@@ -1154,33 +1147,11 @@ public class DataSyncUI extends JFrame {
             }
         });
         btnPanel.add(cancelIncrementBtn);
-        //        JButton selectAllBtn = new JButton("全部全选");
-        //        selectAllBtn.setFont(new Font("SansSerif", Font.PLAIN, 11));
-        //        selectAllBtn.addActionListener(e -> {
-        //            for (List<JCheckBox> cbs : allCheckBoxes.values()) {
-        //                for (JCheckBox cb : cbs) {
-        //                    cb.setSelected(true);
-        //                }
-        //            }
-        //        });
-        
-        //        JButton deselectAllBtn = new JButton("全部取消");
-        //        deselectAllBtn.setFont(new Font("SansSerif", Font.PLAIN, 11));
-        //        deselectAllBtn.addActionListener(e -> {
-        //            for (List<JCheckBox> cbs : allCheckBoxes.values()) {
-        //                for (JCheckBox cb : cbs) {
-        //                    cb.setSelected(false);
-        //                }
-        //            }
-        //        });
-        
         JButton okBtn = new JButton("确定导出");
-        okBtn.setFont(new Font("SansSerif", Font.BOLD, 12));
+        okBtn.setFont(UiConstants.FONT_SANS_12_BOLD);
         JButton cancelBtn = new JButton("取消");
-        cancelBtn.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        cancelBtn.setFont(UiConstants.FONT_SANS_12);
         cancelBtn.addActionListener(e -> dialog.dispose());
-        //        btnPanel.add(selectAllBtn);
-        //        btnPanel.add(deselectAllBtn);
         btnPanel.add(okBtn);
         btnPanel.add(cancelBtn);
         dialog.add(btnPanel, BorderLayout.SOUTH);
@@ -1299,9 +1270,9 @@ public class DataSyncUI extends JFrame {
         // 重新连接
         infoLabel.setIcon(null);
         infoLabel.setText("连接中…");
-        infoLabel.setFont(new Font("SansSerif", Font.BOLD, 14));
+        infoLabel.setFont(UiConstants.FONT_SANS_BOLD_14);
         infoLabel.setHorizontalAlignment(SwingConstants.CENTER);
-        infoLabel.setForeground(Color.ORANGE);
+        infoLabel.setForeground(UiConstants.COLOR_CONNECTING);
         final ConnectThread connectThread = new ConnectThread(this, ds, infoLabel, side, true);
         connectThread.start();
     }
@@ -1329,7 +1300,7 @@ public class DataSyncUI extends JFrame {
         }
         boolean isPostgres = source.isPostgresql();
         // ── 获取复选框选中的源表列表 ──
-        List<String> srcTables = getCheckedTables(srcSyncTablePanel);
+        List<String> srcTables = GlobalUtil.getCheckedTables(srcSyncTablePanel);
         String srcSchema = "";
         String tgtSchema = "";
         if (isPostgres) {
@@ -1586,7 +1557,7 @@ public class DataSyncUI extends JFrame {
                     }
                     infoLabel.setIcon(null);
                     infoLabel.setText("连接失败");
-                    infoLabel.setFont(new Font("SansSerif", Font.BOLD, 14));
+                    infoLabel.setFont(UiConstants.FONT_SANS_BOLD_14);
                     infoLabel.setHorizontalAlignment(SwingConstants.CENTER);
                     infoLabel.setForeground(UiConstants.COLOR_ERROR);
                 });
@@ -1601,7 +1572,7 @@ public class DataSyncUI extends JFrame {
      */
     private void compareTableStructure() {
         // 获取勾选的源表列表
-        List<String> srcTables = getCheckedTables(srcSyncTablePanel);
+        List<String> srcTables = GlobalUtil.getCheckedTables(srcSyncTablePanel);
         if (srcTables.isEmpty()) {
             JOptionPane.showMessageDialog(this, "请先在源库勾选需要比较的表", "提示", JOptionPane.INFORMATION_MESSAGE);
             return;
@@ -1821,18 +1792,18 @@ public class DataSyncUI extends JFrame {
             
             // 上侧：ALTER TABLE 脚本
             JTextArea scriptArea = new JTextArea();
-            scriptArea.setFont(new Font("Monospaced", Font.PLAIN, 11));
+            scriptArea.setFont(UiConstants.FONT_MONO_11);
             scriptArea.setEditable(false);
             scriptArea.setText(alterScript);
-            scriptArea.setBackground(new Color(30, 30, 30));
+            scriptArea.setBackground(UiConstants.COLOR_LOG_BG);
             JScrollPane scriptScroll = new JScrollPane(scriptArea);
             scriptScroll.setBorder(BorderFactory.createTitledBorder("ALTER TABLE 同步脚本"));
             
             // 下侧：执行日志
             JTextArea execLogArea = new JTextArea();
-            execLogArea.setFont(new Font("Monospaced", Font.PLAIN, 11));
+            execLogArea.setFont(UiConstants.FONT_MONO_11);
             execLogArea.setEditable(false);
-            execLogArea.setBackground(new Color(30, 30, 30));
+            execLogArea.setBackground(UiConstants.COLOR_LOG_BG);
             JScrollPane execLogScroll = new JScrollPane(execLogArea);
             execLogScroll.setBorder(BorderFactory.createTitledBorder("执行日志"));
             
@@ -1863,7 +1834,7 @@ public class DataSyncUI extends JFrame {
             btnPanel.add(copyBtn);
             
             JButton applyBtn = new JButton("应用到目标库");
-            applyBtn.setBackground(new Color(0x3E4EDC));
+            applyBtn.setBackground(UiConstants.COLOR_PRIMARY);
             applyBtn.setForeground(Color.WHITE);
             applyBtn.addActionListener(e -> {
                 int confirm = JOptionPane.showConfirmDialog(dialog,
@@ -1933,7 +1904,7 @@ public class DataSyncUI extends JFrame {
                 
                 for (String raw : rawStatements) {
                     // 清洗每段：去掉注释行，提取真正的 SQL
-                    String sql = cleanSql(raw);
+                    String sql = GlobalUtil.cleanSql(raw);
                     if (sql == null) {
                         continue; // 纯注释或空
                     }
@@ -1942,18 +1913,17 @@ public class DataSyncUI extends JFrame {
                     if (DbType.fromString(tgtDbType) == DbType.POSTGRESQL) {
                         // 如果是完整的 ALTER TABLE 语句，记录表名
                         if (sql.startsWith("ALTER TABLE")) {
-                            currentPgTable = extractTableNameFromAlter(sql);
+                            currentPgTable = GlobalUtil.extractTableNameFromAlter(sql);
                         }
-                        
                         // COMMENT ON COLUMN / CREATE INDEX / DROP INDEX 是独立语句，直接执行
                         if (sql.startsWith("COMMENT ON COLUMN") || sql.startsWith("CREATE ") || sql.startsWith("DROP INDEX")) {
                             try {
                                 stmt.executeUpdate(sql);
                                 executed++;
-                                logConsumer.accept("[OK] " + truncateSql(sql));
+                                logConsumer.accept("[OK] " + GlobalUtil.truncateSql(sql));
                             } catch (SQLException ex) {
                                 failed++;
-                                logConsumer.accept("[FAILED] " + ex.getMessage() + " | SQL: " + truncateSql(sql));
+                                logConsumer.accept("[FAILED] " + ex.getMessage() + " | SQL: " + GlobalUtil.truncateSql(sql));
                             }
                             continue;
                         }
@@ -1982,10 +1952,10 @@ public class DataSyncUI extends JFrame {
                             try {
                                 stmt.executeUpdate(subSql);
                                 executed++;
-                                logConsumer.accept("[OK] " + truncateSql(subSql));
+                                logConsumer.accept("[OK] " + GlobalUtil.truncateSql(subSql));
                             } catch (SQLException ex) {
                                 failed++;
-                                logConsumer.accept("[FAILED] " + ex.getMessage() + " | SQL: " + truncateSql(subSql));
+                                logConsumer.accept("[FAILED] " + ex.getMessage() + " | SQL: " + GlobalUtil.truncateSql(subSql));
                             }
                         }
                     } else {
@@ -1993,10 +1963,10 @@ public class DataSyncUI extends JFrame {
                         try {
                             stmt.executeUpdate(sql);
                             executed++;
-                            logConsumer.accept("[OK] " + truncateSql(sql));
+                            logConsumer.accept("[OK] " + GlobalUtil.truncateSql(sql));
                         } catch (SQLException ex) {
                             failed++;
-                            logConsumer.accept("[FAILED] " + ex.getMessage() + " | SQL: " + truncateSql(sql));
+                            logConsumer.accept("[FAILED] " + ex.getMessage() + " | SQL: " + GlobalUtil.truncateSql(sql));
                         }
                     }
                 }
@@ -2037,59 +2007,5 @@ public class DataSyncUI extends JFrame {
                 }
             }
         }).start();
-    }
-    
-    /**
-     * 从 ALTER TABLE 语句中提取完整表名（含 schema 前缀） 如 ALTER TABLE "public"."users" → "public"."users"
-     */
-    private String extractTableNameFromAlter(String alterSql) {
-        String upper = alterSql.toUpperCase();
-        int idx = upper.indexOf("ALTER TABLE ");
-        if (idx < 0) {
-            return null;
-        }
-        String rest = alterSql.substring(idx + 12).trim();
-        
-        // 提取到下一个空格或行尾（即完整表名部分）
-        int spaceIdx = rest.indexOf(' ');
-        if (spaceIdx > 0) {
-            rest = rest.substring(0, spaceIdx);
-        }
-        // 去掉末尾可能的分号
-        if (rest.endsWith(";")) {
-            rest = rest.substring(0, rest.length() - 1);
-        }
-        return rest;
-    }
-    
-    /**
-     * 截断 SQL 用于日志显示
-     */
-    private String truncateSql(String sql) {
-        return sql.length() > 80 ? sql.substring(0, 77) + "..." : sql;
-    }
-    
-    /**
-     * 清洗按分号拆分后的 SQL 片段：去掉注释行，提取真正的 SQL 语句。 返回 null 表示该片段是纯注释或空白，应跳过。
-     */
-    private String cleanSql(String rawFragment) {
-        if (rawFragment == null) {
-            return null;
-        }
-        // 按行拆分，过滤掉注释行和空行
-        String[] lines = rawFragment.split("\n");
-        StringBuilder result = new StringBuilder();
-        for (String line : lines) {
-            String trimmed = line.trim();
-            if (trimmed.isEmpty() || trimmed.startsWith("--")) {
-                continue;
-            }
-            if (!result.isEmpty()) {
-                result.append("\n");
-            }
-            result.append(line); // 保留原始缩进
-        }
-        String sql = result.toString().trim();
-        return sql.isEmpty() ? null : sql;
     }
 }

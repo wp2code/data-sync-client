@@ -27,7 +27,8 @@ public class LinkJLabel extends JLabel {
     
     private Color hoverColor = new Color(59, 72, 221);   // 深蓝
     
-    private final Color visitedColor = new Color(0x68, 0x1D, 0xA8);  // 紫色（已访问）
+    //    private final Color visitedColor = new Color(0x68, 0x1D, 0xA8);  // 紫色（已访问）
+    private final Color visitedColor = normalColor;  // 紫色（已访问）
     
     private boolean underline;
     
