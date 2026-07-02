@@ -1,10 +1,12 @@
 package com.datasync.ui;
 
+import com.datasync.components.DbTypeTableCellRenderer;
+import com.datasync.components.combobox.IconItem;
+import com.datasync.components.combobox.IconJComboBox;
 import com.datasync.core.DataSource;
 import com.datasync.core.DbConnector;
 import com.datasync.core.DbType;
 import com.datasync.util.ConfigUtil;
-import com.datasync.util.LogUtil;
 import java.awt.*;
 import java.util.ArrayList;
 import java.util.List;
@@ -25,7 +27,7 @@ public class DataSourceManagerDialog extends JDialog {
     // 编辑表单
     private final JTextField editNameField;
     
-    private final JComboBox<String> editDbTypeCombo;
+    private final IconJComboBox editDbTypeCombo;
     
     private final JTextField editHostField;
     
@@ -70,6 +72,8 @@ public class DataSourceManagerDialog extends JDialog {
         configTable.getColumnModel().getColumn(2).setPreferredWidth(120);
         configTable.getColumnModel().getColumn(3).setPreferredWidth(60);
         configTable.getColumnModel().getColumn(4).setPreferredWidth(100);
+        configTable.getColumnModel().getColumn(1);
+        configTable.getColumnModel().getColumn(1).setCellRenderer(new DbTypeTableCellRenderer());
         
         configTable.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
@@ -102,7 +106,9 @@ public class DataSourceManagerDialog extends JDialog {
         gbc.insets = new Insets(8, 12, 8, 12);
         
         editNameField = new JTextField(20);
-        editDbTypeCombo = new JComboBox<>(new String[] {"PostgreSQL", "MySQL"});
+        editDbTypeCombo = new IconJComboBox();
+        editDbTypeCombo.addItem(DbType.POSTGRESQL_ITEM);
+        editDbTypeCombo.addItem(DbType.MYSQL_ITEM);
         editDbTypeCombo.setPreferredSize(new Dimension(200, 26));
         editHostField = new JTextField("localhost", 20);
         editPortField = new JTextField("5432", 8);
@@ -114,13 +120,16 @@ public class DataSourceManagerDialog extends JDialog {
         editSchemaLabel = new JLabel("Schema：");
         
         editDbTypeCombo.addActionListener(e -> {
-            String type = (String) editDbTypeCombo.getSelectedItem();
-            DbType dbType = DbType.fromString(type);
-            editPortField.setText(String.valueOf(dbType.getDefaultPort()));
-            // 仅在选中 PostgreSQL 时显示 Schema 行
-            boolean isPg = dbType == DbType.POSTGRESQL;
-            editSchemaLabel.setVisible(isPg);
-            editSchemaField.setVisible(isPg);
+            IconItem item = editDbTypeCombo.getSelectedItem();
+            if (item != null) {
+                final String type = item.getText();
+                DbType dbType = DbType.fromString(type);
+                editPortField.setText(String.valueOf(dbType.getDefaultPort()));
+                // 仅在选中 PostgreSQL 时显示 Schema 行
+                boolean isPg = dbType == DbType.POSTGRESQL;
+                editSchemaLabel.setVisible(isPg);
+                editSchemaField.setVisible(isPg);
+            }
         });
         
         int row = 0;
@@ -162,7 +171,7 @@ public class DataSourceManagerDialog extends JDialog {
         
         statusArea = new JTextArea(2, 50);
         statusArea.setEditable(false);
-        statusArea.setFont(new Font("Monospaced", Font.PLAIN, 11));
+        statusArea.setFont(UiConstants.FONT_MONO_11);
         statusArea.setBackground(new Color(40, 40, 40));
         statusArea.setForeground(new Color(180, 180, 180));
         JScrollPane statusScroll = new JScrollPane(statusArea);
@@ -255,8 +264,7 @@ public class DataSourceManagerDialog extends JDialog {
         editingOriginalName = ds.getSourceName();
         editNameField.setText(ds.getSourceName());
         DbType dbType = ds.getDbTypeEnum();
-        String displayType = dbType == DbType.POSTGRESQL ? "PostgreSQL" : "MySQL";
-        editDbTypeCombo.setSelectedItem(displayType);
+        editDbTypeCombo.setSelectedItem(dbType == DbType.POSTGRESQL ? DbType.POSTGRESQL_ITEM : DbType.MYSQL_ITEM);
         editHostField.setText(ds.getHost());
         editPortField.setText(ds.getPort());
         editDbNameField.setText(ds.getDbName());
@@ -288,8 +296,10 @@ public class DataSourceManagerDialog extends JDialog {
     
     private DataSource buildFromForm() {
         DataSource ds = new DataSource();
-        String type = (String) editDbTypeCombo.getSelectedItem();
-        ds.setDbType(type != null ? type.toLowerCase() : "mysql");
+        final IconItem selectedItem = editDbTypeCombo.getSelectedItem();
+        if (selectedItem != null) {
+            ds.setDbTypeEnum(DbType.fromString(selectedItem.getText().trim()));
+        }
         ds.setHost(editHostField.getText().trim());
         ds.setPort(editPortField.getText().trim());
         ds.setDbName(editDbNameField.getText().trim());
@@ -417,4 +427,5 @@ public class DataSourceManagerDialog extends JDialog {
     private void setStatus(String msg) {
         statusArea.setText(msg);
     }
+    
 }

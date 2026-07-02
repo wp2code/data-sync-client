@@ -2,6 +2,7 @@ package com.datasync.util;
 
 import com.datasync.core.DataSource;
 
+import com.datasync.core.DbType;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -189,7 +190,7 @@ public class SQLiteConfigUtil {
         DataSource ds = new DataSource();
         ds.setId(rs.getLong("id"));
         ds.setSourceName(rs.getString("source_name"));
-        ds.setDbType(rs.getString("db_type"));
+        ds.setDbTypeEnum(DbType.fromString(rs.getString("db_type")));
         ds.setHost(rs.getString("host"));
         ds.setPort(rs.getString("port"));
         ds.setDbName(rs.getString("db_name"));

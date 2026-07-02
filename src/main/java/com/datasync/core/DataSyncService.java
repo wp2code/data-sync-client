@@ -1048,6 +1048,182 @@ public class DataSyncService {
         }
     }
 
+    // ────────── 导出 CREATE TABLE DDL ──────────
+
+    /**
+     * 生成单表的完整 CREATE TABLE DDL（含索引和注释）
+     *
+     * @param ds        数据源配置
+     * @param tableName 表名
+     * @param schema    schema 名（MySQL 为 null，PostgreSQL 为 schema 名）
+     * @return 完整 CREATE TABLE 语句，失败时返回带错误注释的字符串
+     */
+    public String generateCreateTableDDL(DataSource ds, String tableName, String schema) {
+        StringBuilder ddl = new StringBuilder();
+        try {
+            String dbType = ds.getDbType();
+            boolean isPg = isPostgresqlType(dbType);
+            String fullName = buildFullTableName(tableName, dbType, schema);
+
+            List<DbConnector.ColumnDetail> columns = DbConnector.fetchColumnDetails(ds, tableName, schema);
+            if (columns.isEmpty()) {
+                return "-- 无法获取表 " + fullName + " 的列信息\n";
+            }
+
+            List<DbConnector.IndexDetail> indexes = DbConnector.fetchIndexes(ds, tableName, schema);
+
+            // ── 表头注释 ──
+            ddl.append("-- ============================================\n");
+            ddl.append("-- 表结构: ").append(fullName).append("\n");
+            ddl.append("-- 数据库: ").append(dbType.toUpperCase()).append(" | ")
+                    .append(ds.getHost()).append(":").append(ds.getPort()).append("/").append(ds.getDbName()).append("\n");
+            ddl.append("-- 导出时间: ").append(LocalDateTime.now()
+                    .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))).append("\n");
+            ddl.append("-- ============================================\n\n");
+
+            ddl.append("DROP TABLE IF EXISTS ").append(fullName).append(";\n\n");
+            ddl.append("CREATE TABLE ").append(fullName).append(" (\n");
+
+            // ── 列定义 ──
+            List<String> pkColumns = new ArrayList<>();
+            for (int i = 0; i < columns.size(); i++) {
+                DbConnector.ColumnDetail col = columns.get(i);
+                String colDef = buildColumnDefForDDL(col, isPg);
+                ddl.append("    ").append(colDef);
+                if (i < columns.size() - 1 || !pkColumns.isEmpty()) {
+                    ddl.append(",");
+                }
+                ddl.append("\n");
+                if (col.isPrimaryKey) {
+                    pkColumns.add(isPg ? "\"" + col.columnName + "\"" : "`" + col.columnName + "`");
+                }
+            }
+
+            // ── PRIMARY KEY ──
+            if (!pkColumns.isEmpty()) {
+                ddl.append("    PRIMARY KEY (").append(String.join(", ", pkColumns)).append(")\n");
+            }
+
+            // ── 表选项 ──
+            if (isPg) {
+                ddl.append(");\n");
+            } else {
+                ddl.append(") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;\n");
+            }
+
+            // ── PostgreSQL 列注释 ──
+            if (isPg) {
+                ddl.append("\n");
+                for (DbConnector.ColumnDetail col : columns) {
+                    if (col.comment != null && !col.comment.isBlank()) {
+                        ddl.append("COMMENT ON COLUMN ").append(fullName).append(".\"")
+                                .append(col.columnName).append("\" IS '")
+                                .append(escapeSqlString(col.comment.trim())).append("';\n");
+                    }
+                }
+            }
+
+            // ── 索引（独立 CREATE INDEX 语句）──
+            if (!indexes.isEmpty()) {
+                ddl.append("\n");
+                java.util.Map<String, List<DbConnector.IndexDetail>> grouped = groupIndexesByName(indexes);
+                for (java.util.Map.Entry<String, List<DbConnector.IndexDetail>> entry : grouped.entrySet()) {
+                    String idxName = entry.getKey();
+                    List<DbConnector.IndexDetail> idxCols = entry.getValue();
+                    boolean isUnique = !idxCols.get(0).nonUnique;
+
+                    ddl.append("CREATE ");
+                    if (isUnique) ddl.append("UNIQUE ");
+                    ddl.append("INDEX ");
+                    if (isPg) {
+                        ddl.append("\"").append(idxName).append("\"");
+                    } else {
+                        ddl.append("`").append(idxName).append("`");
+                    }
+                    ddl.append(" ON ").append(fullName).append(" (");
+
+                    StringBuilder colList = new StringBuilder();
+                    for (DbConnector.IndexDetail ic : idxCols) {
+                        if (!colList.isEmpty()) colList.append(", ");
+                        if (isPg) {
+                            colList.append("\"").append(ic.columnName).append("\"");
+                        } else {
+                            colList.append("`").append(ic.columnName).append("`");
+                        }
+                        if ("D".equals(ic.ascOrDesc)) {
+                            colList.append(" DESC");
+                        }
+                    }
+                    ddl.append(colList).append(");\n");
+                }
+            }
+
+            ddl.append("\n");
+            return ddl.toString();
+
+        } catch (Exception e) {
+            return "-- [ERROR] 生成 DDL 失败: " + e.getMessage() + "\n";
+        }
+    }
+
+    /**
+     * 为 CREATE TABLE DDL 构建列定义（不同于 ALTER 场景，需区分 PG SERIAL 类型）
+     */
+    private String buildColumnDefForDDL(DbConnector.ColumnDetail col, boolean isPg) {
+        StringBuilder def = new StringBuilder();
+        String quotedName = isPg ? "\"" + col.columnName + "\"" : "`" + col.columnName + "`";
+        def.append(quotedName).append(" ");
+
+        // PostgreSQL: 自增列映射为 SERIAL 类型
+        String typeStr = col.dataType;
+        if (isPg && col.isAutoIncrement) {
+            String upper = typeStr.toUpperCase();
+            if ("INTEGER".equals(upper) || "INT".equals(upper) || "INT4".equals(upper)) {
+                typeStr = "SERIAL";
+            } else if ("BIGINT".equals(upper) || "INT8".equals(upper)) {
+                typeStr = "BIGSERIAL";
+            } else if ("SMALLINT".equals(upper) || "INT2".equals(upper)) {
+                typeStr = "SMALLSERIAL";
+            }
+        }
+        def.append(typeStr);
+
+        if (col.columnSize > 0 && needsSizeForDDL(typeStr, isPg, col.isAutoIncrement)) {
+            def.append("(").append(col.columnSize).append(")");
+        }
+
+        if (!col.nullable) {
+            def.append(" NOT NULL");
+        }
+
+        if (col.defaultValue != null && !col.defaultValue.isBlank()) {
+            def.append(" DEFAULT ").append(col.defaultValue);
+        }
+
+        if (!isPg && col.isAutoIncrement) {
+            def.append(" AUTO_INCREMENT");
+        }
+
+        if (!isPg && col.comment != null && !col.comment.isBlank()) {
+            def.append(" COMMENT '").append(escapeSqlString(col.comment.trim())).append("'");
+        }
+
+        return def.toString();
+    }
+
+    /**
+     * 判断 DDL 中的类型是否需要 SIZE（SERIAL/BIGSERIAL 不需要，与 needsSize 略有不同）
+     */
+    private boolean needsSizeForDDL(String dataType, boolean isPg, boolean isAutoIncrement) {
+        if (isPg && isAutoIncrement) {
+            String upper = dataType.toUpperCase();
+            if ("SERIAL".equals(upper) || "BIGSERIAL".equals(upper) || "SMALLSERIAL".equals(upper)) {
+                return false;
+            }
+        }
+        return needsSize(dataType);
+    }
+
     /**
      * 索引差异详情
      */

@@ -39,13 +39,14 @@ public final class UiConstants {
     public static final Color COLOR_ERROR = Color.RED;
 
     // ─── 字体 ───
+    public static final Font FONT_MONO_11 = new Font("Monospaced", Font.PLAIN, 11);
     public static final Font FONT_MONO_12 = new Font("Monospaced", Font.PLAIN, 12);
     public static final Font FONT_SANS_11 = new Font("SansSerif", Font.PLAIN, 11);
     public static final Font FONT_SANS_12 = new Font("SansSerif", Font.PLAIN, 12);
+    public static final Font FONT_SANS_12_BOLD = new Font("SansSerif", Font.BOLD, 12);
     public static final Font FONT_SANS_BOLD_13 = new Font("SansSerif", Font.BOLD, 13);
     public static final Font FONT_SANS_BOLD_16 = new Font("SansSerif", Font.BOLD, 16);
     public static final Font FONT_SANS_BOLD_22 = new Font("SansSerif", Font.BOLD, 22);
-
     // ─── 尺寸/超时 ───
     public static final int BATCH_SIZE = 500;
     public static final int CONNECT_TIMEOUT_MS = 30_000;
