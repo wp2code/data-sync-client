@@ -8,7 +8,7 @@
  */
 package com.datasync.util;
 
-import com.datasync.core.DataSource;
+import com.datasync.model.DataSource;
 import java.awt.*;
 import java.util.ArrayList;
 import java.util.HashMap;

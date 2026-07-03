@@ -1,6 +1,7 @@
 package com.datasync.util;
 
-import com.datasync.core.DataSource;
+import com.datasync.model.DataSource;
+import com.datasync.model.Script;
 
 import java.util.List;
 
@@ -34,5 +35,30 @@ public final class ConfigUtil {
     /** 删除数据源配置 */
     public static boolean deleteDataSource(String sourceName) {
         return SQLiteConfigUtil.getInstance().deleteDataSource(sourceName);
+    }
+
+    /** 保存新的脚本配置 */
+    public static boolean saveScript(Script script) {
+        return SQLiteConfigUtil.getInstance().saveScript(script);
+    }
+
+    /** 加载所有脚本配置 */
+    public static List<Script> loadAllScripts() {
+        return SQLiteConfigUtil.getInstance().loadAllScripts();
+    }
+
+    /** 根据名称加载脚本配置 */
+    public static Script loadScriptByName(String scriptName) {
+        return SQLiteConfigUtil.getInstance().loadScriptByName(scriptName);
+    }
+
+    /** 更新已有的脚本配置 */
+    public static boolean updateScript(Script script) {
+        return SQLiteConfigUtil.getInstance().updateScript(script);
+    }
+
+    /** 删除脚本配置 */
+    public static boolean deleteScript(Long id) {
+        return SQLiteConfigUtil.getInstance().deleteScript(id);
     }
 }

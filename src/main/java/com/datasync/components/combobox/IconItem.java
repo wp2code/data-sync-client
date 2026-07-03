@@ -1,5 +1,6 @@
 package com.datasync.components.combobox;
 
+import java.util.Objects;
 import javax.swing.*;
 
 /**
@@ -39,5 +40,22 @@ public class IconItem {
     @Override
     public String toString() {
         return text;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) {
+            return true;
+        }
+        if (obj == null || getClass() != obj.getClass()) {
+            return false;
+        }
+        IconItem other = (IconItem) obj;
+        return Objects.equals(text, other.text);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(text);
     }
 }

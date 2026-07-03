@@ -5,12 +5,12 @@ import com.datasync.components.CustomTextField;
 import com.datasync.components.LinkJLabel;
 import com.datasync.components.combobox.IconItem;
 import com.datasync.components.combobox.IconJComboBox;
-import com.datasync.core.ConnectionWrapper;
-import com.datasync.core.DataSource;
+import com.datasync.model.ConnectionWrapper;
+import com.datasync.model.DataSource;
 import com.datasync.core.DataSyncService;
 import com.datasync.core.DbConnector;
-import com.datasync.core.DbType;
-import com.datasync.core.Side;
+import com.datasync.model.DbType;
+import com.datasync.model.Side;
 import com.datasync.util.ConfigUtil;
 import com.datasync.util.GlobalUtil;
 import com.datasync.util.IconUtil;
@@ -162,15 +162,17 @@ public class DataSyncUI extends JFrame {
     private JPanel createHeaderPanel() {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBorder(new EmptyBorder(12, 20, 8, 20));
-        
         JLabel title = new JLabel("DataSync Client");
         title.setFont(UiConstants.FONT_SANS_BOLD_22);
         panel.add(title, BorderLayout.WEST);
-        
+        JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.TRAILING, 5, 0));
+        JButton scriptBtm = new JButton("脚本管理");
+        scriptBtm.addActionListener(e -> openScriptManager());
+        rightPanel.add(scriptBtm);
         JButton manageBtn = new JButton("管理数据源");
         manageBtn.addActionListener(e -> openDataSourceManager());
-        panel.add(manageBtn, BorderLayout.EAST);
-        
+        rightPanel.add(manageBtn);
+        panel.add(rightPanel, BorderLayout.EAST);
         JLabel subtitle = new JLabel("不同环境数据同步工具");
         subtitle.setFont(UiConstants.FONT_MONO_12);
         subtitle.setForeground(Color.GRAY);
@@ -515,6 +517,12 @@ public class DataSyncUI extends JFrame {
         refreshConfigCombos();
     }
     
+    // ────────── 脚本管理对话框 ──────────
+    private void openScriptManager() {
+        ScriptMangerDialog dialog = new ScriptMangerDialog(this);
+        dialog.setVisible(true);
+        // 脚本管理不修改数据源配置，关闭后无需刷新主页下拉框
+    }
     // ────────── 配置下拉刷新 ──────────
     
     private void refreshConfigCombos() {

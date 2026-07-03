@@ -1,8 +1,8 @@
 package com.datasync.util;
 
-import com.datasync.core.DataSource;
-
-import com.datasync.core.DbType;
+import com.datasync.model.DataSource;
+import com.datasync.model.DbType;
+import com.datasync.model.Script;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -10,7 +10,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -40,6 +39,17 @@ public class SQLiteConfigUtil {
         );
         """;
 
+    private static final String CREATE_SCRIPT_TABLE_SQL = """
+        CREATE TABLE IF NOT EXISTS script_config (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            script_name VARCHAR(128) NOT NULL UNIQUE,
+            db_type     VARCHAR(16)  NOT NULL DEFAULT 'mysql',
+            content     TEXT         NOT NULL,
+            create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """;
+
     // ────────── 单例 ──────────
     private static final SQLiteConfigUtil INSTANCE = new SQLiteConfigUtil();
 
@@ -60,9 +70,16 @@ public class SQLiteConfigUtil {
             try (Connection conn = getConnection();
                  Statement stmt = conn.createStatement()) {
                 stmt.execute(CREATE_TABLE_SQL);
+                stmt.execute(CREATE_SCRIPT_TABLE_SQL);
                 // 兼容旧库：为已存在的表补充 schema_name 列（SQLite 用 try/catch 忽略列已存在错误）
                 try {
                     stmt.execute("ALTER TABLE data_source_config ADD COLUMN schema_name VARCHAR(64) DEFAULT 'public'");
+                } catch (SQLException ignored) {
+                    // 列已存在，忽略
+                }
+                // 兼容旧库：为已存在的 script_config 表补充 db_type 列
+                try {
+                    stmt.execute("ALTER TABLE script_config ADD COLUMN db_type VARCHAR(16) DEFAULT 'mysql'");
                 } catch (SQLException ignored) {
                     // 列已存在，忽略
                 }
@@ -177,6 +194,95 @@ public class SQLiteConfigUtil {
         }
     }
 
+    // ────────── 脚本配置 CRUD ──────────
+
+    /**
+     * 保存脚本配置
+     */
+    public boolean saveScript(Script script) {
+        String sql = "INSERT INTO script_config (script_name, db_type, content) VALUES (?, ?, ?)";
+        try (Connection conn = getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, script.getScriptName());
+            ps.setString(2, script.getDbType());
+            ps.setString(3, script.getContent());
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            System.err.println("[SQLite] 保存脚本失败: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * 加载所有脚本配置
+     */
+    public List<Script> loadAllScripts() {
+        List<Script> scripts = new ArrayList<>();
+        String sql = "SELECT * FROM script_config ORDER BY update_time DESC";
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                scripts.add(mapRowToScript(rs));
+            }
+        } catch (SQLException e) {
+            System.err.println("[SQLite] 加载脚本列表失败: " + e.getMessage());
+        }
+        return scripts;
+    }
+
+    /**
+     * 根据名称加载脚本配置
+     */
+    public Script loadScriptByName(String scriptName) {
+        String sql = "SELECT * FROM script_config WHERE script_name = ?";
+        try (Connection conn = getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, scriptName);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return mapRowToScript(rs);
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("[SQLite] 加载脚本失败: " + e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * 更新脚本配置（以 id 为条件）
+     */
+    public boolean updateScript(Script script) {
+        String sql = "UPDATE script_config SET script_name = ?, db_type = ?, content = ?, update_time = CURRENT_TIMESTAMP WHERE id = ?";
+        try (Connection conn = getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, script.getScriptName());
+            ps.setString(2, script.getDbType());
+            ps.setString(3, script.getContent());
+            ps.setLong(4, script.getId());
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            System.err.println("[SQLite] 更新脚本失败: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * 删除指定 id 的脚本配置
+     */
+    public boolean deleteScript(Long id) {
+        String sql = "DELETE FROM script_config WHERE id = ?";
+        try (Connection conn = getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setLong(1, id);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            System.err.println("[SQLite] 删除脚本失败: " + e.getMessage());
+            return false;
+        }
+    }
+
     // ────────── 私有方法 ──────────
 
     private Connection getConnection() throws SQLException {
@@ -205,5 +311,24 @@ public class SQLiteConfigUtil {
         if (ut != null) ds.setUpdateTime(ut.toLocalDateTime());
 
         return ds;
+    }
+
+    /**
+     * 将 ResultSet 当前行映射为 Script 实体
+     */
+    private Script mapRowToScript(ResultSet rs) throws SQLException {
+        Script script = new Script();
+        script.setId(rs.getLong("id"));
+        script.setScriptName(rs.getString("script_name"));
+        script.setDbType(rs.getString("db_type"));
+        script.setContent(rs.getString("content"));
+
+        Timestamp ct = rs.getTimestamp("create_time");
+        if (ct != null) script.setCreateTime(ct.toLocalDateTime());
+
+        Timestamp ut = rs.getTimestamp("update_time");
+        if (ut != null) script.setUpdateTime(ut.toLocalDateTime());
+
+        return script;
     }
 }

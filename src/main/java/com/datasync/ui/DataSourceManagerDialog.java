@@ -3,9 +3,9 @@ package com.datasync.ui;
 import com.datasync.components.DbTypeTableCellRenderer;
 import com.datasync.components.combobox.IconItem;
 import com.datasync.components.combobox.IconJComboBox;
-import com.datasync.core.DataSource;
+import com.datasync.model.DataSource;
 import com.datasync.core.DbConnector;
-import com.datasync.core.DbType;
+import com.datasync.model.DbType;
 import com.datasync.util.ConfigUtil;
 import java.awt.*;
 import java.util.ArrayList;
@@ -18,7 +18,7 @@ import javax.swing.table.AbstractTableModel;
 /**
  * 数据源管理对话框 — 独立窗口集中管理数据源配置的增删改查
  */
-public class DataSourceManagerDialog extends JDialog {
+public class DataSourceManagerDialog extends AbsDialog {
     
     private final JTable configTable;
     
@@ -50,11 +50,9 @@ public class DataSourceManagerDialog extends JDialog {
     private final JTextArea statusArea;
     
     public DataSourceManagerDialog(Frame owner) {
-        super(owner, "数据源管理", true);
+        super(owner, "数据源管理", true, 780, 720);
         this.editingOriginalName = null;
-        
-        setSize(780, 720);
-        setLocationRelativeTo(owner);
+
         setLayout(new BorderLayout(12, 12));
         getRootPane().setBorder(new EmptyBorder(16, 16, 16, 16));
         

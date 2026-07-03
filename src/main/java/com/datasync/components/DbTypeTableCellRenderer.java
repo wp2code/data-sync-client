@@ -1,6 +1,6 @@
 package com.datasync.components;
 
-import com.datasync.core.DbType;
+import com.datasync.model.DbType;
 import com.datasync.util.IconUtil;
 import java.awt.*;
 import javax.swing.*;

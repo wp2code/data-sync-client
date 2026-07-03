@@ -1,4 +1,4 @@
-package com.datasync.core;
+package com.datasync.model;
 
 import java.sql.Connection;
 

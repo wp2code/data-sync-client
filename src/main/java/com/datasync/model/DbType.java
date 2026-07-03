@@ -1,7 +1,6 @@
-package com.datasync.core;
+package com.datasync.model;
 
 import com.datasync.components.combobox.IconItem;
-import com.datasync.ui.UiConstants;
 import com.datasync.util.IconUtil;
 
 /**

@@ -1,5 +1,6 @@
 package com.datasync.core;
 
+import com.datasync.model.DataSource;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
@@ -77,6 +78,51 @@ public class DbConnector {
         } finally {
             closeQuietly(conn);
         }
+    }
+
+    /**
+     * 查询数据库服务器中的所有数据库（MySQL: SHOW DATABASES，PostgreSQL: pg_database）
+     *
+     * @param ds 数据源配置
+     * @return 数据库名称列表，失败时返回包含当前 dbName 的列表
+     */
+    public static List<String> fetchDatabases(DataSource ds) {
+        List<String> databases = new ArrayList<>();
+        if (!ds.isValid()) {
+            return databases;
+        }
+        String defaultDb = ds.getDbName();
+        try (Connection conn = getConnection(ds);
+             Statement stmt = conn.createStatement();
+             ResultSet rs = ds.isPostgresql()
+                 ? stmt.executeQuery("SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname")
+                 : stmt.executeQuery("SHOW DATABASES")) {
+            while (rs.next()) {
+                String db = rs.getString(1);
+                if (db == null) {
+                    continue;
+                }
+                if (ds.isPostgresql()) {
+                    if ("template0".equals(db) || "template1".equals(db)) {
+                        continue;
+                    }
+                } else {
+                    if ("information_schema".equals(db) || "mysql".equals(db)
+                            || "performance_schema".equals(db) || "sys".equals(db)) {
+                        continue;
+                    }
+                }
+                if (!databases.contains(db)) {
+                    databases.add(db);
+                }
+            }
+        } catch (Exception e) {
+            // 不抛异常，使用默认数据库兜底
+        }
+        if (databases.isEmpty() && defaultDb != null && !defaultDb.isBlank()) {
+            databases.add(defaultDb);
+        }
+        return databases;
     }
 
     /**

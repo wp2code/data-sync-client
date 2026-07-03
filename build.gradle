@@ -7,6 +7,13 @@ plugins {
 group = 'com.datasync'
 version = '1.0.0'
 
+ext {
+    // 内置 JRE 版本（Eclipse Temurin）
+    jreVersion = '17.0.12+7'
+    jreDownloadUrl = 'https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.12%2B7/OpenJDK17U-jre_x64_windows_hotspot_17.0.12_7.zip'
+    jreDirName = 'jre'
+}
+
 java {
     sourceCompatibility = JavaVersion.VERSION_17
     targetCompatibility = JavaVersion.VERSION_17
@@ -87,6 +94,8 @@ launch4j {
     icon = layout.buildDirectory.file("tmp/app.ico").get().asFile.absolutePath.replace('\\', '/')
     // 窗口标题
     headerType = 'gui'
+    // 捆绑 JRE 路径（相对于 exe 的目录，exe 启动时会优先使用自带的 jre 目录）
+//    bundledJrePath = 'jre'
     // 捆绑 JRE 路径（留空则使用系统 JRE）
     bundledJrePath = '%JAVA_HOME%'
     // 最低 JRE 版本
@@ -95,7 +104,6 @@ launch4j {
     jvmOptions = ['-Dfile.encoding=UTF-8']
     // 启动时不显示控制台
     dontWrapJar = false
-    // 程序版本
     fileDescription = 'DataSync- 数据库同步工具'
     productName = 'DataSync'
     internalName = 'DataSync'
@@ -104,7 +112,7 @@ launch4j {
     // requiresAdmin = false
 }
 
-// 生成 ICO 图标（优先使用 src/main/resources/app.ico，否则渲染 icon.svg 风格图标）
+    // 生成 ICO 图标（优先使用 src/main/resources/app.ico，否则渲染 icon.svg 风格图标）
 tasks.register('generateIcon') {
     def customIco = file("${projectDir}/src/main/resources/app.ico")
     def outputFileProvider = layout.buildDirectory.file("tmp/app.ico")
@@ -120,8 +128,52 @@ tasks.register('generateIcon') {
     }
 }
 
+// 下载并解压 Windows x64 JRE，打包到 exe 同级目录
+tasks.register('downloadJre') {
+    def jreZip = layout.buildDirectory.file("tmp/jre.zip").get().asFile
+    def jreOutputDir = layout.buildDirectory.dir("launch4j/${jreDirName}").get().asFile
 
-// 让 createExe 依赖图标生成
+    outputs.dir(jreOutputDir)
+
+    doLast {
+        jreZip.parentFile.mkdirs()
+        jreOutputDir.mkdirs()
+
+        if (!jreZip.exists()) {
+            println "Downloading JRE ${jreVersion} from ${jreDownloadUrl} ..."
+            try {
+                new URL(jreDownloadUrl).withInputStream { input ->
+                    jreZip.withOutputStream { output ->
+                        output << input
+                    }
+                }
+                println "JRE downloaded successfully."
+            } catch (Exception e) {
+                throw new GradleException("Failed to download JRE: ${e.message}", e)
+            }
+        }
+
+        copy {
+            from zipTree(jreZip)
+            into jreOutputDir
+        }
+
+        // Temurin 压缩包内含一层目录，如 jdk-17.0.12+7-jre，需将其子目录上移到 jreOutputDir
+        def nestedDirs = jreOutputDir.listFiles().findAll { it.isDirectory() && it.name.startsWith('jdk') }
+        if (nestedDirs.size() == 1) {
+            copy {
+                from nestedDirs[0]
+                into jreOutputDir
+            }
+            delete nestedDirs[0]
+        }
+
+        jreZip.delete()
+    }
+}
+
+
+// 让 createExe 依赖图标生成和 JRE 下载
 tasks.named('createExe') {
     dependsOn 'generateIcon'
     outputs.dir(layout.buildDirectory.dir("launch4j"))

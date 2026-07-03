@@ -102,16 +102,25 @@ d:
 java -jar build/libs/data-sync-client-1.0.0.jar
 ```
 
-### 生成 Windows .exe
+### 生成 Windows .exe（自带 JRE）
+
+```bash
+./gradlew build
+```
+
+构建过程中会自动从 Eclipse Temurin 下载 Windows x64 JRE，并解压到 `build/launch4j/jre` 目录。最终产物：
+
+- Windows 可执行文件：`build/launch4j/DataSync.exe`
+- 内置 JRE 目录：`build/launch4j/jre/`
+
+运行 `DataSync.exe` 时，程序会优先使用同目录下的 `jre` 文件夹，无需用户本机安装 JDK。
+
+如果需要单独生成 `.exe`：
 
 ```bash
 ./gradlew jar
 ./gradlew createExe
 ```
-
-可执行文件位于：`build/launch4j/DataSync.exe`
-
-> 注意：`.exe` 依赖于系统已安装的 JDK 17（或设置 `JAVA_HOME`）。
 
 ## 许可证
 

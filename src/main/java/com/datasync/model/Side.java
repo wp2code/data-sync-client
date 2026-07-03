@@ -1,4 +1,4 @@
-package com.datasync.core;
+package com.datasync.model;
 
 /**
  * 标识数据库侧（源库/目标库），替代布尔 isSource 参数。

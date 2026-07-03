@@ -1,5 +1,7 @@
 package com.datasync.core;
 
+import com.datasync.model.ConnectionWrapper;
+import com.datasync.model.DataSource;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
