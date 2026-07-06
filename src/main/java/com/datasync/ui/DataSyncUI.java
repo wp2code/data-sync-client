@@ -2,14 +2,16 @@ package com.datasync.ui;
 
 import com.datasync.components.ChildLayoutPanel;
 import com.datasync.components.CustomTextField;
+import com.datasync.components.FullscreenJDialog;
 import com.datasync.components.LinkJLabel;
 import com.datasync.components.combobox.IconItem;
 import com.datasync.components.combobox.IconJComboBox;
-import com.datasync.model.ConnectionWrapper;
-import com.datasync.model.DataSource;
 import com.datasync.core.DataSyncService;
 import com.datasync.core.DbConnector;
+import com.datasync.model.ConnectionWrapper;
+import com.datasync.model.DataSource;
 import com.datasync.model.DbType;
+import com.datasync.model.Script;
 import com.datasync.model.Side;
 import com.datasync.util.ConfigUtil;
 import com.datasync.util.GlobalUtil;
@@ -21,6 +23,8 @@ import java.awt.event.*;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -46,6 +50,11 @@ public class DataSyncUI extends JFrame {
     private IconJComboBox tgtConfigCombo;
     
     private JLabel tgtInfoLabel;
+    
+    // ────────── 数据库选择组件 ──────────
+    private JComboBox<String> srcDbCombo;
+    
+    private JComboBox<String> tgtDbCombo;
     
     // ────────── 同步操作组件 ──────────
     private JComboBox<String> srcSyncSchemaCombo;
@@ -74,6 +83,14 @@ public class DataSyncUI extends JFrame {
     
     private JPanel tgtTablePanel;
     
+    private Rectangle ddlNormalBounds;
+    
+    private Rectangle dataNormalBounds;
+    
+    private boolean ddlFullscreen = false;
+    
+    private boolean dataFullscreen = false;
+    
     // ────────── 日志组件 ──────────
     private JEditorPane logArea;
     
@@ -100,7 +117,7 @@ public class DataSyncUI extends JFrame {
     private void initUI() {
         setTitle("DataSync");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setSize(980, 780);
+        setSize(980, 820);
         setLocationRelativeTo(null);
         setLayout(new BorderLayout(10, 10));
         
@@ -206,6 +223,18 @@ public class DataSyncUI extends JFrame {
         configCombo.setFont(UiConstants.FONT_MONO_12);
         configRow.add(configCombo, BorderLayout.CENTER);
         
+        // ── 数据库选择行（单选）──
+        JPanel dbRow = new JPanel(new BorderLayout(5, 0));
+        JLabel dbLabel = new JLabel("数据库:", SwingConstants.RIGHT);
+        dbLabel.setFont(UiConstants.FONT_MONO_12);
+        dbLabel.setPreferredSize(labelDim);
+        dbRow.add(dbLabel, BorderLayout.WEST);
+        JComboBox<String> dbCombo = new JComboBox<>(new String[] {UiConstants.PLACEHOLDER_SELECT_DATABASE});
+        dbCombo.setEditable(false); // 仅单选，不允许编辑
+        dbCombo.setFont(UiConstants.FONT_MONO_12);
+        dbCombo.setEnabled(false);
+        dbRow.add(dbCombo, BorderLayout.CENTER);
+        
         // ── Schema 选择行（单选）──
         JPanel schemaRow = new JPanel(new BorderLayout(5, 0));
         JLabel schemaLabel = new JLabel("模式:", SwingConstants.RIGHT);
@@ -268,9 +297,9 @@ public class DataSyncUI extends JFrame {
                     filterTables(searchText, finalTableCheckPanelForExport);
                 }
             });
-            final JButton exportScriptBtn = new JButton("导出结构SQL");
+            final JButton exportScriptBtn = new JButton("表DDL");
             exportScriptBtn.setFont(UiConstants.FONT_SANS_11);
-            exportScriptBtn.addActionListener(e -> DataSyncUI.this.exportStructureScript(finalTableCheckPanelForExport));
+            exportScriptBtn.addActionListener(e -> DataSyncUI.this.showStructureScript(finalTableCheckPanelForExport));
             btnRow.add(exportScriptBtn);
             final JButton exportBtn = new JButton("导出数据SQL");
             exportBtn.setFont(UiConstants.FONT_SANS_11);
@@ -293,19 +322,21 @@ public class DataSyncUI extends JFrame {
         gbc.gridy = 0;
         formPanel.add(configRow, gbc);
         gbc.gridy = 1;
+        formPanel.add(dbRow, gbc);
+        gbc.gridy = 2;
         formPanel.add(schemaRow, gbc);
         gbc.fill = GridBagConstraints.BOTH;
         if (selectRow != null) {
-            gbc.gridy = 2;
+            gbc.gridy = 3;
             gbc.weighty = 0; // 表列表行占用剩余垂直空间
             formPanel.add(selectRow, gbc);
         }
         if (tableRow != null) {
-            gbc.gridy = 3;
+            gbc.gridy = 4;
             gbc.weighty = 1.0; // 表列表行占用剩余垂直空间
             formPanel.add(tableRow, gbc);
         }
-        gbc.gridy = side == Side.SOURCE ? 4 : 3;
+        gbc.gridy = side == Side.SOURCE ? 5 : 4;
         gbc.weighty = 0;
         gbc.fill = GridBagConstraints.HORIZONTAL;
         formPanel.add(btnRow, gbc);
@@ -326,7 +357,7 @@ public class DataSyncUI extends JFrame {
                 DataSource ds = ConfigUtil.loadDataSourceByName(selText);
                 final String srcDataSource = GlobalUtil.getSrcDataSource();
                 if (ds != null && (srcDataSource == null || !srcDataSource.equals(ds.getSourceName()))) {
-                    doAutoConnect(ds, title, side, infoLabel);
+                    loadDatabasesForSide(side, ds);
                 }
             } else {
                 infoLabel.setIcon(null);
@@ -334,10 +365,19 @@ public class DataSyncUI extends JFrame {
                 infoLabel.setFont(UiConstants.FONT_SANS_11);
                 infoLabel.setHorizontalAlignment(SwingConstants.CENTER);
                 infoLabel.setForeground(Color.GRAY);
+                dbCombo.setModel(new DefaultComboBoxModel<>(new String[] {UiConstants.PLACEHOLDER_SELECT_DATABASE}));
+                dbCombo.setEnabled(false);
                 closeConnection(side, false);
             }
             if (side == Side.SOURCE) {
                 onSourceConfigChanged();
+            }
+        });
+        
+        // ── 数据库 ItemListener ──
+        dbCombo.addItemListener(e -> {
+            if (e.getStateChange() == ItemEvent.SELECTED && !suppressComboEvents) {
+                onDatabaseSelected(side);
             }
         });
         
@@ -352,6 +392,7 @@ public class DataSyncUI extends JFrame {
         if (side == Side.SOURCE) {
             srcConfigCombo = configCombo;
             srcInfoLabel = infoLabel;
+            srcDbCombo = dbCombo;
             srcSyncSchemaCombo = schemaCombo;
             srcSyncTablePanel = tableCheckPanel;
             srcSchemaLabel = schemaLabel;
@@ -360,6 +401,7 @@ public class DataSyncUI extends JFrame {
         } else {
             tgtConfigCombo = configCombo;
             tgtInfoLabel = infoLabel;
+            tgtDbCombo = dbCombo;
             tgtSyncSchemaCombo = schemaCombo;
             tgtSyncTablePanel = tableCheckPanel;
             tgtSchemaLabel = schemaLabel;
@@ -640,7 +682,108 @@ public class DataSyncUI extends JFrame {
         setTableCheckItems(tgtSyncTablePanel, tableHint);
     }
     
-    // ────────── Schema → Table 联动 ──────────
+    // ────────── Database → Schema → Table 联动 ──────────
+    
+    /**
+     * 加载指定数据源可用的数据库列表到下拉框，默认选中数据源配置中保存的数据库。
+     */
+    private void loadDatabasesForSide(Side side, DataSource ds) {
+        JComboBox<String> dbCombo = side == Side.SOURCE ? srcDbCombo : tgtDbCombo;
+        JComboBox<String> schemaCombo = side == Side.SOURCE ? srcSyncSchemaCombo : tgtSyncSchemaCombo;
+        JPanel tablePanel = side == Side.SOURCE ? srcSyncTablePanel : tgtSyncTablePanel;
+        
+        suppressComboEvents = true;
+        try {
+            dbCombo.setEnabled(false);
+            setModelQuietly(dbCombo, new DefaultComboBoxModel<>(new String[] {UiConstants.PLACEHOLDER_QUERYING}));
+            setModelQuietly(schemaCombo, new DefaultComboBoxModel<>(new String[] {UiConstants.PLACEHOLDER_CONNECT_FIRST}));
+            setTableCheckItems(tablePanel, UiConstants.PLACEHOLDER_CONNECT_FIRST);
+        } finally {
+            suppressComboEvents = false;
+        }
+        
+        new Thread(() -> {
+            List<String> databases = DbConnector.fetchDatabases(ds);
+            SwingUtilities.invokeLater(() -> {
+                suppressComboEvents = true;
+                try {
+                    dbCombo.setEnabled(true);
+                    DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>();
+                    model.addElement(UiConstants.PLACEHOLDER_SELECT_DATABASE);
+                    for (String db : databases) {
+                        model.addElement(db);
+                    }
+                    setModelQuietly(dbCombo, model);
+                    
+                    String defaultDb = ds.getDbName();
+                    int selectedIndex = 0;
+                    if (defaultDb != null) {
+                        for (int i = 0; i < dbCombo.getItemCount(); i++) {
+                            if (defaultDb.equals(dbCombo.getItemAt(i))) {
+                                selectedIndex = i;
+                                break;
+                            }
+                        }
+                    }
+                    if (selectedIndex == 0 && dbCombo.getItemCount() > 1) {
+                        selectedIndex = 1;
+                    }
+                    dbCombo.setSelectedIndex(selectedIndex);
+                } finally {
+                    suppressComboEvents = false;
+                }
+                if (dbCombo.getSelectedIndex() > 0) {
+                    onDatabaseSelected(side);
+                }
+            });
+        }).start();
+    }
+    
+    /**
+     * 数据库选择变更时：更新当前数据源的 dbName，关闭旧连接并重新连接，然后加载 Schema/表。
+     */
+    private void onDatabaseSelected(Side side) {
+        JComboBox<String> dbCombo = side == Side.SOURCE ? srcDbCombo : tgtDbCombo;
+        JComboBox<String> schemaCombo = side == Side.SOURCE ? srcSyncSchemaCombo : tgtSyncSchemaCombo;
+        JPanel tablePanel = side == Side.SOURCE ? srcSyncTablePanel : tgtSyncTablePanel;
+        JLabel infoLabel = side == Side.SOURCE ? srcInfoLabel : tgtInfoLabel;
+        
+        Object sel = dbCombo.getSelectedItem();
+        if (sel == null) {
+            return;
+        }
+        String dbName = sel.toString().trim();
+        if (dbName.isEmpty() || dbName.startsWith("（")) {
+            setModelQuietly(schemaCombo, new DefaultComboBoxModel<>(new String[] {UiConstants.PLACEHOLDER_CONNECT_FIRST}));
+            setTableCheckItems(tablePanel, UiConstants.PLACEHOLDER_CONNECT_FIRST);
+            closeConnection(side, false);
+            return;
+        }
+        
+        DataSource ds = getSelectedSource(side);
+        if (ds == null) {
+            return;
+        }
+        ds.setDbName(dbName);
+        
+        String title = side == Side.SOURCE ? "源数据库 (Source)" : "目标数据库 (Target)";
+        closeConnection(side, false);
+        doAutoConnect(ds, title, side, infoLabel);
+    }
+    
+    private void applySelectedDatabase(DataSource ds, Side side) {
+        if (ds == null) {
+            return;
+        }
+        JComboBox<String> dbCombo = side == Side.SOURCE ? srcDbCombo : tgtDbCombo;
+        Object dbSel = dbCombo.getSelectedItem();
+        if (dbSel != null) {
+            String dbName = dbSel.toString().trim();
+            if (!dbName.isEmpty() && !dbName.startsWith("（")) {
+                ds.setDbName(dbName);
+            }
+        }
+    }
     
     private void onSchemaSelected(Side side) {
         JComboBox<String> schemaCombo = side == Side.SOURCE ? srcSyncSchemaCombo : tgtSyncSchemaCombo;
@@ -690,16 +833,17 @@ public class DataSyncUI extends JFrame {
     }
     
     /**
-     * 导出选中表的 CREATE TABLE DDL（结构SQL），先弹窗预览，支持一键复制和导出到文件
+     * 选中表的 CREATE TABLE DDL（结构SQL），先弹窗预览，支持一键复制和导出到文件
      */
-    private void exportStructureScript(JPanel tablePanel) {
+    private void showStructureScript(JPanel tablePanel) {
         List<String> checkedTables = GlobalUtil.getCheckedTables(tablePanel);
         if (checkedTables.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "请先勾选需要导出的表", "提示", JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(this, "请先勾选表", "提示", JOptionPane.INFORMATION_MESSAGE);
             return;
         }
         
         DataSource ds = getSelectedSource(Side.SOURCE);
+        applySelectedDatabase(ds, Side.SOURCE);
         if (ds == null || !ds.isValid()) {
             JOptionPane.showMessageDialog(this, "请先选择并连接源数据库", "提示", JOptionPane.WARNING_MESSAGE);
             return;
@@ -723,12 +867,12 @@ public class DataSyncUI extends JFrame {
             schema = schemaObj.toString().trim();
         }
         
-        appendLog(LogUtil.logLine(UiConstants.LOG_EXPORT + "正在生成 " + checkedTables.size() + " 个表的 DDL…"));
+        appendLog(LogUtil.logLine(UiConstants.LOG_DDL + "正在生成 " + checkedTables.size() + " 个表的 DDL…"));
         
         // 生成所有表的 DDL
         StringBuilder allDdl = new StringBuilder();
         allDdl.append("-- ============================================\n");
-        allDdl.append("-- DataSync Client 导出的表结构 DDL 脚本\n");
+        allDdl.append("-- DataSync Client 表结构 DDL 脚本\n");
         allDdl.append("-- 数据库: ").append(ds.getDbType().toUpperCase()).append(" | ").append(ds.getHost()).append(":").append(ds.getPort())
                 .append("/").append(ds.getDbName()).append("\n");
         allDdl.append("-- 表数量: ").append(checkedTables.size()).append("\n");
@@ -750,9 +894,8 @@ public class DataSyncUI extends JFrame {
         final DataSource finalDs = ds;
         final String finalSchema = schema;
         SwingUtilities.invokeLater(() -> {
-            appendLog(LogUtil.logLine(
-                    "<html><body><span style=\"color: green;\">" + UiConstants.LOG_EXPORT + "DDL 生成完成，共 " + finalSuccessCount + "/"
-                            + checkedTables.size() + " 个表</span></body></html>"));
+            appendLog(LogUtil.logLine(LogUtil.success(
+                    LogUtil.logTime() + UiConstants.LOG_DDL + "DDL 生成完成，共 " + finalSuccessCount + "/" + checkedTables.size() + " 个表")));
             showDdlPreviewDialog(allDdl.toString(), finalDs, finalSchema, checkedTables);
         });
     }
@@ -761,10 +904,10 @@ public class DataSyncUI extends JFrame {
      * 弹出 DDL 预览对话框，支持一键复制和导出 SQL 文件
      */
     private void showDdlPreviewDialog(String ddl, DataSource ds, String schema, List<String> tableNames) {
-        JDialog dialog = new JDialog(this,
-                "表结构 DDL 预览 — " + ds.getDbType().toUpperCase() + " | " + ds.getHost() + ":" + ds.getPort() + "/" + ds.getDbName(), false);
-        dialog.setSize(780, 600);
-        dialog.setLocationRelativeTo(this);
+        FullscreenJDialog ddlDialog = new FullscreenJDialog("DDL", this,
+                "表结构 DDL 预览 — " + ds.getDbType().toUpperCase() + " | " + ds.getHost() + ":" + ds.getPort() + "/" + ds.getDbName(), false, 780,
+                600);
+        ddlDialog.setLocationRelativeTo(this);
         
         JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
         mainPanel.setBorder(new EmptyBorder(12, 12, 12, 12));
@@ -787,14 +930,15 @@ public class DataSyncUI extends JFrame {
         
         // ── 按钮栏 ──
         JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
-        
+        JButton saveBtn = new JButton("保存脚本");
+        saveBtn.addActionListener(e -> saveScript(textArea.getText().trim(), ds.getDbType()));
         JButton copyBtn = new JButton("一键复制");
         copyBtn.setFont(UiConstants.FONT_SANS_12);
         copyBtn.addActionListener(e -> {
             textArea.selectAll();
             textArea.copy();
             textArea.setCaretPosition(0);
-            JOptionPane.showMessageDialog(dialog, "DDL 已复制到剪贴板", "提示", JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(ddlDialog, "DDL 已复制到剪贴板", "提示", JOptionPane.INFORMATION_MESSAGE);
         });
         
         JButton exportBtn = new JButton("导出 SQL 文件");
@@ -805,7 +949,7 @@ public class DataSyncUI extends JFrame {
             String defaultName = (tableNames.size() == 1 ? tableNames.get(0) : ds.getDbName()) + "_structure.sql";
             fileChooser.setSelectedFile(new java.io.File(defaultName));
             fileChooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("SQL 脚本文件 (*.sql)", "sql"));
-            if (fileChooser.showSaveDialog(dialog) != JFileChooser.APPROVE_OPTION) {
+            if (fileChooser.showSaveDialog(ddlDialog) != JFileChooser.APPROVE_OPTION) {
                 return;
             }
             java.io.File outputFile = fileChooser.getSelectedFile();
@@ -815,24 +959,22 @@ public class DataSyncUI extends JFrame {
             try (java.io.BufferedWriter writer = new java.io.BufferedWriter(
                     new java.io.OutputStreamWriter(new java.io.FileOutputStream(outputFile), java.nio.charset.StandardCharsets.UTF_8))) {
                 writer.write(ddl);
-                JOptionPane.showMessageDialog(dialog, "导出成功！\n保存至: " + outputFile.getAbsolutePath(), "导出完成",
+                JOptionPane.showMessageDialog(ddlDialog, "导出成功！\n保存至: " + outputFile.getAbsolutePath(), "导出完成",
                         JOptionPane.INFORMATION_MESSAGE);
             } catch (Exception ex) {
-                JOptionPane.showMessageDialog(dialog, "导出失败: " + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(ddlDialog, "导出失败: " + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
             }
         });
-        
         JButton closeBtn = new JButton("关闭");
         closeBtn.setFont(UiConstants.FONT_SANS_12);
-        closeBtn.addActionListener(e -> dialog.dispose());
-        
+        closeBtn.addActionListener(e -> ddlDialog.dispose());
+        btnPanel.add(saveBtn);
         btnPanel.add(copyBtn);
         btnPanel.add(exportBtn);
         btnPanel.add(closeBtn);
         mainPanel.add(btnPanel, BorderLayout.SOUTH);
-        
-        dialog.setContentPane(mainPanel);
-        dialog.setVisible(true);
+        ddlDialog.setContentPane(mainPanel);
+        ddlDialog.setVisible(true);
     }
     
     /**
@@ -860,6 +1002,35 @@ public class DataSyncUI extends JFrame {
         panel.repaint();
     }
     
+    private void saveScript(String context, String dbType) {
+        JTextField nameFieldInput = new JTextField();
+        JTextArea remarkInput = new JTextArea(5, 10);
+        remarkInput.setWrapStyleWord(true);
+        remarkInput.setLineWrap(true);
+        JScrollPane scrollPane = new JScrollPane(remarkInput);
+        Object[] message = {"脚本名称:", nameFieldInput, "备注:", scrollPane};
+        int option = JOptionPane.showConfirmDialog(this, message, "保存脚本", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        if (option != JOptionPane.OK_OPTION) {
+            return;
+        }
+        String name = nameFieldInput.getText().trim();
+        if (name.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "脚本名称不能为空", "提示", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        if (ConfigUtil.loadScriptByName(name) != null) {
+            JOptionPane.showMessageDialog(this, "已存在同名脚本，请重新命名", "提示", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        Script script = new Script(name, context);
+        script.setDbType(dbType);
+        script.setRemark(remarkInput.getText().trim());
+        if (!ConfigUtil.saveScript(script)) {
+            JOptionPane.showMessageDialog(this, "保存脚本失败", "错误", JOptionPane.ERROR_MESSAGE);
+        } else {
+            JOptionPane.showMessageDialog(this, "保存脚本成功！可到脚本管理查看", "成功", JOptionPane.INFORMATION_MESSAGE, IconUtil.success());
+        }
+    }
     
     /**
      * 全选面板中所有复选框。
@@ -883,6 +1054,7 @@ public class DataSyncUI extends JFrame {
         }
     }
     
+    
     /**
      * 导出选中表的 INSERT SQL 脚本到 .sql 文件，支持选择指定列
      */
@@ -894,6 +1066,7 @@ public class DataSyncUI extends JFrame {
         }
         
         DataSource ds = getSelectedSource(Side.SOURCE);
+        applySelectedDatabase(ds, Side.SOURCE);
         if (ds == null || !ds.isValid()) {
             JOptionPane.showMessageDialog(this, "请先选择并连接源数据库", "提示", JOptionPane.WARNING_MESSAGE);
             return;
@@ -984,9 +1157,10 @@ public class DataSyncUI extends JFrame {
                 
                 final int finalTotalRows = totalRows;
                 SwingUtilities.invokeLater(() -> {
-                    appendLog(LogUtil.logLine("<html><body><span style=\"color: green; font-weight: bold;\">" + UiConstants.LOG_EXPORT + "导出完成！共 "
-                            + checkedTables.size() + " 个表, " + finalTotalRows + " 条数据 → " + finalFile.getAbsolutePath()
-                            + "</span></body></html>"));
+                    final String success = LogUtil.success(
+                            LogUtil.logTime() + UiConstants.LOG_EXPORT + "导出完成！共 " + checkedTables.size() + " 个表, " + finalTotalRows
+                                    + " 条数据 → " + finalFile.getAbsolutePath());
+                    appendLog(LogUtil.logLine(success));
                     syncButton.setEnabled(true);
                     JOptionPane.showMessageDialog(DataSyncUI.this,
                             "导出成功！\n" + checkedTables.size() + " 个表, 共 " + finalTotalRows + " 条数据\n保存至: " + finalFile.getAbsolutePath(),
@@ -995,8 +1169,7 @@ public class DataSyncUI extends JFrame {
                 
             } catch (Exception ex) {
                 SwingUtilities.invokeLater(() -> {
-                    appendLog(LogUtil.logLine("<html><body><span style=\"color: red;\">" + UiConstants.LOG_EXPORT + "导出失败: " + ex.getMessage()
-                            + "</span></body></html>"));
+                    appendLog(LogUtil.logLine(LogUtil.failed(LogUtil.logTime() + UiConstants.LOG_EXPORT + "导出失败: " + ex.getMessage())));
                     syncButton.setEnabled(true);
                     JOptionPane.showMessageDialog(DataSyncUI.this, "导出失败: " + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
                 });
@@ -1015,7 +1188,7 @@ public class DataSyncUI extends JFrame {
         String schema = ds.isPostgresql() ? ds.getSchema() : null;
         
         // 获取每张表的列信息
-        java.util.LinkedHashMap<String, List<String>> allTableColumns = new java.util.LinkedHashMap<>();
+        LinkedHashMap<String, List<String>> allTableColumns = new LinkedHashMap<>();
         for (String table : tables) {
             List<String> cols = DbConnector.fetchColumns(ds, table, schema);
             allTableColumns.put(table, cols);
@@ -1031,7 +1204,7 @@ public class DataSyncUI extends JFrame {
         }
         if (!hasAnyColumns) {
             // 无法获取列信息，直接导出所有列
-            java.util.Map<String, List<String>> result = new java.util.LinkedHashMap<>();
+            Map<String, List<String>> result = new LinkedHashMap<>();
             for (String table : tables) {
                 result.put(table, new ArrayList<>());
             }
@@ -1039,11 +1212,9 @@ public class DataSyncUI extends JFrame {
         }
         
         // 构建对话框
-        JDialog dialog = new JDialog(this, "选择导出列", true);
+        FullscreenJDialog dialog = new FullscreenJDialog("DTAT", this, "选择导出列", true, 800, 520);
         dialog.setLayout(new BorderLayout(10, 10));
-        dialog.setSize(480, 520);
         dialog.setLocationRelativeTo(this);
-        
         // 提示标签
         JLabel hintLabel = new JLabel("按表选择要导出的列（默认全选）：");
         hintLabel.setBorder(new EmptyBorder(10, 12, 5, 12));
@@ -1051,15 +1222,83 @@ public class DataSyncUI extends JFrame {
         dialog.add(hintLabel, BorderLayout.NORTH);
         
         // 按表分组展示列
-        JPanel mainPanel = new JPanel();
-        mainPanel.setLayout(new BoxLayout(mainPanel, BoxLayout.Y_AXIS));
+        JPanel leftPanel = new JPanel();
+        leftPanel.setLayout(new BoxLayout(leftPanel, BoxLayout.Y_AXIS));
+        // 右侧脚本预览区
+        final JTextArea rightTextArea = new JTextArea();
+        rightTextArea.setEditable(false);
+        rightTextArea.setLineWrap(true);
+        rightTextArea.setWrapStyleWord(true);
+        rightTextArea.setFont(UiConstants.FONT_SANS_11);
+        rightTextArea.setBorder(new EmptyBorder(10, 10, 10, 10));
+        
         // 存储所有复选框引用: 表名 → 该表的复选框列表
         LinkedHashMap<String, List<JCheckBox>> allCheckBoxes = new LinkedHashMap<>();
+        
+        final Runnable updatePreview = () -> {
+            if (srcConn == null || srcConn.getConnection() == null) {
+                SwingUtilities.invokeLater(() -> {
+                    rightTextArea.setText("-- 源数据库未连接，无法预览");
+                    rightTextArea.setCaretPosition(0);
+                });
+                return;
+            }
+            
+            SwingUtilities.invokeLater(() -> {
+                rightTextArea.setText("-- 正在生成预览…");
+                rightTextArea.setCaretPosition(0);
+            });
+            
+            new Thread(() -> {
+                StringBuilder preview = new StringBuilder();
+                preview.append("-- ============================================\n");
+                preview.append("-- INSERT SQL 脚本预览\n");
+                preview.append("-- 数据库: ").append(ds.getDbType().toUpperCase()).append(" | ").append(ds.getHost()).append(":").append(ds.getPort())
+                        .append("/").append(ds.getDbName()).append("\n");
+                preview.append("-- 预览时间: ").append(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))).append("\n");
+                preview.append("-- 说明: 每个表最多显示前 " + DataSyncService.MAX_COUNT + " 条，仅用于预览\n");
+                preview.append("-- ============================================\n\n");
+                
+                for (Map.Entry<String, List<String>> entry : allTableColumns.entrySet()) {
+                    String tableName = entry.getKey();
+                    List<String> allCols = entry.getValue();
+                    List<JCheckBox> cbs = allCheckBoxes.get(tableName);
+                    
+                    List<String> selectedCols = new ArrayList<>();
+                    if (allCols == null || allCols.isEmpty()) {
+                        selectedCols = new ArrayList<>();
+                    } else if (cbs != null) {
+                        for (JCheckBox cb : cbs) {
+                            if (cb.isSelected()) {
+                                selectedCols.add(cb.getText());
+                            }
+                        }
+                    }
+                    
+                    if (selectedCols.isEmpty() && !(allCols == null || allCols.isEmpty())) {
+                        preview.append("-- 表 [").append(tableName).append("] 未选择任何列，跳过生成\n\n");
+                        continue;
+                    }
+                    
+                    assert allCols != null;
+                    if (selectedCols.size() == allCols.size()) {
+                        selectedCols = new ArrayList<>();
+                    }
+                    String script = syncService.exportInsertScript(ds, tableName, srcConn, selectedCols, DataSyncService.MAX_COUNT);
+                    preview.append(script).append("\n");
+                }
+                
+                final String previewText = preview.toString();
+                SwingUtilities.invokeLater(() -> {
+                    rightTextArea.setText(previewText);
+                    rightTextArea.setCaretPosition(0);
+                });
+            }).start();
+        };
         
         for (Map.Entry<String, List<String>> entry : allTableColumns.entrySet()) {
             String tableName = entry.getKey();
             List<String> columns = entry.getValue();
-            
             // 表名标题
             JPanel titleRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
             titleRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 28));
@@ -1099,13 +1338,13 @@ public class DataSyncUI extends JFrame {
                     }
                 });
             }
-            mainPanel.add(titleRow);
+            leftPanel.add(titleRow);
             // 该表的列复选框（流式排列）
             if (columns.isEmpty()) {
                 JLabel noColLabel = new JLabel("   （无法获取列信息）");
                 noColLabel.setFont(UiConstants.FONT_SANS_11);
                 noColLabel.setForeground(Color.GRAY);
-                mainPanel.add(noColLabel);
+                leftPanel.add(noColLabel);
                 allCheckBoxes.put(tableName, new ArrayList<>());
             } else {
                 JPanel colPanel = new JPanel();
@@ -1117,24 +1356,26 @@ public class DataSyncUI extends JFrame {
                     cb.setAlignmentX(Component.LEFT_ALIGNMENT);
                     colPanel.add(cb);
                     checkBoxes.add(cb);
+                    cb.addItemListener(e -> updatePreview.run());
                 }
                 // 用 FlowLayout.LEFT 包装确保靠左
                 JPanel colWrapper = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
                 colWrapper.setOpaque(false);
                 colWrapper.add(colPanel);
-                mainPanel.add(colWrapper);
+                leftPanel.add(colWrapper);
                 allCheckBoxes.put(tableName, checkBoxes);
             }
             
         }
-        
-        JScrollPane scrollPane = new JScrollPane(mainPanel);
-        scrollPane.setBorder(new EmptyBorder(0, 10, 0, 10));
-        scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
-        dialog.add(scrollPane, BorderLayout.CENTER);
-        
+        JScrollPane leftScrollPane = new JScrollPane(leftPanel);
+        leftScrollPane.setBorder(new EmptyBorder(0, 10, 0, 10));
+        leftScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+        JScrollPane rightScrollPane = new JScrollPane(rightTextArea);
+        rightScrollPane.setBorder(BorderFactory.createTitledBorder("预览"));
+        final JSplitPane jSplitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, leftScrollPane, rightScrollPane);
+        dialog.add(jSplitPane, BorderLayout.CENTER);
         // 底部按钮面板
-        JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 10));
+        JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
         JButton cancelIncrementBtn = new JButton("取消自增列");
         cancelIncrementBtn.setFont(UiConstants.FONT_SANS_11);
         cancelIncrementBtn.addActionListener(e -> {
@@ -1154,20 +1395,23 @@ public class DataSyncUI extends JFrame {
                 }
             }
         });
-        btnPanel.add(cancelIncrementBtn);
-        JButton okBtn = new JButton("确定导出");
-        okBtn.setFont(UiConstants.FONT_SANS_12_BOLD);
-        JButton cancelBtn = new JButton("取消");
+        JButton copyScriptBtn = new JButton("一键复制");
+        JButton saveScriptBtn = new JButton("保存脚本");
+        JButton exportBtn = new JButton("导出SQL文件");
+        exportBtn.setFont(UiConstants.FONT_SANS_12_BOLD);
+        JButton cancelBtn = new JButton("关闭");
         cancelBtn.setFont(UiConstants.FONT_SANS_12);
         cancelBtn.addActionListener(e -> dialog.dispose());
-        btnPanel.add(okBtn);
+        btnPanel.add(saveScriptBtn);
+        btnPanel.add(copyScriptBtn);
+        btnPanel.add(exportBtn);
+        btnPanel.add(cancelIncrementBtn);
         btnPanel.add(cancelBtn);
         dialog.add(btnPanel, BorderLayout.SOUTH);
-        
         // 结果容器
-        @SuppressWarnings("unchecked") final java.util.Map<String, List<String>>[] result = new HashMap[] {null};
-        okBtn.addActionListener(e -> {
-            java.util.Map<String, List<String>> selected = new java.util.LinkedHashMap<>();
+        @SuppressWarnings("unchecked") final Map<String, List<String>>[] scriptResult = new HashMap[] {null};
+        exportBtn.addActionListener(e -> {
+            Map<String, List<String>> selected = new LinkedHashMap<>();
             for (java.util.Map.Entry<String, List<JCheckBox>> entry : allCheckBoxes.entrySet()) {
                 String tableName = entry.getKey();
                 List<JCheckBox> cbs = entry.getValue();
@@ -1196,12 +1440,23 @@ public class DataSyncUI extends JFrame {
                     selected.put(tableName, tableSelected);
                 }
             }
-            result[0] = selected;
+            scriptResult[0] = selected;
             dialog.dispose();
         });
-        
+        saveScriptBtn.addActionListener(e -> {
+            String previewText = rightTextArea.getText();
+            if (previewText == null || previewText.trim().isEmpty() || previewText.startsWith("-- 源数据库未连接") || previewText.startsWith(
+                    "-- 正在生成预览")) {
+                JOptionPane.showMessageDialog(dialog, "预览内容尚未生成，请稍后再试", "提示", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            saveScript(previewText.trim(), ds.getDbType());
+        });
+        copyScriptBtn.addActionListener(e -> GlobalUtil.copy(rightTextArea.getText(), this));
+        // 对话框打开时立即生成一次预览
+        updatePreview.run();
         dialog.setVisible(true);
-        return result[0];
+        return scriptResult[0];
     }
     
     private int countLines(String text) {
@@ -1254,9 +1509,19 @@ public class DataSyncUI extends JFrame {
         String sideLabel = side.label();
         DataSource ds = getSelectedSource(side);
         if (ds == null || !ds.isValid()) {
-            appendLog(LogUtil.logLine("<html><body><span style=\"color: red;\">" + UiConstants.LOG_REFRESH + sideLabel
+            appendLog(LogUtil.logLine("<html><body><span style=\"color: red;\">" + LogUtil.logTime() + UiConstants.LOG_REFRESH + sideLabel
                     + "：未选择有效数据源，跳过刷新</span></body></html>"));
             return;
+        }
+        
+        // 如果当前已选中了数据库，刷新时保持该数据库
+        JComboBox<String> dbCombo = side == Side.SOURCE ? srcDbCombo : tgtDbCombo;
+        Object dbSel = dbCombo.getSelectedItem();
+        if (dbSel != null) {
+            String dbName = dbSel.toString().trim();
+            if (!dbName.isEmpty() && !dbName.startsWith("（")) {
+                ds.setDbName(dbName);
+            }
         }
         
         appendLog(LogUtil.logLine(UiConstants.LOG_REFRESH + "正在刷新" + sideLabel + "连接…"));
@@ -1290,6 +1555,8 @@ public class DataSyncUI extends JFrame {
     private void startSync() {
         final DataSource source = getSelectedSource(Side.SOURCE);
         final DataSource target = getSelectedSource(Side.TARGET);
+        applySelectedDatabase(source, Side.SOURCE);
+        applySelectedDatabase(target, Side.TARGET);
         if (source == null) {
             JOptionPane.showMessageDialog(this, "请先选择源数据库", "参数不完整", JOptionPane.WARNING_MESSAGE);
             return;
@@ -1520,7 +1787,7 @@ public class DataSyncUI extends JFrame {
                         result = UiConstants.LOG_CONNECT + UiConstants.LOG_SUCCESS + "连接成功[" + ds.getSourceName() + "] → " + ds.getDbType()
                                 .toUpperCase() + " " + ds.getHost() + ":" + ds.getPort() + "/" + ds.getDbName();
                     }
-                    dataSyncUI.appendLog(LogUtil.logLine(result));
+                    dataSyncUI.appendLog(LogUtil.logLine(LogUtil.success(result)));
                     // 保存连接
                     if (side == Side.SOURCE) {
                         dataSyncUI.srcConn = new ConnectionWrapper(ds, conn);
@@ -1588,6 +1855,8 @@ public class DataSyncUI extends JFrame {
         
         DataSource source = getSelectedSource(Side.SOURCE);
         DataSource target = getSelectedSource(Side.TARGET);
+        applySelectedDatabase(source, Side.SOURCE);
+        applySelectedDatabase(target, Side.TARGET);
         if (source == null || !source.isValid()) {
             JOptionPane.showMessageDialog(this, "请先选择并连接源数据库", "提示", JOptionPane.WARNING_MESSAGE);
             return;
@@ -1835,10 +2104,7 @@ public class DataSyncUI extends JFrame {
             });
             btnPanel.add(clearBtn);
             JButton copyBtn = new JButton("复制脚本到剪贴板");
-            copyBtn.addActionListener(e -> {
-                java.awt.Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new java.awt.datatransfer.StringSelection(alterScript), null);
-                JOptionPane.showMessageDialog(dialog, "已复制到剪贴板！", "提示", JOptionPane.INFORMATION_MESSAGE);
-            });
+            copyBtn.addActionListener(e -> GlobalUtil.copy(alterScript, dialog));
             btnPanel.add(copyBtn);
             
             JButton applyBtn = new JButton("应用到目标库");

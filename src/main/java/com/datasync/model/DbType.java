@@ -39,6 +39,11 @@ public enum DbType {
         return "postgresql".equalsIgnoreCase(s) ? POSTGRESQL : MYSQL;
     }
     
+    public static IconItem getIconItem(String s) {
+        final DbType dbType = fromString(s);
+        return dbType.equals(POSTGRESQL) ? POSTGRESQL_ITEM : MYSQL_ITEM;
+    }
+    
     public String getKey() {
         return key;
     }

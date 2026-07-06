@@ -10,6 +10,7 @@ package com.datasync.util;
 
 import com.datasync.model.DataSource;
 import java.awt.*;
+import java.awt.datatransfer.*;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -125,5 +126,34 @@ public class GlobalUtil {
      */
     public static String truncateSql(String sql) {
         return sql.length() > 80 ? sql.substring(0, 77) + "..." : sql;
+    }
+    
+    /**
+     * 将文本复制到剪贴板
+     *
+     * @param text   文本
+     * @param dialog 对话框，用于显示提示信息
+     */
+    public static void copy(String text, Component dialog) {
+        Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(text), null);
+        JOptionPane.showMessageDialog(dialog, "已复制到剪贴板！", "提示", JOptionPane.INFORMATION_MESSAGE);
+    }
+    
+    public static Object[] toggleFullscreen(boolean fullscreen, Component component, Rectangle normalBounds) {
+        Object[] objects = new Object[2];
+        if (!fullscreen) {
+            normalBounds = component.getBounds();
+            Rectangle screenBounds = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
+            component.setBounds(screenBounds);
+            fullscreen = true;
+        } else {
+            if (normalBounds != null) {
+                component.setBounds(normalBounds);
+            }
+            fullscreen = false;
+        }
+        objects[0] = normalBounds;
+        objects[1] = fullscreen;
+        return objects;
     }
 }

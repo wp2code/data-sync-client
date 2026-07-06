@@ -1,11 +1,12 @@
 package com.datasync.ui;
 
 import com.datasync.components.CustomTextField;
+import com.datasync.components.FullscreenJDialog;
 import com.datasync.components.OptionJPanel;
 import com.datasync.components.combobox.IconItem;
 import com.datasync.components.combobox.IconJComboBox;
-import com.datasync.model.DataSource;
 import com.datasync.core.DbConnector;
+import com.datasync.model.DataSource;
 import com.datasync.model.DbType;
 import com.datasync.model.Script;
 import com.datasync.util.ConfigUtil;
@@ -13,6 +14,8 @@ import com.datasync.util.IconUtil;
 import com.datasync.util.SQLiteConfigUtil;
 import java.awt.*;
 import java.awt.event.*;
+import java.io.File;
+import java.io.IOException;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
@@ -32,7 +35,7 @@ import javax.swing.table.DefaultTableModel;
  * @author liuweiping
  * @date 2026-07-03
  **/
-public class ScriptMangerDialog extends AbsDialog {
+public class ScriptMangerDialog extends FullscreenJDialog {
     
     private final List<OptionJPanel> scriptPanelList = new ArrayList<>();
     
@@ -43,13 +46,9 @@ public class ScriptMangerDialog extends AbsDialog {
     private JTextArea consoleArea;
     
     private JTextArea resultArea;
-
-    private JTable resultTable;
-
-    private Rectangle normalBounds;
-
-    private boolean fullscreen = false;
-
+    
+    private JTabbedPane resultTabs;
+    
     private IconJComboBox dataSourceCombo;
     
     private JPanel dbPanel;
@@ -64,6 +63,8 @@ public class ScriptMangerDialog extends AbsDialog {
     
     private JMenuItem deleteMenuItem;
     
+    private JMenuItem exportMenuItem;
+    
     private JButton runBtn;
     
     private Script selectedScript;
@@ -71,7 +72,7 @@ public class ScriptMangerDialog extends AbsDialog {
     private OptionJPanel selectedPanel;
     
     public ScriptMangerDialog(Frame owner) {
-        super(owner, "脚本管理", true, 900, 720);
+        super("SCRIPT", owner, "脚本管理", true, 900, 720);
         SQLiteConfigUtil.getInstance().initialize();
         initUI();
         refreshScriptList();
@@ -188,21 +189,24 @@ public class ScriptMangerDialog extends AbsDialog {
         // 更多操作下拉
         JButton moreBtn = new JButton("更多操作 ▼");
         JPopupMenu moreMenu = new JPopupMenu();
-        saveMenuItem = new JMenuItem("保存脚本");
+        saveMenuItem = new JMenuItem("保存脚本(Ctrl+S)");
         saveMenuItem.addActionListener(e -> saveSelectedScript());
         deleteMenuItem = new JMenuItem("删除脚本");
-        deleteMenuItem.addActionListener(e -> deleteSelectedScript());
+        deleteMenuItem.addActionListener(e -> deleteSelectedScript(null));
+        exportMenuItem = new JMenuItem("导出脚本");
+        exportMenuItem.addActionListener(e -> exportSelectedScript());
         JMenuItem clearConsoleItem = new JMenuItem("清空控制台");
         clearConsoleItem.addActionListener(e -> consoleArea.setText(""));
-        JMenuItem clearResultItem = new JMenuItem("清空结果");
+        JMenuItem clearResultItem = new JMenuItem("清空结果和日志");
         clearResultItem.addActionListener(e -> {
             resultArea.setText("");
-            resultTable.setModel(new DefaultTableModel());
+            resultTabs.removeAll();
         });
         JMenuItem fullscreenItem = new JMenuItem("全屏（F11）/ 退出全屏（Esc）");
         fullscreenItem.addActionListener(e -> toggleFullscreen());
         moreMenu.add(saveMenuItem);
         moreMenu.add(deleteMenuItem);
+        moreMenu.add(exportMenuItem);
         moreMenu.addSeparator();
         moreMenu.add(clearConsoleItem);
         moreMenu.add(clearResultItem);
@@ -234,17 +238,10 @@ public class ScriptMangerDialog extends AbsDialog {
         consolePanel.add(consoleScroll, BorderLayout.CENTER);
         
         // 运行结果
-        JPanel resultPanel = new JPanel(new BorderLayout(5, 5));
-        resultPanel.setBorder(BorderFactory.createTitledBorder("运行结果"));
-
-        resultTable = new JTable();
-        resultTable.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
-        resultTable.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
-        resultTable.setFillsViewportHeight(true);
-        JScrollPane tableScroll = new JScrollPane(resultTable);
-        tableScroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
-        tableScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
-
+        resultTabs = new JTabbedPane();
+        resultTabs.setTabLayoutPolicy(JTabbedPane.SCROLL_TAB_LAYOUT);
+        resultTabs.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        resultTabs.setBorder(BorderFactory.createTitledBorder("运行结果"));
         resultArea = new JTextArea();
         resultArea.setEditable(false);
         resultArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
@@ -252,17 +249,17 @@ public class ScriptMangerDialog extends AbsDialog {
         resultArea.setWrapStyleWord(true);
         resultArea.setBorder(new EmptyBorder(8, 8, 8, 8));
         JScrollPane resultScroll = new JScrollPane(resultArea);
+        resultScroll.setBorder(BorderFactory.createTitledBorder("运行日志"));
         resultScroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
         resultScroll.setPreferredSize(new Dimension(0, 80));
-
-        resultPanel.add(tableScroll, BorderLayout.CENTER);
-        resultPanel.add(resultScroll, BorderLayout.SOUTH);
-        
-        JSplitPane rightSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, consolePanel, resultPanel);
-        rightSplitPane.setDividerLocation(300);
+        JSplitPane resultPanelSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, resultTabs, resultScroll);
+        resultPanelSplitPane.setResizeWeight(1);
+        attachResultAreaPopupMenu(consoleArea, "清空控制台", true);
+        attachResultAreaPopupMenu(resultTabs, "清空结果", false);
+        attachResultAreaPopupMenu(resultArea, "清空日志", false);
+        JSplitPane rightSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, consolePanel, resultPanelSplitPane);
         rightSplitPane.setResizeWeight(0.6);
         rightPanel.add(rightSplitPane, BorderLayout.CENTER);
-        
         JSplitPane rootSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, leftPanel, rightPanel);
         rootSplit.setDividerLocation(240);
         rootSplit.setResizeWeight(0.25);
@@ -325,13 +322,52 @@ public class ScriptMangerDialog extends AbsDialog {
     }
     
     private OptionJPanel createScriptPanel(Script script) {
-        OptionJPanel panel = new OptionJPanel(script.getScriptName(), IconUtil.getDbTypeIcon(script.getDbType()));
+        OptionJPanel panel = new OptionJPanel(script.getScriptName(), script.getRemark(), IconUtil.getDbTypeIcon(script.getDbType()));
         panel.setData(script);
         panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
         panel.setOnClick(() -> selectScript(script, panel));
         attachScriptPopupMenu(panel, script, panel);
         return panel;
+    }
+    
+    private void attachResultAreaPopupMenu(Component comp, String title, boolean copy) {
+        comp.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent e) {
+                maybeShowPopup(e);
+            }
+            
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                maybeShowPopup(e);
+            }
+            
+            private void maybeShowPopup(MouseEvent e) {
+                if (e.isPopupTrigger()) {
+                    JPopupMenu popup = new JPopupMenu();
+                    JMenuItem editItem = new JMenuItem(title);
+                    if (comp instanceof JTextArea textArea) {
+                        editItem.addActionListener(ev -> textArea.setText(""));
+                        if (copy) {
+                            JMenuItem copyItem = new JMenuItem("一键复制");
+                            copyItem.addActionListener(ee -> {
+                                textArea.selectAll();
+                                textArea.copy();
+                                textArea.setCaretPosition(0);
+                                JOptionPane.showMessageDialog(comp.getParent(), "脚本已复制到剪贴板", "提示", JOptionPane.INFORMATION_MESSAGE);
+                            });
+                            popup.add(copyItem);
+                        }
+                    }
+                    if (comp instanceof JTabbedPane tabbedPane) {
+                        editItem.addActionListener(ev -> tabbedPane.removeAll());
+                    }
+                    popup.add(editItem);
+                    popup.show(e.getComponent(), e.getX(), e.getY());
+                }
+            }
+        });
     }
     
     private void attachScriptPopupMenu(Component comp, Script script, OptionJPanel panel) {
@@ -350,9 +386,12 @@ public class ScriptMangerDialog extends AbsDialog {
                 if (e.isPopupTrigger()) {
                     selectScript(script, panel);
                     JPopupMenu popup = new JPopupMenu();
-                    JMenuItem editItem = new JMenuItem("编辑名称/类型");
+                    JMenuItem editItem = new JMenuItem("编 辑");
+                    JMenuItem deleteItem = new JMenuItem("删 除");
                     editItem.addActionListener(ev -> editScript(script, panel));
+                    deleteItem.addActionListener(ev -> deleteSelectedScript(script));
                     popup.add(editItem);
+                    popup.add(deleteItem);
                     popup.show(e.getComponent(), e.getX(), e.getY());
                 }
             }
@@ -366,9 +405,15 @@ public class ScriptMangerDialog extends AbsDialog {
     
     private void editScript(Script script, OptionJPanel panel) {
         JTextField nameInput = new JTextField(script.getScriptName());
-        JComboBox<String> dbTypeInput = new JComboBox<>(new String[] {DbType.MYSQL.getKey(), DbType.POSTGRESQL.getKey()});
-        dbTypeInput.setSelectedItem(script.getDbType());
-        Object[] message = {"脚本名称:", nameInput, "数据库类型:", dbTypeInput};
+        IconJComboBox dbTypeInput = new IconJComboBox();
+        dbTypeInput.addItem(DbType.POSTGRESQL_ITEM);
+        dbTypeInput.addItem(DbType.MYSQL_ITEM);
+        dbTypeInput.setSelectedItem(DbType.getIconItem(script.getDbType()));
+        JTextArea remarkInput = new JTextArea(script.getRemark(), 5, 10);
+        remarkInput.setWrapStyleWord(true);
+        remarkInput.setLineWrap(true);
+        JScrollPane scrollPane = new JScrollPane(remarkInput);
+        Object[] message = {"脚本名称:", nameInput, "数据库类型:", dbTypeInput, "备注:", scrollPane};
         int option = JOptionPane.showConfirmDialog(this, message, "编辑脚本", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
         if (option != JOptionPane.OK_OPTION) {
             return;
@@ -386,14 +431,19 @@ public class ScriptMangerDialog extends AbsDialog {
             return;
         }
         
-        String newDbType = (String) dbTypeInput.getSelectedItem();
-        boolean changed = !newName.equals(script.getScriptName()) || !newDbType.equalsIgnoreCase(script.getDbType());
+        final IconItem selectedItem = dbTypeInput.getSelectedItem();
+        assert selectedItem != null;
+        final String newDbType = selectedItem.getText().trim();
+        final String newRemark = remarkInput.getText().trim();
+        boolean changed =
+                !newName.equals(script.getScriptName()) || !newDbType.equalsIgnoreCase(script.getDbType()) || !newRemark.equals(script.getRemark());
         if (!changed) {
             return;
         }
         
         script.setScriptName(newName);
         script.setDbType(newDbType);
+        script.setRemark(newRemark);
         if (ConfigUtil.updateScript(script)) {
             refreshScriptList();
             for (OptionJPanel p : scriptPanelList) {
@@ -403,7 +453,7 @@ public class ScriptMangerDialog extends AbsDialog {
                     break;
                 }
             }
-            logResult("更新脚本 [" + newName + "] 成功");
+            logResult("更新脚本 [" + newName + "] 成功！");
         } else {
             JOptionPane.showMessageDialog(this, "更新脚本失败", "错误", JOptionPane.ERROR_MESSAGE);
         }
@@ -429,7 +479,7 @@ public class ScriptMangerDialog extends AbsDialog {
         resetTargetSelectionState();
         dataSourceCombo.removeAllItems();
         dataSourceCombo.addItem(new IconItem(null, "（请选择数据源）"));
-
+        
         List<String> names = ConfigUtil.loadAllSourceNames();
         boolean hasMatch = false;
         for (String name : names) {
@@ -442,7 +492,7 @@ public class ScriptMangerDialog extends AbsDialog {
         if (!hasMatch) {
             dataSourceCombo.addItem(new IconItem(null, "（无匹配数据源）"));
         }
-
+        
         // 尝试恢复之前的选择
         if (previousSelection != null && !previousSelection.startsWith("（")) {
             for (int i = 0; i < dataSourceCombo.getItemCount(); i++) {
@@ -576,8 +626,14 @@ public class ScriptMangerDialog extends AbsDialog {
     
     private void createNewScript() {
         JTextField nameFieldInput = new JTextField();
-        JComboBox<String> dbTypeInput = new JComboBox<>(new String[] {DbType.MYSQL.getKey(), DbType.POSTGRESQL.getKey()});
-        Object[] message = {"脚本名称:", nameFieldInput, "数据库类型:", dbTypeInput};
+        IconJComboBox dbTypeInput = new IconJComboBox();
+        dbTypeInput.addItem(DbType.POSTGRESQL_ITEM);
+        dbTypeInput.addItem(DbType.MYSQL_ITEM);
+        JTextArea remarkInput = new JTextArea(5, 10);
+        remarkInput.setWrapStyleWord(true);
+        remarkInput.setLineWrap(true);
+        JScrollPane scrollPane = new JScrollPane(remarkInput);
+        Object[] message = {"脚本名称:", nameFieldInput, "数据库类型:", dbTypeInput, "备注:", scrollPane};
         int option = JOptionPane.showConfirmDialog(this, message, "新建脚本", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
         if (option != JOptionPane.OK_OPTION) {
             return;
@@ -593,8 +649,10 @@ public class ScriptMangerDialog extends AbsDialog {
             return;
         }
         
-        String dbType = (String) dbTypeInput.getSelectedItem();
-        Script script = new Script(name, dbType, "");
+        IconItem dbType = dbTypeInput.getSelectedItem();
+        assert dbType != null;
+        Script script = new Script(name, dbType.getText(), "");
+        script.setRemark(remarkInput.getText().trim());
         if (!ConfigUtil.saveScript(script)) {
             JOptionPane.showMessageDialog(this, "新建脚本失败", "错误", JOptionPane.ERROR_MESSAGE);
             return;
@@ -628,27 +686,74 @@ public class ScriptMangerDialog extends AbsDialog {
         }
     }
     
-    private void deleteSelectedScript() {
-        if (selectedScript == null) {
-            JOptionPane.showMessageDialog(this, "请先选择一个脚本", "提示", JOptionPane.INFORMATION_MESSAGE);
-            return;
+    private void deleteSelectedScript(Script script) {
+        Long id;
+        String scriptName;
+        if (script != null) {
+            id = script.getId();
+            scriptName = script.getScriptName();
+        } else {
+            if (selectedScript == null) {
+                JOptionPane.showMessageDialog(this, "请先选择一个脚本", "提示", JOptionPane.INFORMATION_MESSAGE);
+                return;
+            }
+            scriptName = selectedScript.getScriptName();
+            id = selectedScript.getId();
         }
-        
-        int confirm = JOptionPane.showConfirmDialog(this, "确定删除脚本 [" + selectedScript.getScriptName() + "] 吗？", "确认删除",
-                JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        int confirm = JOptionPane.showConfirmDialog(this, "确定删除脚本 [" + scriptName + "] 吗？", "确认删除", JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE);
         if (confirm != JOptionPane.YES_OPTION) {
             return;
         }
-        
-        if (ConfigUtil.deleteScript(selectedScript.getId())) {
-            selectedScript = null;
-            selectedPanel = null;
-            consoleArea.setText("");
+        if (ConfigUtil.deleteScript(id)) {
+            if (script == null || (selectedScript != null && script.getId().equals(selectedScript.getId()))) {
+                selectedScript = null;
+                selectedPanel = null;
+                consoleArea.setText("");
+            }
             refreshScriptList();
             updateEditState();
             logResult("删除脚本成功");
         } else {
             JOptionPane.showMessageDialog(this, "删除脚本失败", "错误", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+    
+    private void exportSelectedScript() {
+        if (selectedScript == null) {
+            JOptionPane.showMessageDialog(this, "请先选择一个脚本", "提示", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        
+        String content = selectedScript.getContent();
+        if (content == null || content.trim().isEmpty()) {
+            JOptionPane.showMessageDialog(this, "脚本内容为空，无需导出", "提示", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("导出脚本为 SQL 文件");
+        chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+        chooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("SQL 文件 (*.sql)", "sql"));
+        chooser.setSelectedFile(new File(selectedScript.getScriptName() + ".sql"));
+        
+        int result = chooser.showSaveDialog(this);
+        if (result != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+        
+        File file = chooser.getSelectedFile();
+        String fileName = file.getName();
+        if (!fileName.toLowerCase().endsWith(".sql")) {
+            file = new File(file.getParentFile(), fileName + ".sql");
+        }
+        
+        try (java.io.FileWriter writer = new java.io.FileWriter(file, java.nio.charset.StandardCharsets.UTF_8)) {
+            writer.write(content);
+            logResult("导出脚本成功: " + file.getAbsolutePath());
+            JOptionPane.showMessageDialog(this, "导出成功：\n" + file.getAbsolutePath(), "导出成功", JOptionPane.INFORMATION_MESSAGE);
+        } catch (IOException ex) {
+            JOptionPane.showMessageDialog(this, "导出失败：" + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
         }
     }
     
@@ -705,7 +810,8 @@ public class ScriptMangerDialog extends AbsDialog {
             Connection conn = null;
             int success = 0;
             int failed = 0;
-            SwingUtilities.invokeLater(() -> resultTable.setModel(new DefaultTableModel()));
+            int queryIndex = 0;
+            SwingUtilities.invokeLater(() -> resultTabs.removeAll());
             try {
                 conn = DbConnector.getConnection(dataSource);
                 List<String> statements = splitSqlStatements(content);
@@ -738,8 +844,11 @@ public class ScriptMangerDialog extends AbsDialog {
                                     }
                                 }
                                 Object[][] data = rows.toArray(new Object[0][]);
+                                queryIndex++;
+                                int tabIndex = queryIndex;
+                                int finalTotalCount = totalCount;
                                 SwingUtilities.invokeLater(() -> {
-                                    resultTable.setModel(new DefaultTableModel(data, columnNames));
+                                    addResultTab("结果 " + tabIndex + " (" + finalTotalCount + ")", data, columnNames);
                                 });
                                 logResult("[QUERY] " + truncateSql(sql) + " | 共 " + totalCount + " 条，显示前 " + displayCount + " 条");
                                 success++;
@@ -767,11 +876,27 @@ public class ScriptMangerDialog extends AbsDialog {
         }).start();
     }
     
+    /**
+     * 向结果区域添加一个 SELECT 查询结果 tab。
+     */
+    private void addResultTab(String title, Object[][] data, Object[] columnNames) {
+        JTable table = new JTable(new DefaultTableModel(data, columnNames));
+        table.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        table.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+        table.setFillsViewportHeight(true);
+        JScrollPane scroll = new JScrollPane(table);
+        scroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+        scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+        resultTabs.addTab(title, scroll);
+        resultTabs.setSelectedIndex(resultTabs.getTabCount() - 1);
+    }
+    
     private void updateEditState() {
         boolean hasSelection = selectedScript != null;
         consoleArea.setEnabled(hasSelection);
         saveMenuItem.setEnabled(hasSelection);
         deleteMenuItem.setEnabled(hasSelection);
+        exportMenuItem.setEnabled(hasSelection);
         updateRunButtonState();
     }
     
@@ -797,10 +922,9 @@ public class ScriptMangerDialog extends AbsDialog {
             resultArea.setCaretPosition(resultArea.getDocument().getLength());
         });
     }
-
+    
     /**
-     * 拆分 SQL 脚本为独立语句。
-     * 支持跳过 -- 行注释、
+     * 拆分 SQL 脚本为独立语句。 支持跳过 -- 行注释、
      */
     private List<String> splitSqlStatements(String content) {
         List<String> statements = new ArrayList<>();
@@ -813,14 +937,14 @@ public class ScriptMangerDialog extends AbsDialog {
         for (int i = 0; i < chars.length; i++) {
             char c = chars[i];
             char next = i + 1 < chars.length ? chars[i + 1] : '\0';
-
+            
             if (inLineComment) {
                 if (c == '\n') {
                     inLineComment = false;
                 }
                 continue;
             }
-
+            
             if (inBlockComment) {
                 if (c == '*' && next == '/') {
                     inBlockComment = false;
@@ -828,7 +952,7 @@ public class ScriptMangerDialog extends AbsDialog {
                 }
                 continue;
             }
-
+            
             if (!inSingleQuote && !inDoubleQuote) {
                 if (c == '-' && next == '-') {
                     inLineComment = true;
@@ -841,7 +965,7 @@ public class ScriptMangerDialog extends AbsDialog {
                     continue;
                 }
             }
-
+            
             if (c == '\'' && !inDoubleQuote) {
                 inSingleQuote = !inSingleQuote;
                 current.append(c);
@@ -852,7 +976,7 @@ public class ScriptMangerDialog extends AbsDialog {
                 current.append(c);
                 continue;
             }
-
+            
             if (c == ';' && !inSingleQuote && !inDoubleQuote) {
                 String sql = current.toString().trim();
                 if (!sql.isEmpty()) {
@@ -861,7 +985,7 @@ public class ScriptMangerDialog extends AbsDialog {
                 current = new StringBuilder();
                 continue;
             }
-
+            
             current.append(c);
         }
         String last = current.toString().trim();
@@ -870,7 +994,7 @@ public class ScriptMangerDialog extends AbsDialog {
         }
         return statements;
     }
-
+    
     private String truncateSql(String sql) {
         if (sql == null) {
             return "";
@@ -878,46 +1002,36 @@ public class ScriptMangerDialog extends AbsDialog {
         String s = sql.replaceAll("\\s+", " ").trim();
         return s.length() > 80 ? s.substring(0, 80) + "..." : s;
     }
-
-    /**
-     * 切换脚本管理弹窗全屏状态。
-     * 全屏时占满可用屏幕区域；退出时恢复之前的窗口大小和位置。
-     */
-    private void toggleFullscreen() {
-        if (!fullscreen) {
-            normalBounds = getBounds();
-            Rectangle screenBounds = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
-            setBounds(screenBounds);
-            fullscreen = true;
-        } else {
-            if (normalBounds != null) {
-                setBounds(normalBounds);
-            }
-            fullscreen = false;
-        }
-    }
-
+    
     /**
      * 绑定全屏快捷键：F11 切换全屏，Esc 退出全屏。
      */
     private void bindFullscreenShortcuts() {
-        javax.swing.KeyStroke f11 = javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_F11, 0);
-        getRootPane().getInputMap(javax.swing.JComponent.WHEN_IN_FOCUSED_WINDOW).put(f11, "toggleFullscreen");
-        getRootPane().getActionMap().put("toggleFullscreen", new javax.swing.AbstractAction() {
+        //        KeyStroke f11 = KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_F11, 0);
+        //        getRootPane().getInputMap(javax.swing.JComponent.WHEN_IN_FOCUSED_WINDOW).put(f11, "toggleFullscreen");
+        //        getRootPane().getActionMap().put("toggleFullscreen", new javax.swing.AbstractAction() {
+        //            @Override
+        //            public void actionPerformed(java.awt.event.ActionEvent e) {
+        //                toggleFullscreen();
+        //            }
+        //        });
+        //
+        //        KeyStroke esc = KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ESCAPE, 0);
+        //        getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(esc, "exitFullscreen");
+        //        getRootPane().getActionMap().put("exitFullscreen", new javax.swing.AbstractAction() {
+        //            @Override
+        //            public void actionPerformed(java.awt.event.ActionEvent e) {
+        //                if (fullscreen) {
+        //                    toggleFullscreen();
+        //                }
+        //            }
+        //        });
+        KeyStroke ctrlS = KeyStroke.getKeyStroke(KeyEvent.VK_S, KeyEvent.CTRL_DOWN_MASK, true);
+        getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(ctrlS, "toggleSaveScript");
+        getRootPane().getActionMap().put("toggleSaveScript", new AbstractAction() {
             @Override
             public void actionPerformed(java.awt.event.ActionEvent e) {
-                toggleFullscreen();
-            }
-        });
-
-        javax.swing.KeyStroke esc = javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ESCAPE, 0);
-        getRootPane().getInputMap(javax.swing.JComponent.WHEN_IN_FOCUSED_WINDOW).put(esc, "exitFullscreen");
-        getRootPane().getActionMap().put("exitFullscreen", new javax.swing.AbstractAction() {
-            @Override
-            public void actionPerformed(java.awt.event.ActionEvent e) {
-                if (fullscreen) {
-                    toggleFullscreen();
-                }
+                saveSelectedScript();
             }
         });
     }

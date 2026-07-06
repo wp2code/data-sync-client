@@ -8,7 +8,6 @@
  */
 package com.datasync.components;
 
-import com.datasync.util.IconUtil;
 import java.awt.*;
 import java.awt.event.*;
 import javax.swing.*;
@@ -35,27 +34,63 @@ public class OptionJPanel extends JPanel {
     
     private final JLabel label;
     
+    private final JLabel remarkLabel;
+    
     private final String fullText;
     
     private Runnable onClick;
     
-    public OptionJPanel(String text) {
-        this(text, IconUtil.createAppIcon());
-    }
-    
-    public OptionJPanel(String text, Icon icon) {
-        super(new BorderLayout(0, 0));
+    public OptionJPanel(String text, String remark, Icon icon) {
+        super(new BorderLayout(5, 0));
         this.fullText = text;
         setBorder(BorderFactory.createEmptyBorder(5, 10, 5, 10));
+        
         setOpaque(false);
-        label = new JLabel(text, icon, SwingConstants.LEFT);
-        add(label, BorderLayout.WEST);
+        
+        // 图标始终在最左侧第一列
+        JLabel iconLabel = new JLabel(icon, SwingConstants.CENTER);
+        iconLabel.setOpaque(false);
+        add(iconLabel, BorderLayout.WEST);
+        
+        // 文本区域：主文本在上，备注在下；无备注时主文本垂直居中，与图标居中对齐
+        JPanel textPanel = new JPanel(new GridBagLayout());
+        textPanel.setOpaque(false);
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0;
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.weightx = 1;
+        gbc.insets = new Insets(0, 0, 2, 0);
+        
+        label = new JLabel(text);
+        gbc.gridy = 0;
+        gbc.weighty = 1;
+        textPanel.add(label, gbc);
+        
+        if (remark != null && !remark.isEmpty()) {
+            remarkLabel = new JLabel(remark);
+            remarkLabel.setForeground(new Color(160, 160, 160));
+            remarkLabel.setFont(remarkLabel.getFont().deriveFont(Font.PLAIN, remarkLabel.getFont().getSize() - 1f));
+            remarkLabel.setOpaque(false);
+            gbc.gridy = 1;
+            gbc.gridx = 0;
+            gbc.weighty = 0;
+            gbc.insets = new Insets(0, 0, 0, 0);
+            textPanel.add(remarkLabel, gbc);
+        } else {
+            remarkLabel = null;
+        }
+        
+        add(textPanel, BorderLayout.CENTER);
+        
         final Color background = getBackground();
+        final Cursor cursor = getCursor();
         MouseAdapter adapter = new MouseAdapter() {
             @Override
             public void mouseEntered(MouseEvent e) {
                 if (!selected) {
                     setBackground(hoverColor);
+                    setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
                 }
             }
             
@@ -63,6 +98,7 @@ public class OptionJPanel extends JPanel {
             public void mouseExited(MouseEvent e) {
                 if (!selected) {
                     setBackground(background);
+                    setCursor(cursor);
                 }
                 label.setToolTipText(null);
             }
@@ -76,6 +112,10 @@ public class OptionJPanel extends JPanel {
         };
         addMouseListener(adapter);
         label.addMouseListener(adapter);
+        iconLabel.addMouseListener(adapter);
+        if (remarkLabel != null) {
+            remarkLabel.addMouseListener(adapter);
+        }
     }
     
     public boolean isSelected() {

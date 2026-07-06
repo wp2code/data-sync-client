@@ -32,6 +32,10 @@ public final class IconUtil {
     public static ImageIcon createAppIcon() {
         return loadSvgIcon("icon.svg");
     }
+    
+    public static Icon success() {
+        return loadSvgIcon("success.svg");
+    }
     // ── 通过 DbType 枚举获取图标 ──
     
     public static ImageIcon getDbTypeIcon(DbType dbType) {

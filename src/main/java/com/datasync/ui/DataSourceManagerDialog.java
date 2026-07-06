@@ -1,14 +1,19 @@
 package com.datasync.ui;
 
+import com.datasync.components.ChildLayoutPanel;
 import com.datasync.components.DbTypeTableCellRenderer;
+import com.datasync.components.FullscreenJDialog;
 import com.datasync.components.combobox.IconItem;
 import com.datasync.components.combobox.IconJComboBox;
-import com.datasync.model.DataSource;
 import com.datasync.core.DbConnector;
+import com.datasync.model.DataSource;
 import com.datasync.model.DbType;
 import com.datasync.util.ConfigUtil;
+import com.datasync.util.IconUtil;
 import java.awt.*;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -18,7 +23,7 @@ import javax.swing.table.AbstractTableModel;
 /**
  * 数据源管理对话框 — 独立窗口集中管理数据源配置的增删改查
  */
-public class DataSourceManagerDialog extends AbsDialog {
+public class DataSourceManagerDialog extends FullscreenJDialog {
     
     private final JTable configTable;
     
@@ -49,17 +54,18 @@ public class DataSourceManagerDialog extends AbsDialog {
     
     private final JTextArea statusArea;
     
+    private final JScrollPane statusAreaScrollPane;
+    
     public DataSourceManagerDialog(Frame owner) {
-        super(owner, "数据源管理", true, 780, 720);
+        super("DATASOURCE", owner, "数据源管理", true, 780, 720);
         this.editingOriginalName = null;
-
-        setLayout(new BorderLayout(12, 12));
+        
+//        setLayout(new BorderLayout(12, 12));
         getRootPane().setBorder(new EmptyBorder(16, 16, 16, 16));
         
         // ── 顶部：列表 + 操作按钮 ──
-        JPanel topPanel = new JPanel(new BorderLayout(5, 5));
-        topPanel.setBorder(new TitledBorder("已保存的数据源"));
-        
+        JPanel topDataPanel = new JPanel(new BorderLayout(0, 0));
+        topDataPanel.setBorder(BorderFactory.createTitledBorder("已保存的数据源"));
         tableModel = new ConfigTableModel();
         configTable = new JTable(tableModel);
         configTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
@@ -69,10 +75,19 @@ public class DataSourceManagerDialog extends AbsDialog {
         configTable.getColumnModel().getColumn(1).setPreferredWidth(70);
         configTable.getColumnModel().getColumn(2).setPreferredWidth(120);
         configTable.getColumnModel().getColumn(3).setPreferredWidth(60);
-        configTable.getColumnModel().getColumn(4).setPreferredWidth(100);
-        configTable.getColumnModel().getColumn(1);
-        configTable.getColumnModel().getColumn(1).setCellRenderer(new DbTypeTableCellRenderer());
         
+        configTable.getColumnModel().getColumn(4).setPreferredWidth(100);
+        configTable.getColumnModel().getColumn(1).setCellRenderer(new DbTypeTableCellRenderer());
+        configTable.getColumnModel().getColumn(2).setCellRenderer((table1, value, isSelected, hasFocus, row, column1) -> {
+            JLabel label = new JLabel(value.toString());
+            label.setHorizontalAlignment(SwingConstants.CENTER);
+            return label;
+        });
+        configTable.getColumnModel().getColumn(3).setCellRenderer((table1, value, isSelected, hasFocus, row, column1) -> {
+            JLabel label = new JLabel(value.toString());
+            label.setHorizontalAlignment(SwingConstants.CENTER);
+            return label;
+        });
         configTable.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
                 int row = configTable.getSelectedRow();
@@ -81,20 +96,15 @@ public class DataSourceManagerDialog extends AbsDialog {
                 }
             }
         });
-        
         JScrollPane tableScroll = new JScrollPane(configTable);
-        tableScroll.setPreferredSize(new Dimension(680, 125));
-        topPanel.add(tableScroll, BorderLayout.CENTER);
-        
+        topDataPanel.add(tableScroll, BorderLayout.CENTER);
         // 表格右侧按钮
-        JPanel tableBtnPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 5));
+        ChildLayoutPanel tableBtnPanel = new ChildLayoutPanel(new Insets(5, 0, 5, 5), ChildLayoutPanel.LayoutType.RIGHT);
         final JButton newBtn = new JButton("新增");
         final JButton deleteBtn = new JButton("删除");
         tableBtnPanel.add(newBtn);
         tableBtnPanel.add(deleteBtn);
-        topPanel.add(tableBtnPanel, BorderLayout.SOUTH);
-        
-        add(topPanel, BorderLayout.NORTH);
+        topDataPanel.add(tableBtnPanel, BorderLayout.SOUTH);
         
         // ── 中部：编辑表单 ──
         JPanel formPanel = new JPanel(new GridBagLayout());
@@ -161,33 +171,33 @@ public class DataSourceManagerDialog extends AbsDialog {
         gbc.weighty = 1.0;
         gbc.fill = GridBagConstraints.BOTH;
         formPanel.add(Box.createVerticalGlue(), gbc);
-        
-        add(formPanel, BorderLayout.CENTER);
-        
+        JSplitPane mianJsplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, topDataPanel, formPanel);
+        mianJsplitPane.setResizeWeight(1);
+        add(mianJsplitPane, BorderLayout.CENTER);
         // ── 底部：操作按钮 + 状态 ──
-        JPanel bottomPanel = new JPanel(new BorderLayout(5, 5));
+        JPanel bottomPanel = new JPanel(new BorderLayout(0, 10));
         
         statusArea = new JTextArea(2, 50);
         statusArea.setEditable(false);
         statusArea.setFont(UiConstants.FONT_MONO_11);
-        statusArea.setBackground(new Color(40, 40, 40));
-        statusArea.setForeground(new Color(180, 180, 180));
-        JScrollPane statusScroll = new JScrollPane(statusArea);
-        statusScroll.setPreferredSize(new Dimension(680, 40));
-        bottomPanel.add(statusScroll, BorderLayout.CENTER);
-        
-        JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 4));
+        statusArea.setBackground(UiConstants.COLOR_LOG_BG);
+        statusArea.setForeground(UiConstants.COLOR_LOG_FG);
+        statusAreaScrollPane = new JScrollPane(statusArea);
+        statusAreaScrollPane.setBorder(BorderFactory.createTitledBorder("日志"));
+        bottomPanel.add(statusAreaScrollPane, BorderLayout.CENTER);
+        ChildLayoutPanel btnPanel = new ChildLayoutPanel();
         testBtn = new JButton("测试连接");
         final JButton saveBtn = new JButton("保存");
         final JButton cancelBtn = new JButton("取消");
+        final JButton clearBtn = new JButton("清空日志");
+        btnPanel.add(clearBtn);
         btnPanel.add(testBtn);
         btnPanel.add(saveBtn);
         btnPanel.add(cancelBtn);
         bottomPanel.add(btnPanel, BorderLayout.SOUTH);
-        
         add(bottomPanel, BorderLayout.SOUTH);
-        
         // ── 事件绑定 ──
+        clearBtn.addActionListener(e -> statusArea.setText(""));
         newBtn.addActionListener(e -> startNew());
         deleteBtn.addActionListener(e -> deleteSelected());
         saveBtn.addActionListener(e -> saveCurrent());
@@ -396,8 +406,12 @@ public class DataSourceManagerDialog extends AbsDialog {
             SwingUtilities.invokeLater(() -> {
                 setStatus(result);
                 testBtn.setEnabled(true);
-                JOptionPane.showMessageDialog(this, result, "连接测试",
-                        result.startsWith("[SUCCESS]") ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.ERROR_MESSAGE);
+                boolean isSuccess = result.startsWith("[SUCCESS]");
+                if (isSuccess) {
+                    JOptionPane.showMessageDialog(this, result, "连接测试", JOptionPane.INFORMATION_MESSAGE, IconUtil.success());
+                } else {
+                    JOptionPane.showMessageDialog(this, result, "连接测试", JOptionPane.ERROR_MESSAGE);
+                }
             });
         }).start();
     }
@@ -423,7 +437,21 @@ public class DataSourceManagerDialog extends AbsDialog {
     }
     
     private void setStatus(String msg) {
-        statusArea.setText(msg);
+        msg = "[" + new SimpleDateFormat("HH:mm:ss").format(new Date()) + "] " + msg;
+        String text = statusArea.getText().trim();
+        if (!text.isEmpty()) {
+            text = msg + "\n" + text;
+        } else {
+            text = msg;
+        }
+        statusArea.setCaretPosition(0);
+        statusArea.setText(text);
+        if (statusAreaScrollPane != null) {
+            SwingUtilities.invokeLater(() -> {
+                JScrollBar vertical = statusAreaScrollPane.getVerticalScrollBar();
+                vertical.setValue(0);
+            });
+        }
     }
     
 }

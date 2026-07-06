@@ -11,10 +11,13 @@ public final class UiConstants {
     }
     
     public static final String VERSION = "v1.0.0";
+    
     public static final String GITHUB_ADDR = "https://github.com/wp2code/data-sync-client";
     
     // ─── 占位文本 ───
     public static final String PLACEHOLDER_SELECT_SOURCE = "请选择数据源";
+    
+    public static final String PLACEHOLDER_SELECT_DATABASE = "（请选择数据库）";
     
     public static final String PLACEHOLDER_NONE = "（无）";
     
@@ -38,6 +41,8 @@ public final class UiConstants {
     public static final String LOG_SYNC = "[SYNC] ";
     
     public static final String LOG_EXPORT = "[EXPORT] ";
+    
+    public static final String LOG_DDL = "[DDL] ";
     
     public static final String LOG_ERROR = "[ERROR] ";
     

@@ -44,13 +44,21 @@ public final class LogUtil {
             HTMLDocument doc = (HTMLDocument) logArea.getDocument();
             HTMLEditorKit kit = (HTMLEditorKit) logArea.getEditorKit();
             try {
-                kit.insertHTML(doc, doc.getLength(), message + "<br>", 0, 0, null);
+                if (message.startsWith("<html>")) {
+                    kit.insertHTML(doc, doc.getLength(), message + "<br>", 0, 0, null);
+                } else {
+                    kit.insertHTML(doc, doc.getLength(), logTime() + message + "<br>", 0, 0, null);
+                }
                 // 自动滚动到底部
                 logArea.setCaretPosition(doc.getLength());
             } catch (BadLocationException | IOException e) {
                 System.err.println("日志追加失败: " + e.getMessage());
             }
         });
+    }
+    
+    public static String logTime() {
+        return "[" + LOG_DATE_FORMAT.format(new Date()) + "]";
     }
     
     /**
@@ -73,5 +81,17 @@ public final class LogUtil {
             return "";
         }
         return html.replaceAll("<[^>]*>", "").replace("&nbsp;", " ").trim();
+    }
+    
+    public static String success(String message) {
+        return """
+                <html><body><span style="color: green;font-weight: bold;">%s</span></body></html>")
+                """.formatted(message);
+    }
+    
+    public static String failed(String message) {
+        return """
+                <html><body><span style="color: red;">%s</span></body></html>")
+                """.formatted(message);
     }
 }
