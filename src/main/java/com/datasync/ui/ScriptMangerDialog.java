@@ -5,6 +5,7 @@ import com.datasync.components.FullscreenJDialog;
 import com.datasync.components.OptionJPanel;
 import com.datasync.components.combobox.IconItem;
 import com.datasync.components.combobox.IconJComboBox;
+import com.datasync.core.DataSyncService;
 import com.datasync.core.DbConnector;
 import com.datasync.model.DataSource;
 import com.datasync.model.DbType;
@@ -802,7 +803,7 @@ public class ScriptMangerDialog extends FullscreenJDialog {
         runBtn.setEnabled(false);
         String runInfo = "数据源 [" + dataSource.getSourceName() + "] 数据库 [" + dataSource.getDbName() + "]";
         if (dataSource.isPostgresql() && schemaItem != null && !schemaItem.toString().startsWith("（")) {
-            runInfo += " Schema [" + schemaItem.toString() + "]";
+            runInfo += " Schema [" + schemaItem + "]";
         }
         logResult("开始执行脚本 [" + selectedScript.getScriptName() + "] " + runInfo + "...");
         
@@ -834,7 +835,7 @@ public class ScriptMangerDialog extends FullscreenJDialog {
                                 int totalCount = 0;
                                 while (rs.next()) {
                                     totalCount++;
-                                    if (displayCount < 5000) {
+                                    if (displayCount < DataSyncService.LIMIT_QUERY_COUNT) {
                                         displayCount++;
                                         Object[] row = new Object[colCount];
                                         for (int i = 1; i <= colCount; i++) {

@@ -1256,7 +1256,9 @@ public class DataSyncUI extends JFrame {
                 preview.append("-- 数据库: ").append(ds.getDbType().toUpperCase()).append(" | ").append(ds.getHost()).append(":").append(ds.getPort())
                         .append("/").append(ds.getDbName()).append("\n");
                 preview.append("-- 预览时间: ").append(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))).append("\n");
-                preview.append("-- 说明: 每个表最多显示前 " + DataSyncService.MAX_COUNT + " 条，仅用于预览\n");
+                if (DataSyncService.LIMIT_COUNT > 0) {
+                    preview.append("-- 说明: 每个表最多显示前 " + DataSyncService.LIMIT_COUNT + " 条，仅用于预览\n");
+                }
                 preview.append("-- ============================================\n\n");
                 
                 for (Map.Entry<String, List<String>> entry : allTableColumns.entrySet()) {
@@ -1284,7 +1286,7 @@ public class DataSyncUI extends JFrame {
                     if (selectedCols.size() == allCols.size()) {
                         selectedCols = new ArrayList<>();
                     }
-                    String script = syncService.exportInsertScript(ds, tableName, srcConn, selectedCols, DataSyncService.MAX_COUNT);
+                    String script = syncService.exportInsertScript(ds, tableName, srcConn, selectedCols, DataSyncService.LIMIT_COUNT);
                     preview.append(script).append("\n");
                 }
                 

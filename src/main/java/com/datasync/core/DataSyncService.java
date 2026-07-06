@@ -22,7 +22,9 @@ public class DataSyncService {
     
     private static final int BATCH_SIZE = 500; // 每批次插入数据量
     
-    public static final int MAX_COUNT = 1000;
+    public static final int LIMIT_COUNT = -1;
+    
+    public static final int LIMIT_QUERY_COUNT = 10000;
     
     /**
      * 执行单表全量数据同步（复用已有连接）
