@@ -1789,7 +1789,7 @@ public class DataSyncUI extends JFrame {
                         result = UiConstants.LOG_CONNECT + UiConstants.LOG_SUCCESS + "连接成功[" + ds.getSourceName() + "] → " + ds.getDbType()
                                 .toUpperCase() + " " + ds.getHost() + ":" + ds.getPort() + "/" + ds.getDbName();
                     }
-                    dataSyncUI.appendLog(LogUtil.logLine(LogUtil.success(result)));
+                    dataSyncUI.appendLog(LogUtil.logLine(LogUtil.success(LogUtil.logTime() + result)));
                     // 保存连接
                     if (side == Side.SOURCE) {
                         dataSyncUI.srcConn = new ConnectionWrapper(ds, conn);

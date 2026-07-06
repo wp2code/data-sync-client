@@ -60,7 +60,7 @@ public class DataSourceManagerDialog extends FullscreenJDialog {
         super("DATASOURCE", owner, "数据源管理", true, 780, 720);
         this.editingOriginalName = null;
         
-//        setLayout(new BorderLayout(12, 12));
+        //        setLayout(new BorderLayout(12, 12));
         getRootPane().setBorder(new EmptyBorder(16, 16, 16, 16));
         
         // ── 顶部：列表 + 操作按钮 ──
@@ -99,7 +99,7 @@ public class DataSourceManagerDialog extends FullscreenJDialog {
         JScrollPane tableScroll = new JScrollPane(configTable);
         topDataPanel.add(tableScroll, BorderLayout.CENTER);
         // 表格右侧按钮
-        ChildLayoutPanel tableBtnPanel = new ChildLayoutPanel(new Insets(5, 0, 5, 5), ChildLayoutPanel.LayoutType.RIGHT);
+        ChildLayoutPanel tableBtnPanel = new ChildLayoutPanel(new Insets(5, 5, 5, 0), ChildLayoutPanel.LayoutType.RIGHT);
         final JButton newBtn = new JButton("新增");
         final JButton deleteBtn = new JButton("删除");
         tableBtnPanel.add(newBtn);
