@@ -2,6 +2,7 @@ package com.datasync.core;
 
 import com.datasync.model.ConnectionWrapper;
 import com.datasync.model.DataSource;
+import com.datasync.util.LogUtil;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -139,24 +140,21 @@ public class DataSyncService {
             
             // ── 7. 提交事务 ──
             tgtConn.commit();
-            StringBuilder summaryBuilder = new StringBuilder();
-            summaryBuilder.append("<html><body><span style='font-weight:bold;color:green;'>[SUCCESS] 同步完成！共同步 ").append(totalRows)
-                    .append(" 条数据");
-            summaryBuilder.append(" 到表 [").append(tableName).append("]（遇主键冲突自动更新）</span></body></html>");
-            String summary = summaryBuilder.toString();
+            String summary =
+                    "<html><body><span style='font-weight:bold;color:green;'>" + LogUtil.logTime() + "[SUCCESS] 同步完成！共同步 " + totalRows + " 条数据"
+                            + " 到表 [" + tableName + "]（遇主键冲突自动更新）</span></body></html>";
             log.accept(summary);
             return totalRows;
             
         } catch (Exception e) {
-            log.accept("[ERROR] 同步异常 → " + e.getMessage());
-            
+            log.accept(LogUtil.failed(LogUtil.logTime() + "[ERROR] 同步异常 → " + e.getMessage()));
             // ── 7. 异常回滚 ──
             if (tgtConn != null) {
                 try {
                     tgtConn.rollback();
                     log.accept("[INFO] 事务已回滚，目标库数据未受影响");
                 } catch (SQLException rollbackEx) {
-                    log.accept("[ERROR] 事务回滚失败 → " + rollbackEx.getMessage());
+                    log.accept(LogUtil.failed(LogUtil.logTime() + "[ERROR] 事务回滚失败 → " + e.getMessage()));
                 }
             }
             return -1;
