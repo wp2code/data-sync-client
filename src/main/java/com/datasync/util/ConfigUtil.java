@@ -1,6 +1,7 @@
 package com.datasync.util;
 
 import com.datasync.model.DataSource;
+import com.datasync.model.GitLabAuthConfig;
 import com.datasync.model.Script;
 
 import java.util.List;
@@ -60,5 +61,15 @@ public final class ConfigUtil {
     /** 删除脚本配置 */
     public static boolean deleteScript(Long id) {
         return SQLiteConfigUtil.getInstance().deleteScript(id);
+    }
+
+    /** 加载所有 GitLab 配置 */
+    public static List<GitLabAuthConfig> loadAllGitLabAuthConfigs() {
+        return SQLiteConfigUtil.getInstance().loadAllGitLabAuthConfigs();
+    }
+
+    /** 根据 ID 加载 GitLab 配置 */
+    public static GitLabAuthConfig loadGitLabAuthConfigById(Long id) {
+        return SQLiteConfigUtil.getInstance().loadGitLabAuthConfigById(id);
     }
 }

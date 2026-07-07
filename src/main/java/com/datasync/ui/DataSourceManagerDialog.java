@@ -188,6 +188,7 @@ public class DataSourceManagerDialog extends FullscreenJDialog {
         ChildLayoutPanel btnPanel = new ChildLayoutPanel();
         testBtn = new JButton("测试连接");
         final JButton saveBtn = new JButton("保存");
+        saveBtn.setFont(UiConstants.FONT_SANS_12);
         final JButton cancelBtn = new JButton("取消");
         final JButton clearBtn = new JButton("清空日志");
         btnPanel.add(clearBtn);

@@ -183,12 +183,15 @@ public class DataSyncUI extends JFrame {
         title.setFont(UiConstants.FONT_SANS_BOLD_22);
         panel.add(title, BorderLayout.WEST);
         JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.TRAILING, 5, 0));
-        JButton scriptBtm = new JButton("脚本管理");
-        scriptBtm.addActionListener(e -> openScriptManager());
-        rightPanel.add(scriptBtm);
+        JButton scriptBtn = new JButton("脚本管理");
+        scriptBtn.addActionListener(e -> openScriptManager());
+        rightPanel.add(scriptBtn);
         JButton manageBtn = new JButton("管理数据源");
         manageBtn.addActionListener(e -> openDataSourceManager());
         rightPanel.add(manageBtn);
+        JButton gitLabBtn = new JButton("GitLab配置");
+        gitLabBtn.addActionListener(e -> openGitLabManager());
+        rightPanel.add(gitLabBtn);
         panel.add(rightPanel, BorderLayout.EAST);
         JLabel subtitle = new JLabel("不同环境数据同步工具");
         subtitle.setFont(UiConstants.FONT_MONO_12);
@@ -546,12 +549,18 @@ public class DataSyncUI extends JFrame {
         btnPanel.add(versionLink, BorderLayout.WEST);
         btnPanel.add(clearBtn, BorderLayout.EAST);
         panel.add(btnPanel, BorderLayout.SOUTH);
-        
         return panel;
     }
     
-    // ────────── 数据源管理对话框 ──────────
+    // ────────── GitLab管理对话框 ──────────
+    private void openGitLabManager() {
+        GitLabMangerDialog dialog = new GitLabMangerDialog(this);
+        dialog.setVisible(true);
+        // 对话框关闭后刷新主页下拉框
+        refreshConfigCombos();
+    }
     
+    // ────────── 数据源管理对话框 ──────────
     private void openDataSourceManager() {
         DataSourceManagerDialog dialog = new DataSourceManagerDialog(this);
         dialog.setVisible(true);
@@ -931,6 +940,7 @@ public class DataSyncUI extends JFrame {
         // ── 按钮栏 ──
         JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
         JButton saveBtn = new JButton("保存脚本");
+        saveBtn.setFont(UiConstants.FONT_SANS_12);
         saveBtn.addActionListener(e -> saveScript(textArea.getText().trim(), ds.getDbType()));
         JButton copyBtn = new JButton("一键复制");
         copyBtn.setFont(UiConstants.FONT_SANS_12);
@@ -1023,7 +1033,7 @@ public class DataSyncUI extends JFrame {
             return;
         }
         Script script = new Script(name, context);
-        script.setDbType(dbType);
+        script.setDbType(DbType.fromString(dbType));
         script.setRemark(remarkInput.getText().trim());
         if (!ConfigUtil.saveScript(script)) {
             JOptionPane.showMessageDialog(this, "保存脚本失败", "错误", JOptionPane.ERROR_MESSAGE);
@@ -1379,7 +1389,7 @@ public class DataSyncUI extends JFrame {
         // 底部按钮面板
         JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
         JButton cancelIncrementBtn = new JButton("取消自增列");
-        cancelIncrementBtn.setFont(UiConstants.FONT_SANS_11);
+        cancelIncrementBtn.setFont(UiConstants.FONT_SANS_12_BOLD);
         cancelIncrementBtn.addActionListener(e -> {
             for (java.util.Map.Entry<String, List<String>> entry : allTableColumns.entrySet()) {
                 String tableName = entry.getKey();
@@ -1399,6 +1409,7 @@ public class DataSyncUI extends JFrame {
         });
         JButton copyScriptBtn = new JButton("一键复制");
         JButton saveScriptBtn = new JButton("保存脚本");
+        saveScriptBtn.setFont(UiConstants.FONT_SANS_12);
         JButton exportBtn = new JButton("导出SQL文件");
         exportBtn.setFont(UiConstants.FONT_SANS_12_BOLD);
         JButton cancelBtn = new JButton("关闭");

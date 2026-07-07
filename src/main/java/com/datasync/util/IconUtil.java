@@ -9,6 +9,8 @@ import java.io.InputStream;
 import javax.imageio.ImageIO;
 import javax.swing.*;
 import org.apache.batik.transcoder.TranscoderInput;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.batik.transcoder.TranscoderOutput;
 import org.apache.batik.transcoder.image.PNGTranscoder;
 
@@ -16,6 +18,8 @@ import org.apache.batik.transcoder.image.PNGTranscoder;
  * 为 MySQL / PostgreSQL 生成小尺寸程序化图标，供 ComboBox、JTable、JLabel 等组件使用。
  */
 public final class IconUtil {
+    
+    private static final Logger logger = LoggerFactory.getLogger(IconUtil.class);
     
     private IconUtil() {
     }
@@ -80,7 +84,7 @@ public final class IconUtil {
                 }
             }
         } catch (Exception e) {
-            System.err.println("Failed to load SVG icon: " + resourceName + ", falling back to generated icon");
+            logger.warn("Failed to load SVG icon: {}, falling back to generated icon", resourceName, e);
         }
         
         // SVG 加载失败时的后备图标

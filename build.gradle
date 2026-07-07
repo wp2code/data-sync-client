@@ -27,9 +27,19 @@ tasks.withType(JavaCompile).configureEach {
 
 repositories {
     mavenCentral()
+    maven {
+        url "https://jitpack.io"
+        content {
+            includeGroup "com.github.gitlab4j.gitlab4j-api"
+        }
+    }
 }
 
 dependencies {
+    // Lombok 简化模型类代码
+    compileOnly 'org.projectlombok:lombok:1.18.32'
+    annotationProcessor 'org.projectlombok:lombok:1.18.32'
+
     // FlatLaf 现代化 UI 美化
     implementation 'com.formdev:flatlaf:3.4.1'
 
@@ -42,12 +52,16 @@ dependencies {
     // SQLite 本地持久化驱动
     implementation 'org.xerial:sqlite-jdbc:3.45.2.0'
 
-    // SLF4J 日志实现（消除 SQLite 驱动的警告）
-    implementation 'org.slf4j:slf4j-nop:2.0.13'
+    // Logback 日志实现（支持控制台 + 文件滚动日志）
+    implementation 'ch.qos.logback:logback-classic:1.5.6'
 
     // Batik SVG 渲染引擎（用于加载 SVG 图标资源）
     implementation 'org.apache.xmlgraphics:batik-transcoder:1.18'
     implementation 'org.apache.xmlgraphics:batik-codec:1.18'
+    //gitLab SDK
+    implementation group: 'org.gitlab4j', name: 'gitlab4j-api', version: '6.3.0'
+    // Source: https://mvnrepository.com/artifact/com.google.guava/guava
+    implementation("com.google.guava:guava:33.6.0-jre")
 }
 
 application {
@@ -112,7 +126,7 @@ launch4j {
     // requiresAdmin = false
 }
 
-    // 生成 ICO 图标（优先使用 src/main/resources/app.ico，否则渲染 icon.svg 风格图标）
+// 生成 ICO 图标（优先使用 src/main/resources/app.ico，否则渲染 icon.svg 风格图标）
 tasks.register('generateIcon') {
     def customIco = file("${projectDir}/src/main/resources/app.ico")
     def outputFileProvider = layout.buildDirectory.file("tmp/app.ico")

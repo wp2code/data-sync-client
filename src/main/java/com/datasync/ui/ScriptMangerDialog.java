@@ -1,32 +1,42 @@
 package com.datasync.ui;
 
 import com.datasync.components.CustomTextField;
+import com.datasync.components.FilterComboBox;
 import com.datasync.components.FullscreenJDialog;
 import com.datasync.components.OptionJPanel;
 import com.datasync.components.combobox.IconItem;
 import com.datasync.components.combobox.IconJComboBox;
 import com.datasync.core.DataSyncService;
 import com.datasync.core.DbConnector;
+import com.datasync.core.GitLabService;
 import com.datasync.model.DataSource;
 import com.datasync.model.DbType;
+import com.datasync.model.FileParams;
+import com.datasync.model.ProjectItem;
 import com.datasync.model.Script;
 import com.datasync.util.ConfigUtil;
 import com.datasync.util.IconUtil;
 import com.datasync.util.SQLiteConfigUtil;
+import com.mysql.cj.util.StringUtils;
 import java.awt.*;
 import java.awt.event.*;
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableModel;
+import org.gitlab4j.api.models.Branch;
+import org.gitlab4j.api.models.Project;
+import org.gitlab4j.api.models.RepositoryFileResponse;
 
 /**
  * 脚本管理对话框
@@ -37,6 +47,8 @@ import javax.swing.table.DefaultTableModel;
  * @date 2026-07-03
  **/
 public class ScriptMangerDialog extends FullscreenJDialog {
+    
+    private final GitLabService gitLabService = new GitLabService();
     
     private final List<OptionJPanel> scriptPanelList = new ArrayList<>();
     
@@ -63,6 +75,8 @@ public class ScriptMangerDialog extends FullscreenJDialog {
     private JMenuItem saveMenuItem;
     
     private JMenuItem deleteMenuItem;
+    
+    private JMenuItem uploadMenuItem;
     
     private JMenuItem exportMenuItem;
     
@@ -194,6 +208,7 @@ public class ScriptMangerDialog extends FullscreenJDialog {
         saveMenuItem.addActionListener(e -> saveSelectedScript());
         deleteMenuItem = new JMenuItem("删除脚本");
         deleteMenuItem.addActionListener(e -> deleteSelectedScript(null));
+        
         exportMenuItem = new JMenuItem("导出脚本");
         exportMenuItem.addActionListener(e -> exportSelectedScript());
         JMenuItem clearConsoleItem = new JMenuItem("清空控制台");
@@ -208,6 +223,10 @@ public class ScriptMangerDialog extends FullscreenJDialog {
         moreMenu.add(saveMenuItem);
         moreMenu.add(deleteMenuItem);
         moreMenu.add(exportMenuItem);
+        uploadMenuItem = new JMenuItem("上传GitLab");
+        uploadMenuItem.addActionListener(e -> updateSelectedScript());
+        uploadMenuItem.setEnabled(false);
+        moreMenu.add(uploadMenuItem);
         moreMenu.addSeparator();
         moreMenu.add(clearConsoleItem);
         moreMenu.add(clearResultItem);
@@ -405,46 +424,17 @@ public class ScriptMangerDialog extends FullscreenJDialog {
     }
     
     private void editScript(Script script, OptionJPanel panel) {
-        JTextField nameInput = new JTextField(script.getScriptName());
-        IconJComboBox dbTypeInput = new IconJComboBox();
-        dbTypeInput.addItem(DbType.POSTGRESQL_ITEM);
-        dbTypeInput.addItem(DbType.MYSQL_ITEM);
-        dbTypeInput.setSelectedItem(DbType.getIconItem(script.getDbType()));
-        JTextArea remarkInput = new JTextArea(script.getRemark(), 5, 10);
-        remarkInput.setWrapStyleWord(true);
-        remarkInput.setLineWrap(true);
-        JScrollPane scrollPane = new JScrollPane(remarkInput);
-        Object[] message = {"脚本名称:", nameInput, "数据库类型:", dbTypeInput, "备注:", scrollPane};
-        int option = JOptionPane.showConfirmDialog(this, message, "编辑脚本", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
-        if (option != JOptionPane.OK_OPTION) {
+        if (!showScriptMetaDialog(script, "编辑脚本")) {
             return;
         }
         
-        String newName = nameInput.getText().trim();
-        if (newName.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "脚本名称不能为空", "提示", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-        
+        String newName = script.getScriptName();
         Script existing = ConfigUtil.loadScriptByName(newName);
         if (existing != null && !existing.getId().equals(script.getId())) {
             JOptionPane.showMessageDialog(this, "已存在同名脚本，请重新命名", "提示", JOptionPane.WARNING_MESSAGE);
             return;
         }
         
-        final IconItem selectedItem = dbTypeInput.getSelectedItem();
-        assert selectedItem != null;
-        final String newDbType = selectedItem.getText().trim();
-        final String newRemark = remarkInput.getText().trim();
-        boolean changed =
-                !newName.equals(script.getScriptName()) || !newDbType.equalsIgnoreCase(script.getDbType()) || !newRemark.equals(script.getRemark());
-        if (!changed) {
-            return;
-        }
-        
-        script.setScriptName(newName);
-        script.setDbType(newDbType);
-        script.setRemark(newRemark);
         if (ConfigUtil.updateScript(script)) {
             refreshScriptList();
             for (OptionJPanel p : scriptPanelList) {
@@ -467,15 +457,18 @@ public class ScriptMangerDialog extends FullscreenJDialog {
         selectedPanel = panel;
         selectedPanel.setSelected(true);
         selectedScript = script;
-        
         refreshDataSourceCombo();
-        consoleArea.setText(script.getContent());
+        if (script != null) {
+            uploadMenuItem.setEnabled(!StringUtils.isNullOrEmpty(script.getProjectOrId()) && !StringUtils.isNullOrEmpty(script.getBranch())
+                    && !StringUtils.isNullOrEmpty(script.getFilePath()));
+            consoleArea.setText(script.getContent());
+        }
         consoleArea.setCaretPosition(0);
         updateEditState();
     }
     
     private void refreshDataSourceCombo() {
-        String selectedDbType = selectedScript != null ? selectedScript.getDbType() : null;
+        DbType selectedDbType = selectedScript != null ? selectedScript.getDbType() : null;
         String previousSelection = dataSourceCombo.getSelectedItem() != null ? dataSourceCombo.getSelectedItem().getText() : null;
         resetTargetSelectionState();
         dataSourceCombo.removeAllItems();
@@ -485,7 +478,7 @@ public class ScriptMangerDialog extends FullscreenJDialog {
         boolean hasMatch = false;
         for (String name : names) {
             DataSource ds = ConfigUtil.loadDataSourceByName(name);
-            if (ds != null && selectedDbType != null && selectedDbType.equalsIgnoreCase(ds.getDbType())) {
+            if (ds != null && selectedDbType != null && selectedDbType.getKey().equalsIgnoreCase(ds.getDbType())) {
                 dataSourceCombo.addItem(new IconItem(IconUtil.getDbTypeIcon(ds.getDbTypeEnum()), name));
                 hasMatch = true;
             }
@@ -625,35 +618,201 @@ public class ScriptMangerDialog extends FullscreenJDialog {
         }).start();
     }
     
-    private void createNewScript() {
-        JTextField nameFieldInput = new JTextField();
+    private void addFormRow(JPanel panel, GridBagConstraints gbc, int row, JLabel label, JComponent field) {
+        gbc.gridx = 0;
+        gbc.gridy = row;
+        gbc.weightx = 0;
+        gbc.fill = GridBagConstraints.NONE;
+        panel.add(label, gbc);
+        
+        gbc.gridx = 1;
+        gbc.weightx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        panel.add(field, gbc);
+    }
+    
+    /**
+     * 打开脚本元信息编辑对话框，包含名称、数据库类型、GitLab 配置、项目、分支、文件路径、备注。 若用户点击确认并校验通过，则把值写入传入的 script 对象并返回 true。
+     */
+    private boolean showScriptMetaDialog(Script script, String title) {
+        JTextField nameField = new JTextField(script.getScriptName() != null ? script.getScriptName() : "", 30);
         IconJComboBox dbTypeInput = new IconJComboBox();
         dbTypeInput.addItem(DbType.POSTGRESQL_ITEM);
         dbTypeInput.addItem(DbType.MYSQL_ITEM);
-        JTextArea remarkInput = new JTextArea(5, 10);
-        remarkInput.setWrapStyleWord(true);
-        remarkInput.setLineWrap(true);
-        JScrollPane scrollPane = new JScrollPane(remarkInput);
-        Object[] message = {"脚本名称:", nameFieldInput, "数据库类型:", dbTypeInput, "备注:", scrollPane};
-        int option = JOptionPane.showConfirmDialog(this, message, "新建脚本", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        dbTypeInput.setSelectedItem(DbType.getIconItem(script.getDbType() != null ? script.getDbType().getKey() : null));
+        
+        FilterComboBox<ProjectItem> projectCombo = new FilterComboBox<>();
+        projectCombo.setEnabled(gitLabService.isLogin());
+        FilterComboBox<String> branchCombo = new FilterComboBox<>();
+        branchCombo.setEnabled(false);
+        JTextField filePathField = new JTextField(script.getFilePath() != null ? script.getFilePath() : "", 30);
+        JTextArea remarkArea = new JTextArea(script.getRemark() != null ? script.getRemark() : "", 4, 30);
+        remarkArea.setLineWrap(true);
+        remarkArea.setWrapStyleWord(true);
+        JScrollPane remarkScroll = new JScrollPane(remarkArea);
+        loadProjectsForConfig(projectCombo, branchCombo, script.getProjectOrId(), script.getBranch());
+        projectCombo.addItemListener(e -> {
+            if (e.getStateChange() == ItemEvent.SELECTED) {
+                ProjectItem item = (ProjectItem) projectCombo.getSelectedItem();
+                if (item != null && (item.getId() != null || item.getPathWithNamespace() != null)) {
+                    loadBranchesForProject(item.getProjectOrId(), branchCombo, script.getBranch());
+                } else {
+                    branchCombo.clearAllItems();
+                    branchCombo.setEnabled(false);
+                }
+            }
+        });
+        
+        JPanel panel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.anchor = GridBagConstraints.WEST;
+        addFormRow(panel, gbc, 0, new JLabel("脚本名称:"), nameField);
+        addFormRow(panel, gbc, 1, new JLabel("数据库类型:"), dbTypeInput);
+        addFormRow(panel, gbc, 2, new JLabel("项目:"), projectCombo);
+        addFormRow(panel, gbc, 3, new JLabel("分支:"), branchCombo);
+        addFormRow(panel, gbc, 4, new JLabel("文件路径:"), filePathField);
+        
+        // 备注：允许垂直方向压缩/伸展
+        gbc.gridx = 0;
+        gbc.gridy = 5;
+        gbc.weightx = 0;
+        gbc.weighty = 1;
+        gbc.fill = GridBagConstraints.BOTH;
+        gbc.anchor = GridBagConstraints.NORTHWEST;
+        panel.add(new JLabel("备注:"), gbc);
+        
+        gbc.gridx = 1;
+        gbc.weightx = 1;
+        panel.add(remarkScroll, gbc);
+        
+        int option = JOptionPane.showConfirmDialog(this, panel, title, JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
         if (option != JOptionPane.OK_OPTION) {
+            return false;
+        }
+        
+        String newName = nameField.getText().trim();
+        if (newName.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "脚本名称不能为空", "提示", JOptionPane.WARNING_MESSAGE);
+            return false;
+        }
+        
+        IconItem selectedDbType = dbTypeInput.getSelectedItem();
+        ProjectItem selectedProject = (ProjectItem) projectCombo.getSelectedItem();
+        String selectedBranch = (String) branchCombo.getSelectedItem();
+        script.setScriptName(newName);
+        script.setGitLabConfigId(selectedProject != null ? selectedProject.getConfigId() : null);
+        script.setDbType(selectedDbType != null ? DbType.fromString(selectedDbType.getText()) : DbType.MYSQL);
+        script.setProjectOrId(selectedProject != null && selectedProject.getId() != null ? selectedProject.getProjectOrId() : null);
+        script.setBranch(selectedBranch != null && !selectedBranch.startsWith("（") ? selectedBranch : null);
+        script.setFilePath(filePathField.getText().trim());
+        script.setRemark(remarkArea.getText().trim());
+        return true;
+    }
+    
+    private void loadProjectsForConfig(FilterComboBox<ProjectItem> projectCombo, FilterComboBox<String> branchCombo, String preselectProjectOrId,
+            String preselectBranch) {
+        projectCombo.clearAllItems();
+        projectCombo.addItem(new ProjectItem(null, null, "（查询中...）"));
+        projectCombo.setEnabled(false);
+        branchCombo.clearAllItems();
+        branchCombo.setEnabled(false);
+        new Thread(() -> {
+            List<Project> projects = gitLabService.getProjectList();
+            SwingUtilities.invokeLater(() -> {
+                try {
+                    List<ProjectItem> items = new ArrayList<>();
+                    if (projects.isEmpty()) {
+                        items.add(new ProjectItem(null, null, "（无项目）"));
+                        projectCombo.setAllItems(items);
+                        projectCombo.setEnabled(false);
+                        return;
+                    }
+                    items.add(new ProjectItem(null, null, "（请选择项目）"));
+                    ProjectItem matched = null;
+                    for (Project p : projects) {
+                        ProjectItem item = new ProjectItem(p.getId(), p.getPathWithNamespace(), p.getName());
+                        if (gitLabService.getGitLabAuthConfig() != null) {
+                            item.setConfigId(gitLabService.getGitLabAuthConfig().getId());
+                        }
+                        items.add(item);
+                        if (preselectProjectOrId != null && preselectProjectOrId.equals(item.getProjectOrId())) {
+                            matched = item;
+                        }
+                    }
+                    projectCombo.setAllItems(items);
+                    projectCombo.setEnabled(true);
+                    if (matched != null) {
+                        projectCombo.setSelectedItem(matched);
+                    } else {
+                        projectCombo.setSelectedIndex(0);
+                    }
+                } catch (Exception ex) {
+                    SwingUtilities.invokeLater(() -> {
+                        projectCombo.clearAllItems();
+                        projectCombo.addItem(new ProjectItem(null, null, "（加载失败）"));
+                        JOptionPane.showMessageDialog(this, "加载 GitLab 项目失败：" + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
+                    });
+                }
+            });
+        }).start();
+    }
+    
+    private void loadBranchesForProject(String projectOrId, FilterComboBox<String> branchCombo, String preselectBranch) {
+        branchCombo.clearAllItems();
+        branchCombo.addItem("（查询中...）");
+        branchCombo.setEnabled(false);
+        new Thread(() -> {
+            try {
+                List<Branch> branches = gitLabService.getBranchList(projectOrId);
+                SwingUtilities.invokeLater(() -> {
+                    List<String> items = new ArrayList<>();
+                    if (branches.isEmpty()) {
+                        items.add("（无分支）");
+                        branchCombo.setAllItems(items);
+                        branchCombo.setEnabled(false);
+                        return;
+                    }
+                    items.add("（请选择分支）");
+                    String matched = null;
+                    for (Branch b : branches) {
+                        String name = b.getName();
+                        items.add(name);
+                        if (preselectBranch != null && preselectBranch.equals(name)) {
+                            matched = name;
+                        }
+                    }
+                    branchCombo.setAllItems(items);
+                    branchCombo.setEnabled(true);
+                    if (matched != null) {
+                        branchCombo.setSelectedItem(matched);
+                    } else if (branchCombo.getItemCount() > 1) {
+                        branchCombo.setSelectedIndex(1);
+                    }
+                });
+            } catch (Exception ex) {
+                SwingUtilities.invokeLater(() -> {
+                    branchCombo.clearAllItems();
+                    branchCombo.addItem("（加载失败）");
+                    branchCombo.setEnabled(false);
+                    JOptionPane.showMessageDialog(this, "加载分支失败：" + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
+                });
+            }
+        }).start();
+    }
+    
+    private void createNewScript() {
+        Script script = new Script();
+        if (!showScriptMetaDialog(script, "新建脚本")) {
             return;
         }
         
-        String name = nameFieldInput.getText().trim();
-        if (name.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "脚本名称不能为空", "提示", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
+        String name = script.getScriptName();
         if (ConfigUtil.loadScriptByName(name) != null) {
             JOptionPane.showMessageDialog(this, "已存在同名脚本，请重新命名", "提示", JOptionPane.WARNING_MESSAGE);
             return;
         }
         
-        IconItem dbType = dbTypeInput.getSelectedItem();
-        assert dbType != null;
-        Script script = new Script(name, dbType.getText(), "");
-        script.setRemark(remarkInput.getText().trim());
         if (!ConfigUtil.saveScript(script)) {
             JOptionPane.showMessageDialog(this, "新建脚本失败", "错误", JOptionPane.ERROR_MESSAGE);
             return;
@@ -671,6 +830,57 @@ public class ScriptMangerDialog extends FullscreenJDialog {
             }
         }
         logResult("新建脚本 [" + name + "] 成功");
+    }
+    
+    //上传文件到GitLab
+    private void updateSelectedScript() {
+        if (selectedScript == null) {
+            JOptionPane.showMessageDialog(this, "请先选择一个脚本", "提示", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        try {
+            if (!gitLabService.isLogin()) {
+                JOptionPane.showMessageDialog(this, "GitLab 未登录或配置无效", "提示", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, "GitLab 未登录或配置无效：" + ex.getMessage(), "提示", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        String content = consoleArea.getText();
+        if (StringUtils.isNullOrEmpty(content)) {
+            JOptionPane.showMessageDialog(this, "脚本内容为空，无需上传", "提示", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        if (StringUtils.isNullOrEmpty(selectedScript.getProjectOrId()) || StringUtils.isNullOrEmpty(selectedScript.getBranch())
+                || StringUtils.isNullOrEmpty(selectedScript.getFilePath())) {
+            JOptionPane.showMessageDialog(this, "请先配置 GitLab 项目、分支和文件路径", "提示", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        new Thread(() -> {
+            try {
+                FileParams fileParams = new FileParams();
+                fileParams.setProjectOrId(selectedScript.getProjectOrId());
+                fileParams.setBranch(selectedScript.getBranch());
+                fileParams.setFilePath(selectedScript.getFilePath());
+                fileParams.setFileName(selectedScript.getScriptName() + ".sql");
+                fileParams.setCommitMessage(selectedScript.getFilePath());
+                fileParams.setContent(Base64.getEncoder().encodeToString(content.getBytes(StandardCharsets.UTF_8)));
+                fileParams.setEncoding("base64");
+                final RepositoryFileResponse orUpdateFile = gitLabService.createOrUpdateFile(fileParams);
+                SwingUtilities.invokeLater(() -> {
+                    logResult("上传脚本 [" + selectedScript.getScriptName() + "] 到 GitLab 成功! 分支：" + orUpdateFile.getBranch() + " 地址："
+                            + orUpdateFile.getFilePath());
+                    JOptionPane.showMessageDialog(this, "上传 GitLab 成功！地址：" + orUpdateFile.getFilePath(), "成功",
+                            JOptionPane.INFORMATION_MESSAGE);
+                });
+            } catch (Exception ex) {
+                SwingUtilities.invokeLater(() -> {
+                    logResult("上传脚本 [" + selectedScript.getScriptName() + "] 到 GitLab 失败：" + ex.getMessage());
+                    JOptionPane.showMessageDialog(this, "上传 GitLab 失败：" + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
+                });
+            }
+        }).start();
     }
     
     private void saveSelectedScript() {
@@ -791,8 +1001,8 @@ public class ScriptMangerDialog extends FullscreenJDialog {
             dataSource.setSchema(schemaItem.toString());
         }
         
-        String scriptDbType = selectedScript.getDbType();
-        if (!scriptDbType.equalsIgnoreCase(dataSource.getDbType())) {
+        DbType scriptDbType = selectedScript.getDbType();
+        if (scriptDbType == null || !scriptDbType.getKey().equalsIgnoreCase(dataSource.getDbType())) {
             JOptionPane.showMessageDialog(this, "脚本数据库类型 [" + scriptDbType + "] 与数据源类型 [" + dataSource.getDbType() + "] 不一致",
                     "类型不匹配", JOptionPane.WARNING_MESSAGE);
             return;
@@ -1008,25 +1218,6 @@ public class ScriptMangerDialog extends FullscreenJDialog {
      * 绑定全屏快捷键：F11 切换全屏，Esc 退出全屏。
      */
     private void bindFullscreenShortcuts() {
-        //        KeyStroke f11 = KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_F11, 0);
-        //        getRootPane().getInputMap(javax.swing.JComponent.WHEN_IN_FOCUSED_WINDOW).put(f11, "toggleFullscreen");
-        //        getRootPane().getActionMap().put("toggleFullscreen", new javax.swing.AbstractAction() {
-        //            @Override
-        //            public void actionPerformed(java.awt.event.ActionEvent e) {
-        //                toggleFullscreen();
-        //            }
-        //        });
-        //
-        //        KeyStroke esc = KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ESCAPE, 0);
-        //        getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(esc, "exitFullscreen");
-        //        getRootPane().getActionMap().put("exitFullscreen", new javax.swing.AbstractAction() {
-        //            @Override
-        //            public void actionPerformed(java.awt.event.ActionEvent e) {
-        //                if (fullscreen) {
-        //                    toggleFullscreen();
-        //                }
-        //            }
-        //        });
         KeyStroke ctrlS = KeyStroke.getKeyStroke(KeyEvent.VK_S, KeyEvent.CTRL_DOWN_MASK, true);
         getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(ctrlS, "toggleSaveScript");
         getRootPane().getActionMap().put("toggleSaveScript", new AbstractAction() {

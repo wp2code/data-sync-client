@@ -7,6 +7,8 @@ import javax.swing.*;
 import javax.swing.text.BadLocationException;
 import javax.swing.text.html.HTMLDocument;
 import javax.swing.text.html.HTMLEditorKit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * 日志格式化与输出工具类。 负责生成带时间戳的日志行、追加到 JEditorPane、清空日志区域。
@@ -15,6 +17,8 @@ public final class LogUtil {
     
     private LogUtil() {
     }
+    
+    private static final Logger logger = LoggerFactory.getLogger(LogUtil.class);
     
     private static final SimpleDateFormat LOG_DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
     
@@ -52,7 +56,7 @@ public final class LogUtil {
                 // 自动滚动到底部
                 logArea.setCaretPosition(doc.getLength());
             } catch (BadLocationException | IOException e) {
-                System.err.println("日志追加失败: " + e.getMessage());
+                logger.error("日志追加失败", e);
             }
         });
     }
