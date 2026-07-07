@@ -3,6 +3,7 @@ package com.datasync.core;
 import com.datasync.model.CommitParams;
 import com.datasync.model.FileParams;
 import com.datasync.model.GitLabAuthConfig;
+import com.datasync.util.GlobalUtil;
 import com.datasync.util.SQLiteConfigUtil;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
@@ -37,7 +38,7 @@ public class GitLabService {
     @Getter
     private GitLabAuthConfig gitLabAuthConfig;
     
-    private Cache<Long, List<Project>> PROJECT_CACHE = CacheBuilder.newBuilder().maximumSize(1000)
+    private final Cache<Long, List<Project>> PROJECT_CACHE = CacheBuilder.newBuilder().maximumSize(1000)
             .expireAfterWrite(10, TimeUnit.MINUTES) // 设置写入后10分钟过期
             .build();
     
@@ -146,7 +147,7 @@ public class GitLabService {
      * @return 响应参数
      */
     public RepositoryFileResponse createOrUpdateFile(FileParams fileParams) {
-        fileParams.setFilePath(fileParams.getFilePath().replaceAll("\\\\", "/") + "/" + fileParams.getFileName());
+        fileParams.setFilePath(GlobalUtil.getFullFilePath(fileParams.getFilePath(), fileParams.getFileName()));
         //判断文件是否存在
         final RepositoryFile fileRes = existsGetFile(fileParams.getProjectOrId(), fileParams.getFilePath(), fileParams.getBranch());
         final RepositoryFile file = new RepositoryFile();

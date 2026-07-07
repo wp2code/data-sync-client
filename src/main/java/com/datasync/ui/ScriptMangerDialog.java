@@ -15,6 +15,7 @@ import com.datasync.model.FileParams;
 import com.datasync.model.ProjectItem;
 import com.datasync.model.Script;
 import com.datasync.util.ConfigUtil;
+import com.datasync.util.GlobalUtil;
 import com.datasync.util.IconUtil;
 import com.datasync.util.SQLiteConfigUtil;
 import com.mysql.cj.util.StringUtils;
@@ -36,6 +37,7 @@ import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableModel;
 import org.gitlab4j.api.models.Branch;
 import org.gitlab4j.api.models.Project;
+import org.gitlab4j.api.models.RepositoryFile;
 import org.gitlab4j.api.models.RepositoryFileResponse;
 
 /**
@@ -77,6 +79,8 @@ public class ScriptMangerDialog extends FullscreenJDialog {
     private JMenuItem deleteMenuItem;
     
     private JMenuItem uploadMenuItem;
+    
+    private JMenuItem syncMenuItem;
     
     private JMenuItem exportMenuItem;
     
@@ -224,9 +228,14 @@ public class ScriptMangerDialog extends FullscreenJDialog {
         moreMenu.add(deleteMenuItem);
         moreMenu.add(exportMenuItem);
         uploadMenuItem = new JMenuItem("上传GitLab");
-        uploadMenuItem.addActionListener(e -> updateSelectedScript());
+        uploadMenuItem.addActionListener(e -> uploadSelectedScript());
         uploadMenuItem.setEnabled(false);
+        syncMenuItem = new JMenuItem("同步GitLab");
+        syncMenuItem.addActionListener(e -> syncSelectedScript());
+        syncMenuItem.setEnabled(false);
+        moreMenu.addSeparator();
         moreMenu.add(uploadMenuItem);
+        moreMenu.add(syncMenuItem);
         moreMenu.addSeparator();
         moreMenu.add(clearConsoleItem);
         moreMenu.add(clearResultItem);
@@ -461,6 +470,7 @@ public class ScriptMangerDialog extends FullscreenJDialog {
         if (script != null) {
             uploadMenuItem.setEnabled(!StringUtils.isNullOrEmpty(script.getProjectOrId()) && !StringUtils.isNullOrEmpty(script.getBranch())
                     && !StringUtils.isNullOrEmpty(script.getFilePath()));
+            syncMenuItem.setEnabled(uploadMenuItem.isEnabled());
             consoleArea.setText(script.getContent());
         }
         consoleArea.setCaretPosition(0);
@@ -832,8 +842,50 @@ public class ScriptMangerDialog extends FullscreenJDialog {
         logResult("新建脚本 [" + name + "] 成功");
     }
     
+    //同步GitLab文件到本地
+    private void syncSelectedScript() {
+        if (selectedScript == null) {
+            JOptionPane.showMessageDialog(this, "请先选择一个脚本", "提示", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        try {
+            if (!gitLabService.isLogin()) {
+                JOptionPane.showMessageDialog(this, "GitLab 未登录或配置无效", "提示", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, "GitLab 未登录或配置无效：" + ex.getMessage(), "提示", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        if (StringUtils.isNullOrEmpty(selectedScript.getProjectOrId()) || StringUtils.isNullOrEmpty(selectedScript.getBranch())
+                || StringUtils.isNullOrEmpty(selectedScript.getFilePath())) {
+            JOptionPane.showMessageDialog(this, "请先配置 GitLab 项目、分支和文件路径", "提示", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        new Thread(() -> {
+            try {
+                RepositoryFile file = gitLabService.getFile(selectedScript.getProjectOrId(),
+                        GlobalUtil.getFullFilePath(selectedScript.getFilePath(), selectedScript.getScriptName() + ".sql"),
+                        selectedScript.getBranch());
+                String content = new String(Base64.getDecoder().decode(file.getContent()), StandardCharsets.UTF_8);
+                SwingUtilities.invokeLater(() -> {
+                    consoleArea.setText(content);
+                    selectedScript.setContent(content);
+                    ConfigUtil.updateScript(selectedScript);
+                    logResult("从 GitLab 同步脚本 [" + selectedScript.getScriptName() + "] 成功");
+                    JOptionPane.showMessageDialog(this, "同步 GitLab 文件成功！", "成功", JOptionPane.INFORMATION_MESSAGE);
+                });
+            } catch (Exception ex) {
+                SwingUtilities.invokeLater(() -> {
+                    logResult("从 GitLab 同步脚本 [" + selectedScript.getScriptName() + "] 失败：" + ex.getMessage());
+                    JOptionPane.showMessageDialog(this, "同步 GitLab 文件失败：" + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
+                });
+            }
+        }).start();
+    }
+    
     //上传文件到GitLab
-    private void updateSelectedScript() {
+    private void uploadSelectedScript() {
         if (selectedScript == null) {
             JOptionPane.showMessageDialog(this, "请先选择一个脚本", "提示", JOptionPane.INFORMATION_MESSAGE);
             return;

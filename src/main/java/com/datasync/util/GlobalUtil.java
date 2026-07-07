@@ -129,6 +129,18 @@ public class GlobalUtil {
     }
     
     /**
+     * @param filePath
+     * @param fileName
+     * @return
+     */
+    public static String getFullFilePath(String filePath, String fileName) {
+        if (filePath.endsWith(".sql")) {
+            return filePath;
+        }
+        return filePath.replaceAll("\\\\", "/") + "/" + fileName;
+    }
+    
+    /**
      * 将文本复制到剪贴板
      *
      * @param text   文本
