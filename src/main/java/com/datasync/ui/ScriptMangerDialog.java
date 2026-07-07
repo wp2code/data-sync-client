@@ -440,10 +440,13 @@ public class ScriptMangerDialog extends FullscreenJDialog {
         String newName = script.getScriptName();
         Script existing = ConfigUtil.loadScriptByName(newName);
         if (existing != null && !existing.getId().equals(script.getId())) {
-            JOptionPane.showMessageDialog(this, "已存在同名脚本，请重新命名", "提示", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(this, "已存在同名脚本，请重新命名", "错误", JOptionPane.WARNING_MESSAGE);
             return;
         }
-        
+        if (!StringUtils.isNullOrEmpty(script.getFilePath()) && !script.getFilePath().endsWith(".sql")) {
+            JOptionPane.showMessageDialog(this, "文件必须是.sql格式", "错误", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
         if (ConfigUtil.updateScript(script)) {
             refreshScriptList();
             for (OptionJPanel p : scriptPanelList) {
@@ -681,7 +684,7 @@ public class ScriptMangerDialog extends FullscreenJDialog {
         addFormRow(panel, gbc, 1, new JLabel("数据库类型:"), dbTypeInput);
         addFormRow(panel, gbc, 2, new JLabel("项目:"), projectCombo);
         addFormRow(panel, gbc, 3, new JLabel("分支:"), branchCombo);
-        addFormRow(panel, gbc, 4, new JLabel("文件路径:"), filePathField);
+        addFormRow(panel, gbc, 4, new JLabel("文件路径（.sql）:"), filePathField);
         
         // 备注：允许垂直方向压缩/伸展
         gbc.gridx = 0;
@@ -715,6 +718,11 @@ public class ScriptMangerDialog extends FullscreenJDialog {
         script.setDbType(selectedDbType != null ? DbType.fromString(selectedDbType.getText()) : DbType.MYSQL);
         script.setProjectOrId(selectedProject != null && selectedProject.getId() != null ? selectedProject.getProjectOrId() : null);
         script.setBranch(selectedBranch != null && !selectedBranch.startsWith("（") ? selectedBranch : null);
+        final String filePath = filePathField.getText().trim();
+        if (!StringUtils.isNullOrEmpty(filePath) && !filePath.endsWith(".sql")) {
+            JOptionPane.showMessageDialog(this, "文件必须是.sql格式", "错误", JOptionPane.ERROR_MESSAGE);
+            return false;
+        }
         script.setFilePath(filePathField.getText().trim());
         script.setRemark(remarkArea.getText().trim());
         return true;
@@ -819,7 +827,7 @@ public class ScriptMangerDialog extends FullscreenJDialog {
         
         String name = script.getScriptName();
         if (ConfigUtil.loadScriptByName(name) != null) {
-            JOptionPane.showMessageDialog(this, "已存在同名脚本，请重新命名", "提示", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(this, "已存在同名脚本，请重新命名", "错误", JOptionPane.WARNING_MESSAGE);
             return;
         }
         
@@ -827,7 +835,10 @@ public class ScriptMangerDialog extends FullscreenJDialog {
             JOptionPane.showMessageDialog(this, "新建脚本失败", "错误", JOptionPane.ERROR_MESSAGE);
             return;
         }
-        
+        if (!StringUtils.isNullOrEmpty(script.getFilePath()) && !script.getFilePath().endsWith(".sql")) {
+            JOptionPane.showMessageDialog(this, "文件必须是.sql格式", "错误", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
         // 重新加载以获取数据库生成的 id
         Script saved = ConfigUtil.loadScriptByName(name);
         refreshScriptList();
