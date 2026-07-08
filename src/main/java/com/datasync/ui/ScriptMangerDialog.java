@@ -655,7 +655,7 @@ public class ScriptMangerDialog extends FullscreenJDialog {
         projectCombo.setEnabled(GitLabService.getInstance().isLogin());
         //分支
         FilterComboBox<String> branchCombo = new FilterComboBox<>();
-        branchCombo.setEditable(false);
+        projectCombo.setEditable(false);
         branchCombo.setEnabled(false);
         JTextField filePathField = new JTextField(script.getFilePath() != null ? script.getFilePath() : "", 30);
         JTextArea remarkArea = new JTextArea(script.getRemark() != null ? script.getRemark() : "", 4, 30);
@@ -734,7 +734,7 @@ public class ScriptMangerDialog extends FullscreenJDialog {
         projectCombo.setEnabled(false);
         branchCombo.clearAllItems();
         branchCombo.setEnabled(false);
-        if(!GitLabService.getInstance().isLogin()){
+        if (!GitLabService.getInstance().isLogin()) {
             return;
         }
         new Thread(() -> {
@@ -875,6 +875,11 @@ public class ScriptMangerDialog extends FullscreenJDialog {
             JOptionPane.showMessageDialog(this, "请先配置 GitLab 项目、分支和文件路径", "提示", JOptionPane.WARNING_MESSAGE);
             return;
         }
+        int confirm = JOptionPane.showConfirmDialog(this, "确定同步覆盖当前脚本吗？", "确认同步", JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE);
+        if (confirm != JOptionPane.YES_OPTION) {
+            return;
+        }
         new Thread(() -> {
             try {
                 RepositoryFile file = GitLabService.getInstance().getFile(selectedScript.getProjectOrId(),
@@ -910,6 +915,11 @@ public class ScriptMangerDialog extends FullscreenJDialog {
             }
         } catch (Exception ex) {
             JOptionPane.showMessageDialog(this, "GitLab 未登录或配置无效：" + ex.getMessage(), "提示", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        int confirm = JOptionPane.showConfirmDialog(this, "确定上传替换线上脚本吗？", "确认上传", JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE);
+        if (confirm != JOptionPane.YES_OPTION) {
             return;
         }
         String content = consoleArea.getText();

@@ -73,7 +73,7 @@ public class GitLabService {
                 return null;
             }
             log.error("[GitLab] Login failed", ex);
-            throw new RuntimeException("[GitLab] Login failed", ex);
+            throw new RuntimeException("[GitLab] Login Failed!" + ex.getMessage(), ex);
         }
     }
     
@@ -108,7 +108,7 @@ public class GitLabService {
             }
             return projects;
         } catch (Exception ex) {
-            throw new RuntimeException("[GitLab] Get Project Failed", ex);
+            throw new RuntimeException("[GitLab] Get Project Failed!" + ex.getMessage(), ex);
         }
     }
     
@@ -130,7 +130,7 @@ public class GitLabService {
             }
             return gitLabClient(false).getRepositoryApi().getBranches(projectOrId);
         } catch (Exception ex) {
-            throw new RuntimeException("[GitLab] Get Project Branch Failed", ex);
+            throw new RuntimeException("[GitLab] Get Project Branch Failed!" + ex.getMessage(), ex);
         }
     }
     
@@ -147,7 +147,7 @@ public class GitLabService {
         try {
             return gitLabClient(false).getRepositoryFileApi().createFile(projectOrId, file, branch, commitMessage);
         } catch (Exception ex) {
-            throw new RuntimeException("[GitLab] Create File Failed", ex);
+            throw new RuntimeException("[GitLab] Create File Failed!" + ex.getMessage(), ex);
         }
     }
     
@@ -164,7 +164,7 @@ public class GitLabService {
         try {
             return gitLabClient(false).getRepositoryFileApi().updateFile(projectOrId, file, branch, commitMessage);
         } catch (Exception ex) {
-            throw new RuntimeException("[GitLab] Update File Failed", ex);
+            throw new RuntimeException("[GitLab] Update File Failed!" + ex.getMessage(), ex);
         }
     }
     
@@ -206,7 +206,7 @@ public class GitLabService {
         try {
             return gitLabClient(false).getRepositoryFileApi().getFile(projectOrId, filePath, branch);
         } catch (Exception ex) {
-            throw new RuntimeException("[GitLab] Get File Failed", ex);
+            throw new RuntimeException("[GitLab] Get File Failed! " + ex.getMessage(), ex);
         }
     }
     
@@ -219,7 +219,7 @@ public class GitLabService {
                     return null;
                 }
             }
-            throw new RuntimeException("[GitLab] Get File Failed", ex);
+            throw new RuntimeException("[GitLab] Get File Failed! " + ex.getMessage(), ex);
         }
     }
     
@@ -235,7 +235,7 @@ public class GitLabService {
         try {
             return gitLabClient(false).getRepositoryFileApi().getRawFile(projectOrId, filePath, branch);
         } catch (Exception ex) {
-            throw new RuntimeException("[GitLab] Get File Stream Failed", ex);
+            throw new RuntimeException("[GitLab] Get File Stream Failed!" + ex.getMessage(), ex);
         }
     }
     
@@ -262,7 +262,7 @@ public class GitLabService {
             commitPayload.setActions(List.of(commitAction));
             return gitLabClient(false).getCommitsApi().createCommit(commitParams.getProjectOrId(), commitPayload);
         } catch (Exception ex) {
-            throw new RuntimeException("[GitLab] Commit Failed", ex);
+            throw new RuntimeException("[GitLab] Commit Failed!" + ex.getMessage(), ex);
         }
     }
     

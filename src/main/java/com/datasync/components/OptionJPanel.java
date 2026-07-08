@@ -11,6 +11,8 @@ package com.datasync.components;
 import java.awt.*;
 import java.awt.event.*;
 import javax.swing.*;
+import lombok.Getter;
+import lombok.Setter;
 
 /**
  * @author liuweiping
@@ -18,31 +20,26 @@ import javax.swing.*;
  **/
 public class OptionJPanel extends JPanel {
     
-    private final int cornerRadius = 15;
-    
     private Color borderColor = null;   // null 表示无边框
-    
-    private final int borderThickness = 1;
     
     private final Color hoverColor = new Color(62, 78, 220);
     
     private final Color selectedColor = new Color(62, 78, 220);
     
     private boolean selected = false;
-    
+    @Getter
+    @Setter
     private Object data;
+    
+    @Getter
+    @Setter
+    private Runnable onClick;
     
     private final JLabel label;
     
-    private final JLabel remarkLabel;
-    
-    private final String fullText;
-    
-    private Runnable onClick;
     
     public OptionJPanel(String text, String remark, Icon icon) {
         super(new BorderLayout(5, 0));
-        this.fullText = text;
         setBorder(BorderFactory.createEmptyBorder(5, 10, 5, 10));
         
         setOpaque(false);
@@ -60,13 +57,14 @@ public class OptionJPanel extends JPanel {
         gbc.anchor = GridBagConstraints.WEST;
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.weightx = 1;
-        gbc.insets = new Insets(0, 0, 2, 0);
+        gbc.insets = new Insets(0, 0, 0, 0);
         
         label = new JLabel(text);
         gbc.gridy = 0;
         gbc.weighty = 1;
         textPanel.add(label, gbc);
         
+        JLabel remarkLabel;
         if (remark != null && !remark.isEmpty()) {
             remarkLabel = new JLabel(remark);
             remarkLabel.setForeground(new Color(160, 160, 160));
@@ -118,10 +116,6 @@ public class OptionJPanel extends JPanel {
         }
     }
     
-    public boolean isSelected() {
-        return selected;
-    }
-    
     public void setSelected(boolean selected) {
         this.selected = selected;
         this.borderColor = selected ? selectedColor : null;
@@ -129,21 +123,6 @@ public class OptionJPanel extends JPanel {
         repaint();
     }
     
-    public Object getData() {
-        return data;
-    }
-    
-    public void setData(Object data) {
-        this.data = data;
-    }
-    
-    public void setOnClick(Runnable onClick) {
-        this.onClick = onClick;
-    }
-    
-    public String getFullText() {
-        return fullText;
-    }
     
     @Override
     protected void paintComponent(Graphics g) {
@@ -155,11 +134,13 @@ public class OptionJPanel extends JPanel {
         
         // 1. 圆角背景
         g2.setColor(getBackground());
+        final int cornerRadius = 15;
         g2.fillRoundRect(0, 0, w - 1, h - 1, cornerRadius, cornerRadius);
         
         // 2. 圆角边框（可选）
         if (borderColor != null) {
             g2.setColor(borderColor);
+            final int borderThickness = 1;
             g2.setStroke(new BasicStroke(borderThickness));
             g2.drawRoundRect(0, 0, w - 1, h - 1, cornerRadius, cornerRadius);
         }
