@@ -224,6 +224,8 @@ tasks.register('packageZip', Zip) {
     destinationDirectory = layout.buildDirectory.dir('distributions')
 
     from(layout.buildDirectory.dir('launch4j'))
+    // 排除 lib 目录（依赖 JAR 已打入 Fat JAR）
+    exclude 'lib/**'
 
     outputs.upToDateWhen { false }
 }
