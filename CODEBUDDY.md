@@ -1,153 +1,134 @@
 # CODEBUDDY.md This file provides guidance to CodeBuddy when working with code in this repository.
 
-## Build & Development Commands
+## Build & Run Commands
 
-**Build the project (compile + run tests + package Fat JAR + create Windows .exe):**
 ```bash
-./gradlew build
-```
-On Windows, use `gradlew.bat build`. The build produces a Fat JAR at `build/libs/data-sync-client-1.0.0.jar` and a Windows `.exe` at `build/launch4j/DataSync.exe`.
-
-**Compile only (skip tests and packaging):**
-```bash
+# Compile (Windows use gradlew.bat)
 ./gradlew compileJava
-```
 
-**Package only the Fat JAR (with all dependencies bundled):**
-```bash
-./gradlew jar
-```
-
-**Create the Windows .exe only (requires prior `jar` task):**
-```bash
-./gradlew createExe
-```
-
-**Run the application directly via Gradle:**
-```bash
+# Run the application
 ./gradlew run
+
+# Full build: compile + tests + Fat JAR + Windows .exe
+./gradlew build
+
+# Generate Fat JAR only
+./gradlew jar
+
+# Generate Windows .exe only (requires Fat JAR first)
+./gradlew jar && ./gradlew createExe
+
+# Run the Fat JAR directly
+java -jar build/libs/data-sync-client-1.0.0.jar
 ```
 
-**Clean build artifacts:**
-```bash
-./gradlew clean
-```
+Build outputs:
+- Fat JAR: `build/libs/data-sync-client-1.0.0.jar`
+- Windows .exe: `build/launch4j/DataSync.exe`
 
-**List all available Gradle tasks:**
-```bash
-./gradlew tasks
-```
-
-There are no unit tests configured in this project. The Gradle build uses Java 17 with source/target compatibility set to 17. All compilation uses UTF-8 encoding with `-Xlint:unchecked` flag.
+There are no unit tests configured in this project. `./gradlew build` compiles and produces the executable artifacts but does not run test suites.
 
 ## Architecture Overview
 
-### Purpose
-DataSync Client is a Java 17 Swing desktop application for **full-table data synchronization** and **table structure synchronization** between MySQL and PostgreSQL databases. It provides a dark-themed FlatLaf UI with connection management, table listing, batch data transfer with upsert semantics, and structural diff generation with ALTER script execution.
+### Project Purpose
 
-### Package Structure
+DataSync Client is a Java 17 Swing desktop application for syncing full table data and schema structures between **MySQL** and **PostgreSQL** databases. It also includes GitLab API integration (via gitlab4j) for managing SQL script files in repositories.
+
+### Package Structure & Key Classes
 
 ```
-com.datasync/                    (root: Main entry point)
-├── components/                  (Reusable Swing UI widgets)
-├── core/                        (Business logic: entities, connectors, sync engine)
-├── ui/                          (Swing windows/dialogs)
-└── util/                        (Persistence layer and global state)
+com.datasync/
+├── Main.java                          # Entry point: loads FlatLaf FlatDarkLaf, launches UI on EDT
+├── core/
+│   ├── DataSyncService.java           # Core sync engine: data sync, schema compare, DDL generation
+│   ├── DbConnector.java               # JDBC connection factory + schema introspection
+│   └── GitLabService.java             # Singleton, GitLab OAuth2 login + file/commit operations
+├── model/
+│   ├── DataSource.java                # DB connection config (host/port/user/pass/schema)
+│   ├── DbType.java                    # Enum: MYSQL, POSTGRESQL (with driver class, default port)
+│   ├── ConnectionWrapper.java         # Mutable wrapper for a JDBC Connection
+│   ├── Script.java                    # SQL script config (content + optional GitLab target)
+│   ├── GitLabAuthConfig.java          # GitLab OAuth2 credentials
+│   ├── FileParams.java / CommitParams.java  # GitLab file/commit operation parameters
+│   ├── ProjectItem.java / Side.java   # UI model helpers
+├── ui/
+│   ├── DataSyncUI.java               # Main JFrame (~2276 lines): sync controls, log output, DDL viewer
+│   ├── DataSourceManagerDialog.java   # CRUD dialog for data source configs
+│   ├── GitLabMangerDialog.java        # GitLab auth config dialog
+│   ├── ScriptMangerDialog.java        # SQL script management dialog (edit + push to GitLab)
+│   ├── AbsDialog.java                # Base dialog with centered positioning
+│   └── UiConstants.java              # Colors, fonts, version string, placeholder text
+├── components/                        # Custom Swing widgets
+│   ├── CustomTextField.java           # JTextField with placeholder text
+│   ├── FilterComboBox.java            # JComboBox with text filtering
+│   ├── LinkJLabel.java                # Clickable hyperlink label
+│   ├── FullscreenJDialog.java         # Dialog with F11 fullscreen / ESC exit
+│   ├── ChildLayoutPanel.java          # Left/center/right aligned panel
+│   ├── OptionJPanel.java              # Selectable + hover-highlighted panel item
+│   └── combobox/                      # Icon-based combo box and renderers
+├── util/
+│   ├── SQLiteConfigUtil.java          # Singleton: SQLite persistence for configs + backward-compatible migrations
+│   ├── ConfigUtil.java                # Static facade delegating to SQLiteConfigUtil
+│   ├── LogUtil.java                   # HTML-formatted log helpers (colored success/error/info)
+│   ├── IconUtil.java                  # SVG-to-PNG conversion via Batik, fallback icon drawing
+│   └── GlobalUtil.java                # Clipboard, SQL splitting, fullscreen toggling
 ```
 
-### Entry Point & Lifecycle
+### Data Flow for Table Sync
 
-`Main.java` is the sole entry point. It applies `FlatDarkLaf` theme, tweaks UI defaults (focus width, corner arc), then creates and displays `DataSyncUI` on the EDT via `SwingUtilities.invokeLater()`. The application stores data source configurations in a local SQLite file (`datasource_config.db`) in the working directory.
+1. User selects source/target data sources, schema, and table in `DataSyncUI`
+2. `DataSyncService.syncTableWithConn()` is invoked (typically via `SwingWorker` for non-blocking UI)
+3. Connections are established or reused via `DbConnector.getConnection()`
+4. Source data is read via `SELECT *` from source table
+5. A dynamic INSERT/UPSERT SQL is built based on target DB type:
+   - **MySQL**: `INSERT INTO ... ON DUPLICATE KEY UPDATE col=VALUES(col)`
+   - **PostgreSQL**: `INSERT INTO ... ON CONFLICT (pk_cols) DO UPDATE SET col=EXCLUDED.col`
+6. Data is inserted in **500-row batches** within a single transaction
+7. On any exception, the transaction is rolled back; on success, committed
+8. All progress is fed to the UI via a `Consumer<String>` log callback
 
-### Core Domain Model
+### Schema Comparison & DDL Generation
 
-**`DataSource`** — The central entity. Represents a database connection configuration with fields: `sourceName` (unique identifier), `dbType` (mysql/postgresql), `host`, `port`, `dbName`, `schema` (PostgreSQL only, defaults to "public"), `username`, `password`. Key methods:
-- `buildJdbcUrl()` — Auto-generates the correct JDBC URL string based on `dbType`. MySQL includes timezone and SSL parameters; PostgreSQL appends `?currentSchema=` when schema is set.
-- `getDriverClassName()` — Returns the appropriate JDBC driver class.
-- `getDefaultPort()` — Returns 3306 for MySQL, 5432 for PostgreSQL.
+1. `DbConnector.fetchColumnDetails()` and `fetchIndexes()` retrieve metadata from both source and target
+2. `DataSyncService.compareTableStructure()` compares columns (name, type, nullable, default, comment) producing `ColumnDiff` objects with types: `ADD_COLUMN`, `DROP_COLUMN`, `MODIFY_COLUMN`, `COMMENT_DIFF`
+3. `DataSyncService.compareIndexes()` compares indexes producing `IndexDiff` objects with types: `ADD_INDEX`, `DROP_INDEX`, `MODIFY_INDEX`
+4. `generateAlterScript()` produces a complete ALTER TABLE script, sorted by operation type (ADD first, DROP last), with separate PostgreSQL `COMMENT ON COLUMN` statements
+5. DDL is displayed in a fullscreen-capable `FullscreenJDialog`; users can copy or execute
 
-**`ConnectionWrapper`** — A simple pairing of a `DataSource` config with an open `java.sql.Connection`. Used to pass pre-established connections around the application, avoiding repeated connect/disconnect cycles when the same database is used for multiple operations (e.g., table listing then data sync).
+### GitLab Integration
 
-### Persistence Layer
+- `GitLabService` is a lazy-initialized singleton that authenticates via OAuth2 (`GitLabApi.oauth2Login()`)
+- On first API call, it loads `GitLabAuthConfig` from SQLite and logs in automatically
+- Uses **Guava Cache** for project lists (2-hour TTL) and branch lists (2-minute TTL)
+- Supports: `createOrUpdateFile()` (auto-detects create vs update), `getFile()`, `getRawFile()`, `commit()` with `CommitAction`
+- The `ScriptMangerDialog` lets users push SQL script content to a GitLab project/branch/file path
 
-**`SQLiteConfigUtil`** (singleton) — The bottom-level persistence layer. Manages a local SQLite database file with a `data_source_config` table. Provides CRUD operations: `saveDataSource`, `loadAllSourceNames`, `loadDataSourceByName`, `updateDataSource`, `deleteDataSource`. The table schema mirrors `DataSource` fields plus `create_time`/`update_time` timestamps. Includes migration logic to add `schema_name` column for backward compatibility.
+### SQLite Persistence (SQLiteConfigUtil)
 
-**`ConfigUtil`** — A stateless facade/utility class that delegates all persistence calls to `SQLiteConfigUtil.getInstance()`. Also provides log formatting utilities (`logTimestamp`, `appendLog`, `clearLog`) that format timestamped log messages and render them into a `JEditorPane`. Contains `createAppIcon()` which programmatically draws a 64x64 blue-purple gradient icon with sync arrows.
+- Database file: `{appDir}/data/datasource_config.db`
+- Three tables: `data_source_config`, `script_config`, `gitlab_config`
+- Schema migrations are handled by `ALTER TABLE ... ADD COLUMN` in `initialize()` with try/catch for idempotency (tolerates "column already exists" errors)
+- `ConfigUtil` is a static facade that UI code should prefer; `SQLiteConfigUtil.getInstance()` is used by `GitLabService` directly for auto-login
 
-**`GlobalUtil`** — Holds in-memory global state: a `Map<String, DataSource>` (size 2) with keys "SOURCE" and "TARGET" to track which data source configurations are currently selected as source and target in the UI. This allows the `DataSourceManagerDialog` to communicate selections back to `DataSyncUI` without direct coupling.
+### Threading Model
 
-### Database Connectivity
-
-**`DbConnector`** — Static utility class for all JDBC operations. No instances; all methods are static. Responsibilities:
-- `getConnection(DataSource)` — Creates a JDBC connection via `DriverManager`, loading the driver class dynamically.
-- `testConnection(DataSource)` — Tests connectivity and returns a human-readable result string.
-- `fetchSchemas(DataSource)` — For PostgreSQL, retrieves all non-system schemas (always includes "public").
-- `fetchTables(DataSource, schema)` — Lists user tables. Uses `SHOW FULL TABLES` for MySQL (to avoid catalog parameter issues) and JDBC metadata API for PostgreSQL.
-- `fetchColumns(DataSource, tableName, schema)` — Lists column names for a table.
-- `fetchColumnDetails(DataSource, tableName, schema)` — Returns full `ColumnDetail` objects including data type, nullability, default value, primary key status, auto-increment status, and comment.
-- `fetchIndexes(DataSource, tableName, schema)` — Returns `IndexDetail` objects with index name, column, uniqueness, ordinal position, and sort direction. Excludes PRIMARY key indexes.
-- `fetchAutoIncrementColumn(DataSource, tableName, schema)` — Finds the auto-increment column if any.
-
-Contains two inner data classes: **`ColumnDetail`** (column metadata) and **`IndexDetail`** (index metadata), both used extensively by the structure comparison logic.
-
-### Data Synchronization Engine
-
-**`DataSyncService`** — The core business logic class. Key capabilities:
-
-1. **Full-table data sync** (`syncTableWithConn`): Accepts source/target `DataSource` configs and optional pre-existing `ConnectionWrapper` objects. Workflow:
-   - Reuses existing connections or creates new ones via `DbConnector.getConnection()`
-   - Optionally truncates the target table before sync
-   - Executes `SELECT *` on source, reads `ResultSetMetaData` to discover columns dynamically
-   - Builds an upsert INSERT statement: MySQL uses `ON DUPLICATE KEY UPDATE`, PostgreSQL uses `ON CONFLICT (pk_cols) DO UPDATE SET`. For PostgreSQL, primary key columns are discovered via `DatabaseMetaData.getPrimaryKeys()` to build the conflict target.
-   - Batches inserts (500 rows per batch) within a transaction, commits on success, rolls back on error
-   - Only closes self-created connections in `finally`; re-used connections are left open for subsequent operations
-   - Reports progress via a `Consumer<String>` callback for UI log output
-
-2. **INSERT script export** (`exportInsertScript`): Generates a SQL script file of INSERT statements for a given table, with proper value formatting (numeric types unquoted, strings escaped and single-quoted, NULL for null values).
-
-3. **Table structure comparison** (`compareTableStructure`, `compareIndexes`): Compares source and target table schemas, producing lists of `ColumnDiff` and `IndexDiff` objects. Detects four column difference types: `ADD_COLUMN` (missing in target), `DROP_COLUMN` (extra in target), `MODIFY_COLUMN` (type/size/nullable/default differs), `COMMENT_DIFF` (only the comment/remark differs). Detects three index difference types: `ADD_INDEX`, `DROP_INDEX`, `MODIFY_INDEX`.
-
-4. **ALTER script generation** (`generateAlterScript`): Takes difference lists and produces a complete ALTER TABLE script. Handles MySQL vs PostgreSQL syntax differences (backtick vs double-quote identifiers, `MODIFY COLUMN` vs `ALTER COLUMN ... TYPE / SET NOT NULL`, `COMMENT ON COLUMN` as separate statements in PostgreSQL). Column operations are ordered: ADD first, then MODIFY/COMMENT, then DROP. Index operations: DROP first, then ADD.
+- **Swing Event Dispatch Thread (EDT)**: All UI creation and updates occur here via `SwingUtilities.invokeLater()`
+- **Background tasks**: Data sync, schema comparison, connection testing all use `SwingWorker<T, String>` to keep the UI responsive. `SwingWorker.publish()` sends log messages; `SwingWorker.process()` appends them to the UI log area
+- **Connection reuse**: `ConnectionWrapper` objects (marked `volatile`) hold active source/target connections, allowing multiple operations without reconnecting
 
 ### UI Architecture
 
-**`DataSyncUI` (JFrame)** — The main application window (~980x780). Layout structure:
-- **Top panel**: Source database selection (combo box + info label) and target database selection. A "管理数据源" button opens the `DataSourceManagerDialog`.
-- **Middle panel**: Schema selector (PostgreSQL only), table list with checkboxes (scrollable panel with search filter via `CustomTextField`), sync controls (truncate checkbox, "开始同步" button, "比较结构差异" `LinkJLabel`).
-- **Bottom panel**: Scrollable log output area (`JEditorPane`).
+- **FlatLaf FlatDarkLaf** theme applied in `Main.main()` before any UI creation, with focus ring width 1.5px and component arc 6px
+- `DataSyncUI` is the single main `JFrame`. All other windows are `JDialog` subclasses extending `AbsDialog`
+- The log output area is a `JEditorPane` rendering HTML content — `LogUtil` provides helpers that generate colored HTML spans (`<span style='color:green'>`, etc.)
+- SVG icons are rendered via Apache Batik in `IconUtil` to produce `ImageIcon` objects at various sizes (16x16, 24x24, 32x32)
+- The DDL/SQL viewer dialogs use `FullscreenJDialog` which supports `F11` to toggle fullscreen and `ESC` to close
 
-Key UI behaviors:
-- Selecting a data source combo triggers connection establishment and table/schema loading via background threads (`SwingWorker`-style with `new Thread()`).
-- The table list panel dynamically renders checkboxes for each table found, with a search filter that hides non-matching tables.
-- The "比较结构差异" link opens a non-modal `JDialog` showing side-by-side column and index differences between source and target for the selected table, with an "执行 ALTER" button that applies the generated DDL.
-- Structure sync ALTER execution handles PostgreSQL's multi-statement `ALTER TABLE` by splitting on `\n    ` (4-space indent delimiter) and re-prefixing each sub-statement with `ALTER TABLE <tableName>`.
-- Data sync runs in a background thread with periodic UI updates via `SwingUtilities.invokeLater()`.
+### Build & Packaging
 
-**`DataSourceManagerDialog` (JDialog)** — A modal dialog for CRUD management of saved data source configurations. Features:
-- A `JTable` with `AbstractTableModel` showing all saved sources
-- An edit form with fields for all `DataSource` properties
-- Dynamic showing/hiding of the Schema field based on database type selection
-- "测试连接" button that tests connectivity in a background thread
-- Save logic handles three cases: new insert, same-name update, and name-change (delete old + insert new)
-
-### Custom Components
-
-**`CustomTextField`** — A `JTextField` subclass that displays placeholder text when empty and unfocused. Listens to focus and document changes to toggle placeholder visibility, rendering it in gray via overridden `paintComponent()`.
-
-**`LinkJLabel`** — A `JLabel` subclass that behaves as a hyperlink: opens URLs in the system browser via `Desktop.browse()`, changes color on hover (Google Blue → darker blue), and tracks visited state (turns purple after click).
-
-### Data Flow for a Typical Sync Operation
-
-1. User selects source/target data sources from combo boxes → `DataSyncUI` creates `ConnectionWrapper` objects and loads table lists
-2. User selects a source schema and checks tables to sync, optionally checks "truncate before sync"
-3. User clicks "开始同步" → a background thread calls `syncService.syncTableWithConn()`
-4. The service connects to both databases (reusing existing connections), optionally truncates target, reads all source data, builds upsert INSERT, batch-inserts with transaction, and reports progress
-5. Results appear in the log area; connections are kept open for subsequent syncs
-
-### Key Design Decisions
-
-- **Connection reuse**: Once a connection is established for table browsing, it is reused for data sync operations rather than creating new connections. `ConnectionWrapper` tracks whether a connection is self-created so the service knows whether to close it.
-- **Database-agnostic SQL generation**: The code generates different SQL for MySQL and PostgreSQL at multiple levels — JDBC URL format, identifier quoting (backtick vs double-quote), upsert syntax, ALTER TABLE syntax, and comment handling.
-- **No ORM**: All database access uses raw JDBC. SQLite for local persistence also uses raw JDBC with no ORM layer.
-- **Thread safety**: UI updates always happen on the EDT via `SwingUtilities.invokeLater()`. Database operations run on background threads. The `srcConn`/`tgtConn` fields are `volatile`.
-- **Graceful degradation**: Most `DbConnector` methods catch exceptions and return empty lists rather than propagating errors upward, allowing the UI to remain functional even when database metadata queries fail.
+- Gradle 8.x with `application` plugin (main class: `com.datasync.Main`)
+- Java compilation targets Java 17 with `-Xlint:unchecked` and UTF-8 encoding
+- Fat JAR via `jar` task: includes all runtime dependencies, excludes signature files
+- **Launch4j** (`edu.sc.seis.launch4j`) generates `DataSync.exe` from the Fat JAR
+- A custom `downloadJre` task downloads Eclipse Temurin JRE 17 for Windows x64 bundling
+- Key dependency versions: FlatLaf 3.4.1, MySQL Connector/J 8.3.0, PostgreSQL JDBC 42.7.3, SQLite JDBC 3.45.2.0, gitlab4j-api 6.3.0, Guava 33.6.0, Batik 1.18, Logback 1.5.6, Lombok 1.18.32

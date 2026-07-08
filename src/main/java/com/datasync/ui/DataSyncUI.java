@@ -109,7 +109,6 @@ public class DataSyncUI extends JFrame {
     public DataSyncUI() {
         initUI();
         SQLiteConfigUtil.getInstance().initialize();
-        GitLabService.getInstance().autoLogin();
         refreshConfigCombos();
     }
     
@@ -126,6 +125,12 @@ public class DataSyncUI extends JFrame {
         
         // 窗口关闭时释放所有连接
         addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowActivated(WindowEvent e) {
+                GitLabService.getInstance().autoLogin();
+                super.windowActivated(e);
+            }
+            
             @Override
             public void windowClosing(WindowEvent e) {
                 closeConnection(Side.SOURCE, true);

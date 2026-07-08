@@ -4,6 +4,7 @@ import com.datasync.model.DataSource;
 import com.datasync.model.DbType;
 import com.datasync.model.GitLabAuthConfig;
 import com.datasync.model.Script;
+import java.io.File;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -23,9 +24,39 @@ public class SQLiteConfigUtil {
     
     private static final Logger logger = LoggerFactory.getLogger(SQLiteConfigUtil.class);
     
-    private static final String DB_FILE = "datasource_config.db";
+    private static final String DB_FILE;
     
-    private static final String DB_URL = "jdbc:sqlite:" + DB_FILE;
+    private static final String DB_URL;
+    
+    static {
+        // 获取程序所在目录，确保 data 目录创建在启动程序同一目录下
+        String appDir;
+        try {
+            File codeFile = new File(SQLiteConfigUtil.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+            if (codeFile.isFile()) {
+                // 打包为 JAR 运行，使用 JAR 所在目录
+                appDir = codeFile.getParent();
+            } else {
+                // IDE 开发环境，使用当前工作目录
+                appDir = System.getProperty("user.dir");
+            }
+        } catch (Exception e) {
+            appDir = System.getProperty("user.dir");
+        }
+        
+        DB_FILE = appDir + File.separator + "data" + File.separator + "datasource_config.db";
+        DB_URL = "jdbc:sqlite:" + DB_FILE;
+        
+        // 确保 data 目录存在，不存在则自动创建
+        File dataDir = new File(appDir, "data");
+        if (!dataDir.exists()) {
+            if (dataDir.mkdirs()) {
+                logger.info("[SQLite] 自动创建数据目录: {}", dataDir.getAbsolutePath());
+            } else {
+                logger.warn("[SQLite] 数据目录创建失败: {}", dataDir.getAbsolutePath());
+            }
+        }
+    }
     
     // ────────── 建表 DDL ──────────
     private static final String CREATE_TABLE_SQL = """
@@ -84,7 +115,6 @@ public class SQLiteConfigUtil {
     }
     
     // ────────── 初始化 ──────────
-    
     /**
      * 检测并创建本地 SQLite 数据库与数据表（工具启动时调用一次）
      */
@@ -96,57 +126,6 @@ public class SQLiteConfigUtil {
                 stmt.execute(CREATE_TABLE_SQL);
                 stmt.execute(CREATE_SCRIPT_TABLE_SQL);
                 stmt.execute(CREATE_GITLAB_CONFIG_TABLE_SQL);
-                // 兼容旧库：为已存在的表补充 schema_name 列（SQLite 用 try/catch 忽略列已存在错误）
-                try {
-                    stmt.execute("ALTER TABLE data_source_config ADD COLUMN schema_name VARCHAR(64) DEFAULT 'public'");
-                } catch (SQLException ignored) {
-                    // 列已存在，忽略
-                }
-                // 兼容旧库：为已存在的 script_config 表补充 db_type 列
-                try {
-                    stmt.execute("ALTER TABLE script_config ADD COLUMN db_type VARCHAR(16) DEFAULT 'mysql'");
-                } catch (SQLException ignored) {
-                    // 列已存在，忽略
-                }
-                // 兼容旧库：为已存在的 script_config 表补充 remark 列
-                try {
-                    stmt.execute("ALTER TABLE script_config ADD COLUMN remark TEXT DEFAULT NULL");
-                } catch (SQLException ignored) {
-                    // 列已存在，忽略
-                }
-                // 兼容旧库：为已存在的 gitlab_config 表补充 name 列
-                try {
-                    stmt.execute("ALTER TABLE gitlab_config ADD COLUMN name VARCHAR(64) DEFAULT NULL");
-                } catch (SQLException ignored) {
-                    // 列已存在，忽略
-                }
-                // 兼容旧库：为已存在的 gitlab_config 表补充 remark 列
-                try {
-                    stmt.execute("ALTER TABLE gitlab_config ADD COLUMN remark TEXT DEFAULT NULL");
-                } catch (SQLException ignored) {
-                    // 列已存在，忽略
-                }
-                // 兼容旧库：为已存在的 script_config 表补充 GitLab 相关列
-                try {
-                    stmt.execute("ALTER TABLE script_config ADD COLUMN git_lab_config_id INTEGER DEFAULT NULL");
-                } catch (SQLException ignored) {
-                    // 列已存在，忽略
-                }
-                try {
-                    stmt.execute("ALTER TABLE script_config ADD COLUMN project_or_id VARCHAR(128) DEFAULT NULL");
-                } catch (SQLException ignored) {
-                    // 列已存在，忽略
-                }
-                try {
-                    stmt.execute("ALTER TABLE script_config ADD COLUMN branch VARCHAR(64) DEFAULT NULL");
-                } catch (SQLException ignored) {
-                    // 列已存在，忽略
-                }
-                try {
-                    stmt.execute("ALTER TABLE script_config ADD COLUMN file_path VARCHAR(256) DEFAULT NULL");
-                } catch (SQLException ignored) {
-                    // 列已存在，忽略
-                }
             }
         } catch (Exception e) {
             logger.error("[SQLite] 初始化失败", e);
