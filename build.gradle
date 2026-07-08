@@ -109,9 +109,7 @@ launch4j {
     // 窗口标题
     headerType = 'gui'
     // 捆绑 JRE 路径（相对于 exe 的目录，exe 启动时会优先使用自带的 jre 目录）
-//    bundledJrePath = 'jre'
-    // 捆绑 JRE 路径（留空则使用系统 JRE）
-    bundledJrePath = '%JAVA_HOME%'
+    bundledJrePath = 'jre'
     // 最低 JRE 版本
     jreMinVersion = '17'
     // JVM 启动参数
@@ -142,28 +140,37 @@ tasks.register('generateIcon') {
     }
 }
 
-// 下载并解压 Windows x64 JRE，打包到 exe 同级目录
+// 下载或复用本地 JRE，解压到 exe 同级目录
 tasks.register('downloadJre') {
-    def jreZip = layout.buildDirectory.file("tmp/jre.zip").get().asFile
+    def localJreZip = file("${projectDir}/jre.zip")
+    def downloadedJreZip = layout.buildDirectory.file("tmp/jre.zip").get().asFile
     def jreOutputDir = layout.buildDirectory.dir("launch4j/${jreDirName}").get().asFile
 
     outputs.dir(jreOutputDir)
+    outputs.upToDateWhen { false }
 
     doLast {
-        jreZip.parentFile.mkdirs()
         jreOutputDir.mkdirs()
 
-        if (!jreZip.exists()) {
-            println "Downloading JRE ${jreVersion} from ${jreDownloadUrl} ..."
-            try {
-                new URL(jreDownloadUrl).withInputStream { input ->
-                    jreZip.withOutputStream { output ->
-                        output << input
+        def jreZip
+        if (localJreZip.exists()) {
+            println "Using local JRE from ${localJreZip.absolutePath}"
+            jreZip = localJreZip
+        } else {
+            jreZip = downloadedJreZip
+            jreZip.parentFile.mkdirs()
+            if (!jreZip.exists()) {
+                println "Downloading JRE ${jreVersion} from ${jreDownloadUrl} ..."
+                try {
+                    new URL(jreDownloadUrl).withInputStream { input ->
+                        jreZip.withOutputStream { output ->
+                            output << input
+                        }
                     }
+                    println "JRE downloaded successfully."
+                } catch (Exception e) {
+                    throw new GradleException("Failed to download JRE: ${e.message}", e)
                 }
-                println "JRE downloaded successfully."
-            } catch (Exception e) {
-                throw new GradleException("Failed to download JRE: ${e.message}", e)
             }
         }
 
@@ -182,14 +189,18 @@ tasks.register('downloadJre') {
             delete nestedDirs[0]
         }
 
-        jreZip.delete()
+        // 删除下载的临时文件（本地 jre.zip 不删除）
+        if (jreZip == downloadedJreZip) {
+            jreZip.delete()
+        }
     }
 }
 
 
-// 让 createExe 依赖图标生成和 JRE 下载
+// 让 createExe 依赖图标生成和 JRE 准备
 tasks.named('createExe') {
     dependsOn 'generateIcon'
+    dependsOn 'downloadJre'
     outputs.dir(layout.buildDirectory.dir("launch4j"))
     outputs.upToDateWhen { false }
 }
@@ -202,6 +213,22 @@ tasks.named('distTar') {
     dependsOn 'createExe'
 }
 
+// 打包 exe + jre 为 ZIP 分发包（解压即可运行，无需 JAVA_HOME）
+tasks.register('packageZip', Zip) {
+    dependsOn 'createExe'
+
+    archiveBaseName = 'DataSync'
+    archiveVersion = project.version.toString()
+    archiveClassifier = 'win-x64'
+    archiveExtension = 'zip'
+    destinationDirectory = layout.buildDirectory.dir('distributions')
+
+    from(layout.buildDirectory.dir('launch4j'))
+
+    outputs.upToDateWhen { false }
+}
+
 tasks.named('build') {
     dependsOn 'createExe'
+    dependsOn 'packageZip'
 }
