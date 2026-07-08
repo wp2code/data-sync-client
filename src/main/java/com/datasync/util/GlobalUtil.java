@@ -120,14 +120,6 @@ public class GlobalUtil {
         return sql.isEmpty() ? null : sql;
     }
     
-    
-    /**
-     * 截断 SQL 用于日志显示
-     */
-    public static String truncateSql(String sql) {
-        return sql.length() > 80 ? sql.substring(0, 77) + "..." : sql;
-    }
-    
     /**
      * @param filePath
      * @param fileName
@@ -167,5 +159,88 @@ public class GlobalUtil {
         objects[0] = normalBounds;
         objects[1] = fullscreen;
         return objects;
+    }
+    
+    /**
+     * 截断 SQL 用于日志显示
+     */
+    public static String truncateSql(String sql) {
+        if (sql == null) {
+            return "";
+        }
+        String s = sql.replaceAll("\\s+", " ").trim();
+        return s.length() > 80 ? s.substring(0, 80) + "..." : s;
+    }
+    
+    /**
+     * 拆分 SQL 脚本为独立语句。 支持跳过 -- 行注释、
+     */
+    public static List<String> splitSqlStatements(String content) {
+        List<String> statements = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean inSingleQuote = false;
+        boolean inDoubleQuote = false;
+        boolean inLineComment = false;
+        boolean inBlockComment = false;
+        char[] chars = content.toCharArray();
+        for (int i = 0; i < chars.length; i++) {
+            char c = chars[i];
+            char next = i + 1 < chars.length ? chars[i + 1] : '\0';
+            
+            if (inLineComment) {
+                if (c == '\n') {
+                    inLineComment = false;
+                }
+                continue;
+            }
+            
+            if (inBlockComment) {
+                if (c == '*' && next == '/') {
+                    inBlockComment = false;
+                    i++;
+                }
+                continue;
+            }
+            
+            if (!inSingleQuote && !inDoubleQuote) {
+                if (c == '-' && next == '-') {
+                    inLineComment = true;
+                    i++;
+                    continue;
+                }
+                if (c == '/' && next == '*') {
+                    inBlockComment = true;
+                    i++;
+                    continue;
+                }
+            }
+            
+            if (c == '\'' && !inDoubleQuote) {
+                inSingleQuote = !inSingleQuote;
+                current.append(c);
+                continue;
+            }
+            if (c == '"' && !inSingleQuote) {
+                inDoubleQuote = !inDoubleQuote;
+                current.append(c);
+                continue;
+            }
+            
+            if (c == ';' && !inSingleQuote && !inDoubleQuote) {
+                String sql = current.toString().trim();
+                if (!sql.isEmpty()) {
+                    statements.add(sql);
+                }
+                current = new StringBuilder();
+                continue;
+            }
+            
+            current.append(c);
+        }
+        String last = current.toString().trim();
+        if (!last.isEmpty()) {
+            statements.add(last);
+        }
+        return statements;
     }
 }

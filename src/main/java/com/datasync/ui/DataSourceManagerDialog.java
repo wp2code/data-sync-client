@@ -10,6 +10,7 @@ import com.datasync.model.DataSource;
 import com.datasync.model.DbType;
 import com.datasync.util.ConfigUtil;
 import com.datasync.util.IconUtil;
+import com.datasync.util.LogUtil;
 import java.awt.*;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -52,7 +53,6 @@ public class DataSourceManagerDialog extends FullscreenJDialog {
     
     private String editingOriginalName;  // 修改模式下保存的原始名称，用于 UPDATE
     
-    private final JTextArea statusArea;
     
     private final JScrollPane statusAreaScrollPane;
     
@@ -176,14 +176,8 @@ public class DataSourceManagerDialog extends FullscreenJDialog {
         add(mianJsplitPane, BorderLayout.CENTER);
         // ── 底部：操作按钮 + 状态 ──
         JPanel bottomPanel = new JPanel(new BorderLayout(0, 10));
-        
-        statusArea = new JTextArea(2, 50);
-        statusArea.setEditable(false);
-        statusArea.setFont(UiConstants.FONT_MONO_11);
-        statusArea.setBackground(UiConstants.COLOR_LOG_BG);
-        statusArea.setForeground(UiConstants.COLOR_LOG_FG);
-        statusAreaScrollPane = new JScrollPane(statusArea);
-        statusAreaScrollPane.setBorder(BorderFactory.createTitledBorder("日志"));
+        statusAreaScrollPane = new JScrollPane(LogUtil.DATA_SOURCE_LOG_AREA);
+        statusAreaScrollPane.setBorder(BorderFactory.createCompoundBorder(new TitledBorder("日志"), new EmptyBorder(0, 1, 0, 1)));
         bottomPanel.add(statusAreaScrollPane, BorderLayout.CENTER);
         ChildLayoutPanel btnPanel = new ChildLayoutPanel();
         testBtn = new JButton("测试连接");
@@ -198,7 +192,7 @@ public class DataSourceManagerDialog extends FullscreenJDialog {
         bottomPanel.add(btnPanel, BorderLayout.SOUTH);
         add(bottomPanel, BorderLayout.SOUTH);
         // ── 事件绑定 ──
-        clearBtn.addActionListener(e -> statusArea.setText(""));
+        clearBtn.addActionListener(e -> LogUtil.clearLog(LogUtil.DATA_SOURCE_LOG_AREA));
         newBtn.addActionListener(e -> startNew());
         deleteBtn.addActionListener(e -> deleteSelected());
         saveBtn.addActionListener(e -> saveCurrent());
@@ -439,14 +433,15 @@ public class DataSourceManagerDialog extends FullscreenJDialog {
     
     private void setStatus(String msg) {
         msg = "[" + new SimpleDateFormat("HH:mm:ss").format(new Date()) + "] " + msg;
-        String text = statusArea.getText().trim();
-        if (!text.isEmpty()) {
-            text = msg + "\n" + text;
-        } else {
-            text = msg;
-        }
-        statusArea.setCaretPosition(0);
-        statusArea.setText(text);
+        //        String text = statusArea.getText().trim();
+        //        if (!text.isEmpty()) {
+        //            text = msg + "\n" + text;
+        //        } else {
+        //            text = msg;
+        //        }
+        LogUtil.appendLog(msg, LogUtil.DATA_SOURCE_LOG_AREA);
+        //        statusArea.setCaretPosition(0);
+        //        statusArea.setText(text);
         if (statusAreaScrollPane != null) {
             SwingUtilities.invokeLater(() -> {
                 JScrollBar vertical = statusAreaScrollPane.getVerticalScrollBar();

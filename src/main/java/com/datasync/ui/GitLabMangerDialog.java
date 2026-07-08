@@ -1,8 +1,9 @@
 package com.datasync.ui;
 
-import com.datasync.components.FullscreenJDialog;
 import com.datasync.core.GitLabService;
 import com.datasync.model.GitLabAuthConfig;
+import com.datasync.util.IconUtil;
+import com.datasync.util.LogUtil;
 import com.datasync.util.SQLiteConfigUtil;
 import java.awt.*;
 import java.awt.event.*;
@@ -16,7 +17,7 @@ import org.gitlab4j.api.GitLabApi;
  * @author liuweiping
  * @date 2026-07-07
  **/
-public class GitLabMangerDialog extends FullscreenJDialog {
+public class GitLabMangerDialog extends AbsDialog {
     
     private JTextField nameField;
     
@@ -28,10 +29,9 @@ public class GitLabMangerDialog extends FullscreenJDialog {
     
     private JTextArea remarkArea;
     
-    private final GitLabService gitLabService = new GitLabService();
     
     public GitLabMangerDialog(Frame owner) {
-        super("GITLAB", owner, "GitLab配置", true, 520, 440);
+        super( owner, "GitLab配置", true, 520, 440);
         initUI();
         loadSavedConfig();
     }
@@ -88,7 +88,7 @@ public class GitLabMangerDialog extends FullscreenJDialog {
         
         // 按钮面板
         JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 12, 10));
-        JButton saveBtn = new JButton("登录");
+        JButton saveBtn = new JButton("登录&保存");
         saveBtn.setFont(UiConstants.FONT_SANS_12);
         saveBtn.addActionListener(e -> saveConfig());
         JButton cancelBtn = new JButton("取消");
@@ -163,25 +163,21 @@ public class GitLabMangerDialog extends FullscreenJDialog {
         if (!validateConfig(config)) {
             return;
         }
-        gitLabLogin();
         boolean success = SQLiteConfigUtil.getInstance().saveGitLabAuthConfig(config);
         if (success) {
-            JOptionPane.showMessageDialog(this, "GitLab 配置已保存", "保存成功", JOptionPane.INFORMATION_MESSAGE);
+            gitLabLogin(config);
             dispose();
         } else {
             JOptionPane.showMessageDialog(this, "GitLab 配置保存失败", "保存失败", JOptionPane.ERROR_MESSAGE);
         }
     }
     
-    private void gitLabLogin() {
-        GitLabAuthConfig config = collectConfig();
-        if (!validateConfig(config)) {
-            return;
-        }
+    private void gitLabLogin(GitLabAuthConfig config) {
         try {
-            final GitLabApi gitLabApi = gitLabService.login(config, true);
-            SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this, "登录成功！\nToken: " + gitLabApi.getAuthToken(), "测试登录",
-                    JOptionPane.INFORMATION_MESSAGE));
+            final GitLabApi gitLabApi = GitLabService.getInstance().login(config, false);
+            LogUtil.appendLog(LogUtil.success("GitLab登录保存成功！Token: " + gitLabApi.getAuthToken()), LogUtil.DATA_SYNC_UI_LOG_AREA);
+            SwingUtilities.invokeLater(
+                    () -> JOptionPane.showMessageDialog(this, "登录保存成功！", "测试登录", JOptionPane.INFORMATION_MESSAGE, IconUtil.success()));
         } catch (Exception ex) {
             SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this, "登录失败: " + ex.getMessage(), "登录", JOptionPane.ERROR_MESSAGE));
         }

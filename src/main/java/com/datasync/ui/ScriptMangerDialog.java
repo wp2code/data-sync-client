@@ -17,6 +17,7 @@ import com.datasync.model.Script;
 import com.datasync.util.ConfigUtil;
 import com.datasync.util.GlobalUtil;
 import com.datasync.util.IconUtil;
+import com.datasync.util.LogUtil;
 import com.datasync.util.SQLiteConfigUtil;
 import com.mysql.cj.util.StringUtils;
 import java.awt.*;
@@ -50,8 +51,6 @@ import org.gitlab4j.api.models.RepositoryFileResponse;
  **/
 public class ScriptMangerDialog extends FullscreenJDialog {
     
-    private final GitLabService gitLabService = new GitLabService();
-    
     private final List<OptionJPanel> scriptPanelList = new ArrayList<>();
     
     private JPanel scriptListPanel;
@@ -60,7 +59,7 @@ public class ScriptMangerDialog extends FullscreenJDialog {
     
     private JTextArea consoleArea;
     
-    private JTextArea resultArea;
+    //    private JTextArea resultArea;
     
     private JTabbedPane resultTabs;
     
@@ -219,7 +218,7 @@ public class ScriptMangerDialog extends FullscreenJDialog {
         clearConsoleItem.addActionListener(e -> consoleArea.setText(""));
         JMenuItem clearResultItem = new JMenuItem("清空结果和日志");
         clearResultItem.addActionListener(e -> {
-            resultArea.setText("");
+            LogUtil.clearLog(LogUtil.SCRIPT_LOG_AREA);
             resultTabs.removeAll();
         });
         JMenuItem fullscreenItem = new JMenuItem("全屏（F11）/ 退出全屏（Esc）");
@@ -271,13 +270,7 @@ public class ScriptMangerDialog extends FullscreenJDialog {
         resultTabs.setTabLayoutPolicy(JTabbedPane.SCROLL_TAB_LAYOUT);
         resultTabs.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
         resultTabs.setBorder(BorderFactory.createTitledBorder("运行结果"));
-        resultArea = new JTextArea();
-        resultArea.setEditable(false);
-        resultArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
-        resultArea.setLineWrap(true);
-        resultArea.setWrapStyleWord(true);
-        resultArea.setBorder(new EmptyBorder(8, 8, 8, 8));
-        JScrollPane resultScroll = new JScrollPane(resultArea);
+        JScrollPane resultScroll = new JScrollPane(LogUtil.SCRIPT_LOG_AREA);
         resultScroll.setBorder(BorderFactory.createTitledBorder("运行日志"));
         resultScroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
         resultScroll.setPreferredSize(new Dimension(0, 80));
@@ -285,7 +278,7 @@ public class ScriptMangerDialog extends FullscreenJDialog {
         resultPanelSplitPane.setResizeWeight(1);
         attachResultAreaPopupMenu(consoleArea, "清空控制台", true);
         attachResultAreaPopupMenu(resultTabs, "清空结果", false);
-        attachResultAreaPopupMenu(resultArea, "清空日志", false);
+        attachResultAreaPopupMenu(LogUtil.SCRIPT_LOG_AREA, "清空日志", false);
         JSplitPane rightSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, consolePanel, resultPanelSplitPane);
         rightSplitPane.setResizeWeight(0.6);
         rightPanel.add(rightSplitPane, BorderLayout.CENTER);
@@ -389,6 +382,9 @@ public class ScriptMangerDialog extends FullscreenJDialog {
                             popup.add(copyItem);
                         }
                     }
+                    if (comp instanceof JEditorPane editorPane) {
+                        editItem.addActionListener(ev -> LogUtil.clearLog(editorPane));
+                    }
                     if (comp instanceof JTabbedPane tabbedPane) {
                         editItem.addActionListener(ev -> tabbedPane.removeAll());
                     }
@@ -433,7 +429,7 @@ public class ScriptMangerDialog extends FullscreenJDialog {
     }
     
     private void editScript(Script script, OptionJPanel panel) {
-        if (!showScriptMetaDialog(script, "编辑脚本")) {
+        if (showScriptMetaDialog(script, "编辑脚本")) {
             return;
         }
         
@@ -456,7 +452,7 @@ public class ScriptMangerDialog extends FullscreenJDialog {
                     break;
                 }
             }
-            logResult("更新脚本 [" + newName + "] 成功！");
+            logResult(LogUtil.success("更新脚本 [" + newName + "] 成功！"));
         } else {
             JOptionPane.showMessageDialog(this, "更新脚本失败", "错误", JOptionPane.ERROR_MESSAGE);
         }
@@ -653,17 +649,20 @@ public class ScriptMangerDialog extends FullscreenJDialog {
         dbTypeInput.addItem(DbType.POSTGRESQL_ITEM);
         dbTypeInput.addItem(DbType.MYSQL_ITEM);
         dbTypeInput.setSelectedItem(DbType.getIconItem(script.getDbType() != null ? script.getDbType().getKey() : null));
-        
+        //项目
         FilterComboBox<ProjectItem> projectCombo = new FilterComboBox<>();
-        projectCombo.setEnabled(gitLabService.isLogin());
+        projectCombo.setEditable(false);
+        projectCombo.setEnabled(GitLabService.getInstance().isLogin());
+        //分支
         FilterComboBox<String> branchCombo = new FilterComboBox<>();
+        branchCombo.setEditable(false);
         branchCombo.setEnabled(false);
         JTextField filePathField = new JTextField(script.getFilePath() != null ? script.getFilePath() : "", 30);
         JTextArea remarkArea = new JTextArea(script.getRemark() != null ? script.getRemark() : "", 4, 30);
         remarkArea.setLineWrap(true);
         remarkArea.setWrapStyleWord(true);
         JScrollPane remarkScroll = new JScrollPane(remarkArea);
-        loadProjectsForConfig(projectCombo, branchCombo, script.getProjectOrId(), script.getBranch());
+        this.loadProjectsForConfig(projectCombo, branchCombo, script.getProjectOrId());
         projectCombo.addItemListener(e -> {
             if (e.getStateChange() == ItemEvent.SELECTED) {
                 ProjectItem item = (ProjectItem) projectCombo.getSelectedItem();
@@ -701,13 +700,13 @@ public class ScriptMangerDialog extends FullscreenJDialog {
         
         int option = JOptionPane.showConfirmDialog(this, panel, title, JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
         if (option != JOptionPane.OK_OPTION) {
-            return false;
+            return true;
         }
         
         String newName = nameField.getText().trim();
         if (newName.isEmpty()) {
             JOptionPane.showMessageDialog(this, "脚本名称不能为空", "提示", JOptionPane.WARNING_MESSAGE);
-            return false;
+            return true;
         }
         
         IconItem selectedDbType = dbTypeInput.getSelectedItem();
@@ -721,22 +720,25 @@ public class ScriptMangerDialog extends FullscreenJDialog {
         final String filePath = filePathField.getText().trim();
         if (!StringUtils.isNullOrEmpty(filePath) && !filePath.endsWith(".sql")) {
             JOptionPane.showMessageDialog(this, "文件必须是.sql格式", "错误", JOptionPane.ERROR_MESSAGE);
-            return false;
+            return true;
         }
         script.setFilePath(filePathField.getText().trim());
         script.setRemark(remarkArea.getText().trim());
-        return true;
+        return false;
     }
     
-    private void loadProjectsForConfig(FilterComboBox<ProjectItem> projectCombo, FilterComboBox<String> branchCombo, String preselectProjectOrId,
-            String preselectBranch) {
+    private void loadProjectsForConfig(FilterComboBox<ProjectItem> projectCombo, FilterComboBox<String> branchCombo, String preselectProjectOrId) {
         projectCombo.clearAllItems();
-        projectCombo.addItem(new ProjectItem(null, null, "（查询中...）"));
+        String msg = GitLabService.getInstance().isLogin() ? "（查询中...）" : "(未登录GitLabl)";
+        projectCombo.addItem(new ProjectItem(null, null, msg));
         projectCombo.setEnabled(false);
         branchCombo.clearAllItems();
         branchCombo.setEnabled(false);
+        if(!GitLabService.getInstance().isLogin()){
+            return;
+        }
         new Thread(() -> {
-            List<Project> projects = gitLabService.getProjectList();
+            List<Project> projects = GitLabService.getInstance().getProjectList();
             SwingUtilities.invokeLater(() -> {
                 try {
                     List<ProjectItem> items = new ArrayList<>();
@@ -750,8 +752,8 @@ public class ScriptMangerDialog extends FullscreenJDialog {
                     ProjectItem matched = null;
                     for (Project p : projects) {
                         ProjectItem item = new ProjectItem(p.getId(), p.getPathWithNamespace(), p.getName());
-                        if (gitLabService.getGitLabAuthConfig() != null) {
-                            item.setConfigId(gitLabService.getGitLabAuthConfig().getId());
+                        if (GitLabService.getInstance().getGitLabAuthConfig() != null) {
+                            item.setConfigId(GitLabService.getInstance().getGitLabAuthConfig().getId());
                         }
                         items.add(item);
                         if (preselectProjectOrId != null && preselectProjectOrId.equals(item.getProjectOrId())) {
@@ -782,7 +784,7 @@ public class ScriptMangerDialog extends FullscreenJDialog {
         branchCombo.setEnabled(false);
         new Thread(() -> {
             try {
-                List<Branch> branches = gitLabService.getBranchList(projectOrId);
+                List<Branch> branches = GitLabService.getInstance().getBranchList(projectOrId);
                 SwingUtilities.invokeLater(() -> {
                     List<String> items = new ArrayList<>();
                     if (branches.isEmpty()) {
@@ -804,8 +806,8 @@ public class ScriptMangerDialog extends FullscreenJDialog {
                     branchCombo.setEnabled(true);
                     if (matched != null) {
                         branchCombo.setSelectedItem(matched);
-                    } else if (branchCombo.getItemCount() > 1) {
-                        branchCombo.setSelectedIndex(1);
+                    } else {
+                        branchCombo.setSelectedIndex(0);
                     }
                 });
             } catch (Exception ex) {
@@ -821,7 +823,7 @@ public class ScriptMangerDialog extends FullscreenJDialog {
     
     private void createNewScript() {
         Script script = new Script();
-        if (!showScriptMetaDialog(script, "新建脚本")) {
+        if (showScriptMetaDialog(script, "新建脚本")) {
             return;
         }
         
@@ -850,7 +852,7 @@ public class ScriptMangerDialog extends FullscreenJDialog {
                 }
             }
         }
-        logResult("新建脚本 [" + name + "] 成功");
+        logResult(LogUtil.success("新建脚本 [" + name + "] 成功"));
     }
     
     //同步GitLab文件到本地
@@ -860,7 +862,7 @@ public class ScriptMangerDialog extends FullscreenJDialog {
             return;
         }
         try {
-            if (!gitLabService.isLogin()) {
+            if (!GitLabService.getInstance().isLogin()) {
                 JOptionPane.showMessageDialog(this, "GitLab 未登录或配置无效", "提示", JOptionPane.WARNING_MESSAGE);
                 return;
             }
@@ -875,7 +877,7 @@ public class ScriptMangerDialog extends FullscreenJDialog {
         }
         new Thread(() -> {
             try {
-                RepositoryFile file = gitLabService.getFile(selectedScript.getProjectOrId(),
+                RepositoryFile file = GitLabService.getInstance().getFile(selectedScript.getProjectOrId(),
                         GlobalUtil.getFullFilePath(selectedScript.getFilePath(), selectedScript.getScriptName() + ".sql"),
                         selectedScript.getBranch());
                 String content = new String(Base64.getDecoder().decode(file.getContent()), StandardCharsets.UTF_8);
@@ -883,12 +885,12 @@ public class ScriptMangerDialog extends FullscreenJDialog {
                     consoleArea.setText(content);
                     selectedScript.setContent(content);
                     ConfigUtil.updateScript(selectedScript);
-                    logResult("从 GitLab 同步脚本 [" + selectedScript.getScriptName() + "] 成功");
+                    logResult(LogUtil.success("从 GitLab 同步脚本 [" + selectedScript.getScriptName() + "] 成功"));
                     JOptionPane.showMessageDialog(this, "同步 GitLab 文件成功！", "成功", JOptionPane.INFORMATION_MESSAGE);
                 });
             } catch (Exception ex) {
                 SwingUtilities.invokeLater(() -> {
-                    logResult("从 GitLab 同步脚本 [" + selectedScript.getScriptName() + "] 失败：" + ex.getMessage());
+                    logResult(LogUtil.failed("从 GitLab 同步脚本 [" + selectedScript.getScriptName() + "] 失败：" + ex.getMessage()));
                     JOptionPane.showMessageDialog(this, "同步 GitLab 文件失败：" + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
                 });
             }
@@ -902,7 +904,7 @@ public class ScriptMangerDialog extends FullscreenJDialog {
             return;
         }
         try {
-            if (!gitLabService.isLogin()) {
+            if (!GitLabService.getInstance().isLogin()) {
                 JOptionPane.showMessageDialog(this, "GitLab 未登录或配置无效", "提示", JOptionPane.WARNING_MESSAGE);
                 return;
             }
@@ -930,7 +932,7 @@ public class ScriptMangerDialog extends FullscreenJDialog {
                 fileParams.setCommitMessage(selectedScript.getFilePath());
                 fileParams.setContent(Base64.getEncoder().encodeToString(content.getBytes(StandardCharsets.UTF_8)));
                 fileParams.setEncoding("base64");
-                final RepositoryFileResponse orUpdateFile = gitLabService.createOrUpdateFile(fileParams);
+                final RepositoryFileResponse orUpdateFile = GitLabService.getInstance().createOrUpdateFile(fileParams);
                 SwingUtilities.invokeLater(() -> {
                     logResult("上传脚本 [" + selectedScript.getScriptName() + "] 到 GitLab 成功! 分支：" + orUpdateFile.getBranch() + " 地址："
                             + orUpdateFile.getFilePath());
@@ -954,7 +956,7 @@ public class ScriptMangerDialog extends FullscreenJDialog {
         
         selectedScript.setContent(consoleArea.getText());
         if (ConfigUtil.updateScript(selectedScript)) {
-            logResult("保存脚本 [" + selectedScript.getScriptName() + "] 成功");
+            logResult(LogUtil.success("保存脚本 [" + selectedScript.getScriptName() + "] 成功"));
         } else {
             JOptionPane.showMessageDialog(this, "保存脚本失败", "错误", JOptionPane.ERROR_MESSAGE);
         }
@@ -987,7 +989,7 @@ public class ScriptMangerDialog extends FullscreenJDialog {
             }
             refreshScriptList();
             updateEditState();
-            logResult("删除脚本成功");
+            logResult(LogUtil.success("删除脚本成功"));
         } else {
             JOptionPane.showMessageDialog(this, "删除脚本失败", "错误", JOptionPane.ERROR_MESSAGE);
         }
@@ -1024,9 +1026,10 @@ public class ScriptMangerDialog extends FullscreenJDialog {
         
         try (java.io.FileWriter writer = new java.io.FileWriter(file, java.nio.charset.StandardCharsets.UTF_8)) {
             writer.write(content);
-            logResult("导出脚本成功: " + file.getAbsolutePath());
+            logResult(LogUtil.success("导出脚本成功: " + file.getAbsolutePath()));
             JOptionPane.showMessageDialog(this, "导出成功：\n" + file.getAbsolutePath(), "导出成功", JOptionPane.INFORMATION_MESSAGE);
         } catch (IOException ex) {
+            logResult(LogUtil.failed("导出脚本失败: " + ex.getMessage()));
             JOptionPane.showMessageDialog(this, "导出失败：" + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
         }
     }
@@ -1088,7 +1091,7 @@ public class ScriptMangerDialog extends FullscreenJDialog {
             SwingUtilities.invokeLater(() -> resultTabs.removeAll());
             try {
                 conn = DbConnector.getConnection(dataSource);
-                List<String> statements = splitSqlStatements(content);
+                List<String> statements = GlobalUtil.splitSqlStatements(content);
                 for (String sql : statements) {
                     if (sql.isEmpty()) {
                         continue;
@@ -1124,22 +1127,23 @@ public class ScriptMangerDialog extends FullscreenJDialog {
                                 SwingUtilities.invokeLater(() -> {
                                     addResultTab("结果 " + tabIndex + " (" + finalTotalCount + ")", data, columnNames);
                                 });
-                                logResult("[QUERY] " + truncateSql(sql) + " | 共 " + totalCount + " 条，显示前 " + displayCount + " 条");
+                                logResult("[QUERY] " + GlobalUtil.truncateSql(sql) + " | 共 " + totalCount + " 条，显示前 " + displayCount + " 条");
                                 success++;
                             }
                         } else {
                             int updateCount = stmt.getUpdateCount();
                             success++;
-                            logResult("[OK] " + truncateSql(sql) + (updateCount >= 0 ? " | 影响 " + updateCount + " 行" : ""));
+                            logResult(LogUtil.success(
+                                    "[OK] " + GlobalUtil.truncateSql(sql) + (updateCount >= 0 ? " | 影响 " + updateCount + " 行" : "")));
                         }
                     } catch (SQLException ex) {
                         failed++;
-                        logResult("[FAILED] " + ex.getMessage() + " | SQL: " + truncateSql(sql));
+                        logResult(LogUtil.failed("[FAILED] " + ex.getMessage() + " | SQL: " + GlobalUtil.truncateSql(sql)));
                     }
                 }
-                logResult("执行完成: 成功 " + success + " 条, 失败 " + failed + " 条");
+                logResult(LogUtil.success("执行完成: 成功 " + success + " 条, 失败 " + failed + " 条"));
             } catch (Exception ex) {
-                logResult("[ERROR] 连接或执行异常: " + ex.getMessage());
+                logResult(LogUtil.failed("[ERROR] 连接或执行异常: " + ex.getMessage()));
             } finally {
                 DbConnector.closeQuietly(conn);
                 SwingUtilities.invokeLater(() -> {
@@ -1190,95 +1194,11 @@ public class ScriptMangerDialog extends FullscreenJDialog {
     }
     
     private void logResult(String msg) {
-        SwingUtilities.invokeLater(() -> {
-            resultArea.append(
-                    "[" + java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")) + "] " + msg + "\n");
-            resultArea.setCaretPosition(resultArea.getDocument().getLength());
-        });
+        LogUtil.appendLog(msg, LogUtil.SCRIPT_LOG_AREA);
     }
     
     /**
-     * 拆分 SQL 脚本为独立语句。 支持跳过 -- 行注释、
-     */
-    private List<String> splitSqlStatements(String content) {
-        List<String> statements = new ArrayList<>();
-        StringBuilder current = new StringBuilder();
-        boolean inSingleQuote = false;
-        boolean inDoubleQuote = false;
-        boolean inLineComment = false;
-        boolean inBlockComment = false;
-        char[] chars = content.toCharArray();
-        for (int i = 0; i < chars.length; i++) {
-            char c = chars[i];
-            char next = i + 1 < chars.length ? chars[i + 1] : '\0';
-            
-            if (inLineComment) {
-                if (c == '\n') {
-                    inLineComment = false;
-                }
-                continue;
-            }
-            
-            if (inBlockComment) {
-                if (c == '*' && next == '/') {
-                    inBlockComment = false;
-                    i++;
-                }
-                continue;
-            }
-            
-            if (!inSingleQuote && !inDoubleQuote) {
-                if (c == '-' && next == '-') {
-                    inLineComment = true;
-                    i++;
-                    continue;
-                }
-                if (c == '/' && next == '*') {
-                    inBlockComment = true;
-                    i++;
-                    continue;
-                }
-            }
-            
-            if (c == '\'' && !inDoubleQuote) {
-                inSingleQuote = !inSingleQuote;
-                current.append(c);
-                continue;
-            }
-            if (c == '"' && !inSingleQuote) {
-                inDoubleQuote = !inDoubleQuote;
-                current.append(c);
-                continue;
-            }
-            
-            if (c == ';' && !inSingleQuote && !inDoubleQuote) {
-                String sql = current.toString().trim();
-                if (!sql.isEmpty()) {
-                    statements.add(sql);
-                }
-                current = new StringBuilder();
-                continue;
-            }
-            
-            current.append(c);
-        }
-        String last = current.toString().trim();
-        if (!last.isEmpty()) {
-            statements.add(last);
-        }
-        return statements;
-    }
-    
-    private String truncateSql(String sql) {
-        if (sql == null) {
-            return "";
-        }
-        String s = sql.replaceAll("\\s+", " ").trim();
-        return s.length() > 80 ? s.substring(0, 80) + "..." : s;
-    }
-    
-    /**
-     * 绑定全屏快捷键：F11 切换全屏，Esc 退出全屏。
+     * 绑定全屏快捷键：Ctrl+s 保存脚本
      */
     private void bindFullscreenShortcuts() {
         KeyStroke ctrlS = KeyStroke.getKeyStroke(KeyEvent.VK_S, KeyEvent.CTRL_DOWN_MASK, true);

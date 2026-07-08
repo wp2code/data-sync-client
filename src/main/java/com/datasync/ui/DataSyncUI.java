@@ -8,6 +8,7 @@ import com.datasync.components.combobox.IconItem;
 import com.datasync.components.combobox.IconJComboBox;
 import com.datasync.core.DataSyncService;
 import com.datasync.core.DbConnector;
+import com.datasync.core.GitLabService;
 import com.datasync.model.ConnectionWrapper;
 import com.datasync.model.DataSource;
 import com.datasync.model.DbType;
@@ -35,10 +36,13 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.TitledBorder;
 import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Swing 主界面 — 聚焦数据同步操作，数据源配置通过管理对话框维护
  */
+@Slf4j
 public class DataSyncUI extends JFrame {
     
     // ────────── 源库选择组件 ──────────
@@ -79,10 +83,6 @@ public class DataSyncUI extends JFrame {
     
     private JPanel tgtSchemaPanel;
     
-    private JPanel srcTablePanel;
-    
-    private JPanel tgtTablePanel;
-    
     private Rectangle ddlNormalBounds;
     
     private Rectangle dataNormalBounds;
@@ -92,7 +92,7 @@ public class DataSyncUI extends JFrame {
     private boolean dataFullscreen = false;
     
     // ────────── 日志组件 ──────────
-    private JEditorPane logArea;
+    //    private JEditorPane logArea;
     
     // ────────── 当前连接 ──────────
     private volatile ConnectionWrapper srcConn;
@@ -109,6 +109,7 @@ public class DataSyncUI extends JFrame {
     public DataSyncUI() {
         initUI();
         SQLiteConfigUtil.getInstance().initialize();
+        GitLabService.getInstance().autoLogin();
         refreshConfigCombos();
     }
     
@@ -129,6 +130,7 @@ public class DataSyncUI extends JFrame {
             public void windowClosing(WindowEvent e) {
                 closeConnection(Side.SOURCE, true);
                 closeConnection(Side.TARGET, true);
+                GitLabService.getInstance().logout();
             }
         });
         
@@ -284,7 +286,7 @@ public class DataSyncUI extends JFrame {
             tableScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
             tableRow.add(tableScrollPane, BorderLayout.CENTER);
             final JPanel finalTableCheckPanelForExport = tableCheckPanel;
-            searchText.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            searchText.getDocument().addDocumentListener(new DocumentListener() {
                 @Override
                 public void insertUpdate(DocumentEvent e) {
                     filterTables(searchText, finalTableCheckPanelForExport);
@@ -354,7 +356,7 @@ public class DataSyncUI extends JFrame {
             }
             Object sel = configCombo.getSelectedItem();
             // 获取显示文本（可能是 IconItem 或普通字符串）
-            String selText = sel instanceof IconItem item ? item.getText() : (sel != null ? sel.toString() : null);
+            String selText = sel instanceof IconItem item ? item.getText() : null;
             if (selText != null && !UiConstants.PLACEHOLDER_SELECT_SOURCE.equals(selText) && !UiConstants.PLACEHOLDER_NONE.equals(selText)
                     && !UiConstants.PLACEHOLDER_NO_MATCHING.equals(selText)) {
                 DataSource ds = ConfigUtil.loadDataSourceByName(selText);
@@ -400,7 +402,6 @@ public class DataSyncUI extends JFrame {
             srcSyncTablePanel = tableCheckPanel;
             srcSchemaLabel = schemaLabel;
             srcSchemaPanel = schemaRow;
-            srcTablePanel = tableRow;
         } else {
             tgtConfigCombo = configCombo;
             tgtInfoLabel = infoLabel;
@@ -409,7 +410,6 @@ public class DataSyncUI extends JFrame {
             tgtSyncTablePanel = tableCheckPanel;
             tgtSchemaLabel = schemaLabel;
             tgtSchemaPanel = schemaRow;
-            tgtTablePanel = tableRow;
         }
         
         return sourcePanel;
@@ -527,22 +527,12 @@ public class DataSyncUI extends JFrame {
         JPanel panel = new JPanel(new BorderLayout(0, 5));
         panel.setBorder(BorderFactory.createCompoundBorder(new TitledBorder("运行日志"), new EmptyBorder(5, 12, 8, 12)));
         panel.setPreferredSize(new Dimension(850, 350));
-        
-        logArea = new JEditorPane();
-        logArea.setEditable(false);
-        logArea.setContentType("text/html");
-        logArea.setFont(UiConstants.FONT_MONO_12);
-        logArea.setBackground(UiConstants.COLOR_LOG_BG);
-        logArea.setForeground(UiConstants.COLOR_LOG_FG);
-        
-        JScrollPane scrollPane = new JScrollPane(logArea);
+        JScrollPane scrollPane = new JScrollPane(LogUtil.DATA_SYNC_UI_LOG_AREA);
         scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
         panel.add(scrollPane, BorderLayout.CENTER);
-        
         JButton clearBtn = new JButton("清空日志");
-        
         clearBtn.addActionListener(e -> {
-            LogUtil.clearLog(logArea);
+            LogUtil.clearLog(LogUtil.DATA_SYNC_UI_LOG_AREA);
         });
         JPanel btnPanel = new JPanel(new BorderLayout());
         final LinkJLabel versionLink = new LinkJLabel(UiConstants.VERSION, UiConstants.GITHUB_ADDR);
@@ -634,7 +624,7 @@ public class DataSyncUI extends JFrame {
     private DataSource getSelectedSource(Side side) {
         IconJComboBox combo = side == Side.SOURCE ? srcConfigCombo : tgtConfigCombo;
         Object sel = combo.getSelectedItem();
-        String selText = sel instanceof IconItem item ? item.getText() : (sel != null ? sel.toString() : null);
+        String selText = sel instanceof IconItem item ? item.getText() : null;
         if (sel == null || UiConstants.PLACEHOLDER_SELECT_SOURCE.equals(sel.toString()) || UiConstants.PLACEHOLDER_NONE.equals(sel.toString())
                 || UiConstants.PLACEHOLDER_NO_MATCHING.equals(selText)) {
             return null;
@@ -660,17 +650,6 @@ public class DataSyncUI extends JFrame {
         srcSchemaPanel.setVisible(isPostgres);
         tgtSchemaPanel.setVisible(isPostgres);
         
-        // 如果目标库已选中但类型与源库不一致，关闭目标连接
-        DataSource tgtDs = getSelectedSource(Side.TARGET);
-        if (tgtDs != null && tgtConn != null && srcType != null && !srcType.equalsIgnoreCase(tgtDs.getDbType())) {
-            closeConnection(Side.TARGET, false);
-            tgtInfoLabel.setIcon(null);
-            tgtInfoLabel.setText(UiConstants.PLACEHOLDER_SELECT_SOURCE);
-            tgtInfoLabel.setFont(UiConstants.FONT_SANS_11);
-            tgtInfoLabel.setHorizontalAlignment(SwingConstants.CENTER);
-            tgtInfoLabel.setForeground(Color.GRAY);
-        }
-        
         // 过滤目标库下拉：同类型 + 排除与源库同名
         DataSource srcDs = getSelectedSource(Side.SOURCE);
         String excludeName = srcDs != null ? srcDs.getSourceName() : null;
@@ -681,14 +660,34 @@ public class DataSyncUI extends JFrame {
             suppressComboEvents = false;
         }
         
-        // 清空同步面板
+        // 切换源库后，若目标库已失效（被过滤或类型不匹配），重置目标侧
+        boolean tgtValid = getSelectedSource(Side.TARGET) != null;
+        if (!tgtValid) {
+            closeConnection(Side.TARGET, false);
+            tgtInfoLabel.setIcon(null);
+            tgtInfoLabel.setText(UiConstants.PLACEHOLDER_SELECT_SOURCE);
+            tgtInfoLabel.setFont(UiConstants.FONT_SANS_11);
+            tgtInfoLabel.setHorizontalAlignment(SwingConstants.CENTER);
+            tgtInfoLabel.setForeground(Color.GRAY);
+            tgtDbCombo.setModel(new DefaultComboBoxModel<>(new String[] {UiConstants.PLACEHOLDER_SELECT_DATABASE}));
+            tgtDbCombo.setEnabled(false);
+            tgtSyncSchemaCombo.setModel(new DefaultComboBoxModel<>(new String[] {UiConstants.PLACEHOLDER_CONNECT_FIRST}));
+            setTableCheckItems(tgtSyncTablePanel, UiConstants.PLACEHOLDER_CONNECT_FIRST);
+        }
+        
+        // 清空源库同步面板
         if (!isPostgres) {
             srcSyncSchemaCombo.setSelectedItem("");
-            tgtSyncSchemaCombo.setSelectedItem("");
         }
         String tableHint = isPostgres ? UiConstants.PLACEHOLDER_SELECT_SCHEMA : UiConstants.PLACEHOLDER_CONNECT_FIRST;
         setTableCheckItems(srcSyncTablePanel, tableHint);
-        setTableCheckItems(tgtSyncTablePanel, tableHint);
+        // 目标库仍有效时，同步清空目标库面板
+        if (tgtValid) {
+            if (!isPostgres) {
+                tgtSyncSchemaCombo.setSelectedItem("");
+            }
+            setTableCheckItems(tgtSyncTablePanel, tableHint);
+        }
     }
     
     // ────────── Database → Schema → Table 联动 ──────────
@@ -1522,8 +1521,7 @@ public class DataSyncUI extends JFrame {
         String sideLabel = side.label();
         DataSource ds = getSelectedSource(side);
         if (ds == null || !ds.isValid()) {
-            appendLog(LogUtil.logLine("<html><body><span style=\"color: red;\">" + LogUtil.logTime() + UiConstants.LOG_REFRESH + sideLabel
-                    + "：未选择有效数据源，跳过刷新</span></body></html>"));
+            appendLog(LogUtil.warn(UiConstants.LOG_REFRESH + sideLabel + "：未选择有效数据源，跳过刷新"));
             return;
         }
         
@@ -1744,27 +1742,8 @@ public class DataSyncUI extends JFrame {
         return null;
     }
     
-    // ────────── 连接全局访问 ──────────
-    
-    /**
-     * 获取源数据库当前连接（可能为 null）
-     */
-    public ConnectionWrapper getSrcConn() {
-        return srcConn;
-    }
-    
-    /**
-     * 获取目标数据库当前连接（可能为 null）
-     */
-    public ConnectionWrapper getTgtConn() {
-        return tgtConn;
-    }
-    
-    // ────────── 日志辅助 ──────────
-    
-    
     public void appendLog(String msg) {
-        LogUtil.appendLog(msg, logArea);
+        LogUtil.appendLog(msg, LogUtil.DATA_SYNC_UI_LOG_AREA);
     }
     
     public static class ConnectThread extends Thread {
@@ -2050,13 +2029,10 @@ public class DataSyncUI extends JFrame {
      * 弹窗展示结构差异结果和 ALTER 脚本
      */
     private void showDiffResultDialog(String summaryDetailHtml, String summaryHtml, String alterScript, boolean hasDiff, DataSource target) {
-        JDialog dialog = new JDialog(this, "表结构差异比较结果", false);
-        dialog.setSize(850, 750);
-        dialog.setLocationRelativeTo(this);
-        
+        FullscreenJDialog dialog = new FullscreenJDialog("DIFF_RESULT_DIALOG", this, "表结构差异比较结果", false, 850, 750);
+        LogUtil.clearLog(LogUtil.DIFF_SYNC_LOG_AREA);
         JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
         mainPanel.setBorder(new EmptyBorder(12, 12, 12, 12));
-        
         // 底部面板：差异摘要 + 按钮
         JPanel bottomPanel = new JPanel(new BorderLayout(0, 5));
         JPanel topPanel = new JPanel(new BorderLayout());
@@ -2067,10 +2043,12 @@ public class DataSyncUI extends JFrame {
         summaryPane.setText(summaryHtml);
         topPanel.add(summaryPane, BorderLayout.NORTH);
         JEditorPane summaryDetailPane = new JEditorPane();
+        summaryDetailPane.setBorder(BorderFactory.createEmptyBorder());
         summaryDetailPane.setContentType("text/html");
         summaryDetailPane.setEditable(false);
         summaryDetailPane.setText(summaryDetailHtml);
         JScrollPane summaryScroll = new JScrollPane(summaryDetailPane);
+        summaryScroll.setBorder(BorderFactory.createEmptyBorder());
         summaryScroll.setPreferredSize(new Dimension(810, 150));
         topPanel.add(summaryScroll, BorderLayout.CENTER);
         mainPanel.add(topPanel, BorderLayout.NORTH);
@@ -2090,33 +2068,18 @@ public class DataSyncUI extends JFrame {
             scriptScroll.setBorder(BorderFactory.createTitledBorder("ALTER TABLE 同步脚本"));
             
             // 下侧：执行日志
-            JTextArea execLogArea = new JTextArea();
-            execLogArea.setFont(UiConstants.FONT_MONO_11);
-            execLogArea.setEditable(false);
-            execLogArea.setBackground(UiConstants.COLOR_LOG_BG);
-            JScrollPane execLogScroll = new JScrollPane(execLogArea);
+            JScrollPane execLogScroll = new JScrollPane(LogUtil.DIFF_SYNC_LOG_AREA);
             execLogScroll.setBorder(BorderFactory.createTitledBorder("执行日志"));
             
             splitPane.setTopComponent(scriptScroll);
             splitPane.setBottomComponent(execLogScroll);
             mainPanel.add(splitPane, BorderLayout.CENTER);
-            
-            // Consumer 用于向弹窗日志区域追加日志
-            Consumer<String> dialogLogConsumer = msg -> SwingUtilities.invokeLater(() -> {
-                execLogArea.append(msg + "\n");
-                // 自动滚动到底部
-                execLogArea.setCaretPosition(execLogArea.getDocument().getLength());
-            });
-            
             // 按钮行
             JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 5));
             JButton clearBtn = new JButton("清空日志");
-            clearBtn.addActionListener(e -> {
-                execLogArea.setCaretPosition(0);
-                execLogArea.setText("");
-            });
+            clearBtn.addActionListener(e -> LogUtil.clearLog(LogUtil.DIFF_SYNC_LOG_AREA));
             btnPanel.add(clearBtn);
-            JButton copyBtn = new JButton("复制脚本到剪贴板");
+            JButton copyBtn = new JButton("一键复制");
             copyBtn.addActionListener(e -> GlobalUtil.copy(alterScript, dialog));
             btnPanel.add(copyBtn);
             
@@ -2130,8 +2093,8 @@ public class DataSyncUI extends JFrame {
                 if (confirm == JOptionPane.YES_OPTION) {
                     applyBtn.setEnabled(false);
                     copyBtn.setEnabled(false);
-                    dialogLogConsumer.accept("[INFO] ======== 开始执行结构同步脚本 ========");
-                    executeAlterScript(alterScript, target.getDbType(), dialogLogConsumer, () -> {
+                    LogUtil.appendLog("[INFO] ======== 开始执行结构同步脚本 ========", LogUtil.DIFF_SYNC_LOG_AREA);
+                    executeAlterScript(alterScript, target.getDbType(), () -> {
                         SwingUtilities.invokeLater(() -> {
                             applyBtn.setEnabled(true);
                             copyBtn.setEnabled(true);
@@ -2165,13 +2128,12 @@ public class DataSyncUI extends JFrame {
      *
      * @param alterScript ALTER TABLE 脚本
      * @param tgtDbType   目标库类型
-     * @param logConsumer 日志回调（输出到弹窗日志区域）
      * @param onComplete  执行完成回调（恢复按钮状态）
      */
-    private void executeAlterScript(String alterScript, String tgtDbType, Consumer<String> logConsumer, Runnable onComplete) {
+    private void executeAlterScript(String alterScript, String tgtDbType, Runnable onComplete) {
         ConnectionWrapper wrapper = tgtConn;
         if (wrapper == null || wrapper.getConnection() == null) {
-            logConsumer.accept("[ERROR] 目标库未连接");
+            LogUtil.appendLog("[ERROR] 目标库未连接", LogUtil.DIFF_SYNC_LOG_AREA);
             if (onComplete != null) {
                 onComplete.run();
             }
@@ -2188,14 +2150,13 @@ public class DataSyncUI extends JFrame {
                 int executed = 0;
                 int failed = 0;
                 String currentPgTable = null; // PG 模式下跟踪当前表名
-                
+                List<String> failSqlInfo = new ArrayList<>();
                 for (String raw : rawStatements) {
                     // 清洗每段：去掉注释行，提取真正的 SQL
                     String sql = GlobalUtil.cleanSql(raw);
                     if (sql == null) {
                         continue; // 纯注释或空
                     }
-                    
                     // 处理 PG 的多条语句合并（用 \n    缩进分隔的子语句，如 ALTER COLUMN）
                     if (DbType.fromString(tgtDbType) == DbType.POSTGRESQL) {
                         // 如果是完整的 ALTER TABLE 语句，记录表名
@@ -2207,10 +2168,12 @@ public class DataSyncUI extends JFrame {
                             try {
                                 stmt.executeUpdate(sql);
                                 executed++;
-                                logConsumer.accept("[OK] " + GlobalUtil.truncateSql(sql));
+                                LogUtil.appendLog("[OK] " + GlobalUtil.truncateSql(sql), LogUtil.DIFF_SYNC_LOG_AREA);
                             } catch (SQLException ex) {
                                 failed++;
-                                logConsumer.accept("[FAILED] " + ex.getMessage() + " | SQL: " + GlobalUtil.truncateSql(sql));
+                                failSqlInfo.add(sql + "，异常" + ex.getMessage());
+                                LogUtil.appendLog(UiConstants.LOG_FAILED + ex.getMessage() + " | SQL: " + GlobalUtil.truncateSql(sql),
+                                        LogUtil.DIFF_SYNC_LOG_AREA);
                             }
                             continue;
                         }
@@ -2222,7 +2185,6 @@ public class DataSyncUI extends JFrame {
                             if (subSql.isEmpty()) {
                                 continue;
                             }
-                            
                             if (i == 0) {
                                 // 第一条子语句：保持原样（可能是完整 ALTER TABLE 或独立子句）
                                 // 如果不是 ALTER TABLE 也不是 COMMENT ON COLUMN，需要补表名前缀
@@ -2239,10 +2201,13 @@ public class DataSyncUI extends JFrame {
                             try {
                                 stmt.executeUpdate(subSql);
                                 executed++;
-                                logConsumer.accept("[OK] " + GlobalUtil.truncateSql(subSql));
+                                LogUtil.appendLog(LogUtil.success("[OK] " + GlobalUtil.truncateSql(subSql)), LogUtil.DIFF_SYNC_LOG_AREA);
                             } catch (SQLException ex) {
                                 failed++;
-                                logConsumer.accept("[FAILED] " + ex.getMessage() + " | SQL: " + GlobalUtil.truncateSql(subSql));
+                                failSqlInfo.add(subSql + "，异常" + ex.getMessage());
+                                LogUtil.appendLog(
+                                        LogUtil.failed(UiConstants.LOG_FAILED + ex.getMessage() + " | SQL: " + GlobalUtil.truncateSql(subSql)),
+                                        LogUtil.DIFF_SYNC_LOG_AREA);
                             }
                         }
                     } else {
@@ -2250,24 +2215,31 @@ public class DataSyncUI extends JFrame {
                         try {
                             stmt.executeUpdate(sql);
                             executed++;
-                            logConsumer.accept("[OK] " + GlobalUtil.truncateSql(sql));
+                            LogUtil.appendLog(LogUtil.success("[OK] " + GlobalUtil.truncateSql(sql)), LogUtil.DIFF_SYNC_LOG_AREA);
                         } catch (SQLException ex) {
                             failed++;
-                            logConsumer.accept("[FAILED] " + ex.getMessage() + " | SQL: " + GlobalUtil.truncateSql(sql));
+                            failSqlInfo.add(sql + ",异常：" + ex.getMessage());
+                            LogUtil.appendLog(LogUtil.failed(UiConstants.LOG_FAILED + ex.getMessage() + " | SQL: " + GlobalUtil.truncateSql(sql)),
+                                    LogUtil.DIFF_SYNC_LOG_AREA);
                         }
                     }
                 }
-                
                 conn.commit();
                 final int finalExecuted = executed;
                 final int finalFailed = failed;
                 SwingUtilities.invokeLater(() -> {
-                    logConsumer.accept("[STRUCT SYNC] 执行完成: 成功 " + finalExecuted + " 条, 失败 " + finalFailed + " 条");
+                    LogUtil.appendLog(LogUtil.success("[STRUCT SYNC] 执行完成: 成功 " + finalExecuted + " 条, 失败 " + finalFailed + " 条"),
+                            LogUtil.DIFF_SYNC_LOG_AREA);
                     if (finalFailed == 0) {
-                        logConsumer.accept("[SUCCESS] 表结构同步成功！共执行 " + finalExecuted + " 条 ALTER 语句");
+                        LogUtil.appendLog(LogUtil.success(UiConstants.LOG_SUCCESS + "表结构同步成功！共执行 " + finalExecuted + " 条 ALTER 语句"),
+                                LogUtil.DIFF_SYNC_LOG_AREA);
                     } else {
-                        logConsumer.accept("[WARN] 部分语句执行失败，成功: " + finalExecuted + " 条, 失败: " + finalFailed + " 条");
+                        if (finalExecuted > 0) {
+                            LogUtil.appendLog(LogUtil.warn("[WARN] 部分语句执行失败，成功: " + finalExecuted + " 条, 失败: " + finalFailed + " 条"),
+                                    LogUtil.DIFF_SYNC_LOG_AREA);
+                        }
                     }
+                    failSqlInfo.forEach(s -> LogUtil.appendLog(LogUtil.failed(UiConstants.LOG_FAILED + s), LogUtil.DIFF_SYNC_LOG_AREA));
                     // 同时写入主窗口日志
                     appendLog(LogUtil.logLine("[STRUCT SYNC] 执行完成: 成功 " + finalExecuted + " 条, 失败 " + finalFailed + " 条"));
                     if (onComplete != null) {
@@ -2281,8 +2253,8 @@ public class DataSyncUI extends JFrame {
                 } catch (SQLException ignored) {
                 }
                 SwingUtilities.invokeLater(() -> {
-                    logConsumer.accept("[ERROR] 结构同步失败: " + ex.getMessage());
-                    appendLog(LogUtil.logLine(UiConstants.LOG_ERROR + "结构同步失败: " + ex.getMessage()));
+                    LogUtil.appendLog(LogUtil.failed(UiConstants.LOG_ERROR + "结构同步失败: " + ex.getMessage()), LogUtil.DIFF_SYNC_LOG_AREA);
+                    appendLog(LogUtil.failed(UiConstants.LOG_ERROR + "结构同步失败: " + ex.getMessage()));
                     if (onComplete != null) {
                         onComplete.run();
                     }

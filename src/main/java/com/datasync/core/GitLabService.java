@@ -9,8 +9,8 @@ import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.mysql.cj.util.StringUtils;
 import java.io.InputStream;
+import java.time.Duration;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.gitlab4j.api.GitLabApi;
@@ -38,32 +38,53 @@ public class GitLabService {
     @Getter
     private GitLabAuthConfig gitLabAuthConfig;
     
-    private final Cache<Long, List<Project>> PROJECT_CACHE = CacheBuilder.newBuilder().maximumSize(1000)
-            .expireAfterWrite(10, TimeUnit.MINUTES) // 设置写入后10分钟过期
+    private final Cache<Long, List<Project>> PROJECT_CACHE = CacheBuilder.newBuilder().maximumSize(1000).expireAfterWrite(Duration.ofHours(2))
             .build();
     
-    public GitLabService() {
+    private final Cache<String, List<Branch>> BRANCH_CACHE = CacheBuilder.newBuilder().maximumSize(1000).expireAfterWrite(Duration.ofMinutes(2))
+            .build();
+    
+    // ────────── 单例 ──────────
+    private static final GitLabService INSTANCE = new GitLabService();
+    
+    public static GitLabService getInstance() {
+        return INSTANCE;
+    }
+    
+    private GitLabService() {
     }
     
     /**
      * gitlab 登录
      *
-     * @param login  gitlab 登录信息
-     * @param isTest 是否是测试登录
+     * @param login       gitlab 登录信息
+     * @param isAutoLogin 是否自动登录
      * @return token
      */
-    public GitLabApi login(GitLabAuthConfig login, boolean isTest) {
+    public GitLabApi login(GitLabAuthConfig login, boolean isAutoLogin) {
         try {
             final GitLabApi gitLabApi = GitLabApi.oauth2Login(login.getUrl(), login.getUsername(), login.getPassword());
-            if (!isTest) {
-                this.gitLabClient = gitLabApi;
-            }
+            this.gitLabClient = gitLabApi;
             log.info("[GitLab] Login success, url: {}, revision: {}", login.getUrl(), gitLabApi.getVersion().toString());
             return gitLabApi;
         } catch (Exception ex) {
+            if (isAutoLogin) {
+                log.warn("[GitLab] Login failed, try to auto login");
+                return null;
+            }
             log.error("[GitLab] Login failed", ex);
             throw new RuntimeException("[GitLab] Login failed", ex);
         }
+    }
+    
+    public void autoLogin() {
+        gitLabClient(true);
+    }
+    
+    public void logout() {
+        PROJECT_CACHE.cleanUp();
+        BRANCH_CACHE.cleanUp();
+        gitLabClient = null;
     }
     
     /**
@@ -79,7 +100,7 @@ public class GitLabService {
                     return projects;
                 }
             }
-            final List<Project> projects = gitLabClient().getProjectApi().getProjects();
+            final List<Project> projects = gitLabClient(false).getProjectApi().getProjects();
             if (projects != null && !projects.isEmpty()) {
                 if (gitLabAuthConfig != null) {
                     PROJECT_CACHE.put(gitLabAuthConfig.getId(), projects);
@@ -99,7 +120,15 @@ public class GitLabService {
      */
     public List<Branch> getBranchList(String projectOrId) {
         try {
-            return gitLabClient().getRepositoryApi().getBranches(projectOrId);
+            List<Branch> branches = BRANCH_CACHE.getIfPresent(projectOrId);
+            if (branches != null && !branches.isEmpty()) {
+                return branches;
+            }
+            branches = gitLabClient(false).getRepositoryApi().getBranches(projectOrId);
+            if (branches != null && !branches.isEmpty()) {
+                BRANCH_CACHE.put(projectOrId, branches);
+            }
+            return gitLabClient(false).getRepositoryApi().getBranches(projectOrId);
         } catch (Exception ex) {
             throw new RuntimeException("[GitLab] Get Project Branch Failed", ex);
         }
@@ -116,12 +145,11 @@ public class GitLabService {
      */
     public RepositoryFileResponse createFile(String projectOrId, RepositoryFile file, String branch, String commitMessage) {
         try {
-            return gitLabClient().getRepositoryFileApi().createFile(projectOrId, file, branch, commitMessage);
+            return gitLabClient(false).getRepositoryFileApi().createFile(projectOrId, file, branch, commitMessage);
         } catch (Exception ex) {
             throw new RuntimeException("[GitLab] Create File Failed", ex);
         }
     }
-    
     
     /**
      * 更新文件
@@ -134,7 +162,7 @@ public class GitLabService {
      */
     public RepositoryFileResponse updateFile(String projectOrId, RepositoryFile file, String branch, String commitMessage) {
         try {
-            return gitLabClient().getRepositoryFileApi().updateFile(projectOrId, file, branch, commitMessage);
+            return gitLabClient(false).getRepositoryFileApi().updateFile(projectOrId, file, branch, commitMessage);
         } catch (Exception ex) {
             throw new RuntimeException("[GitLab] Update File Failed", ex);
         }
@@ -176,7 +204,7 @@ public class GitLabService {
      */
     public RepositoryFile getFile(String projectOrId, String filePath, String branch) {
         try {
-            return gitLabClient().getRepositoryFileApi().getFile(projectOrId, filePath, branch);
+            return gitLabClient(false).getRepositoryFileApi().getFile(projectOrId, filePath, branch);
         } catch (Exception ex) {
             throw new RuntimeException("[GitLab] Get File Failed", ex);
         }
@@ -184,7 +212,7 @@ public class GitLabService {
     
     public RepositoryFile existsGetFile(String projectOrId, String filePath, String branch) {
         try {
-            return gitLabClient().getRepositoryFileApi().getFile(projectOrId, filePath, branch);
+            return gitLabClient(false).getRepositoryFileApi().getFile(projectOrId, filePath, branch);
         } catch (Exception ex) {
             if (ex instanceof GitLabApiException gitLabApiException) {
                 if (gitLabApiException.getHttpStatus() == 404) {
@@ -205,10 +233,14 @@ public class GitLabService {
      */
     public InputStream getRawFile(String projectOrId, String filePath, String branch) {
         try {
-            return gitLabClient().getRepositoryFileApi().getRawFile(projectOrId, filePath, branch);
+            return gitLabClient(false).getRepositoryFileApi().getRawFile(projectOrId, filePath, branch);
         } catch (Exception ex) {
             throw new RuntimeException("[GitLab] Get File Stream Failed", ex);
         }
+    }
+    
+    public boolean isLogin() {
+        return gitLabClient != null;
     }
     
     /**
@@ -228,25 +260,24 @@ public class GitLabService {
             commitAction.setFilePath(commitParams.getFilePath());
             commitAction.setEncoding(Constants.Encoding.forValue(commitParams.getEncoding()));
             commitPayload.setActions(List.of(commitAction));
-            return gitLabClient().getCommitsApi().createCommit(commitParams.getProjectOrId(), commitPayload);
+            return gitLabClient(false).getCommitsApi().createCommit(commitParams.getProjectOrId(), commitPayload);
         } catch (Exception ex) {
             throw new RuntimeException("[GitLab] Commit Failed", ex);
         }
     }
     
-    private GitLabApi gitLabClient() {
+    
+    private GitLabApi gitLabClient(boolean isAutoLogin) {
         if (this.gitLabClient == null) {
             final GitLabAuthConfig gitLabAuthConfig = SQLiteConfigUtil.getInstance().loadGitLabAuthConfig();
             this.gitLabAuthConfig = gitLabAuthConfig;
             if (gitLabAuthConfig == null) {
                 throw new RuntimeException("[GitLab] 未配置 GitLab");
             }
-            this.login(gitLabAuthConfig, false);
+            this.login(gitLabAuthConfig, isAutoLogin);
         }
         return this.gitLabClient;
     }
     
-    public boolean isLogin() {
-        return gitLabClient() != null;
-    }
+    
 }

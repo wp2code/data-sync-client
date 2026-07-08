@@ -28,6 +28,7 @@ public class FilterComboBox<T> extends JComboBox<T> {
      * 设置全部候选项，并清空当前过滤条件显示完整列表。
      */
     public void setAllItems(List<T> items) {
+        removeAllItems();
         allItems.clear();
         if (items != null) {
             allItems.addAll(items);
