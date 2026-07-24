@@ -2002,6 +2002,7 @@ public class DataSyncUI extends JFrame {
                 SwingUtilities.invokeLater(() -> showDiffResultDialog(finalSummaryDetail, finalSummary, finalScripts, finalHasDiff, target));
                 
             } catch (Exception ex) {
+                log.error("表结构比较失败", ex);
                 SwingUtilities.invokeLater(() -> {
                     appendLog(LogUtil.logLine(UiConstants.LOG_ERROR + "表结构比较失败: " + ex.getMessage()));
                     JOptionPane.showMessageDialog(this, "比较失败: " + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
@@ -2149,7 +2150,6 @@ public class DataSyncUI extends JFrame {
             Connection conn = wrapper.getConnection();
             try (Statement stmt = conn.createStatement()) {
                 conn.setAutoCommit(false);
-                
                 // 按分号拆分 SQL 语句，跳过空行和注释
                 String[] rawStatements = alterScript.split(";");
                 int executed = 0;
@@ -2176,9 +2176,11 @@ public class DataSyncUI extends JFrame {
                                 LogUtil.appendLog("[OK] " + GlobalUtil.truncateSql(sql), LogUtil.DIFF_SYNC_LOG_AREA);
                             } catch (SQLException ex) {
                                 failed++;
-                                failSqlInfo.add(sql + "，异常" + ex.getMessage());
+                                String error = sql + "，异常";
+                                failSqlInfo.add(error + ex.getMessage());
                                 LogUtil.appendLog(UiConstants.LOG_FAILED + ex.getMessage() + " | SQL: " + GlobalUtil.truncateSql(sql),
                                         LogUtil.DIFF_SYNC_LOG_AREA);
+                                log.error(error, ex);
                             }
                             continue;
                         }
@@ -2208,11 +2210,13 @@ public class DataSyncUI extends JFrame {
                                 executed++;
                                 LogUtil.appendLog(LogUtil.success("[OK] " + GlobalUtil.truncateSql(subSql)), LogUtil.DIFF_SYNC_LOG_AREA);
                             } catch (SQLException ex) {
+                                String error = subSql + "，异常";
                                 failed++;
-                                failSqlInfo.add(subSql + "，异常" + ex.getMessage());
+                                failSqlInfo.add(error + ex.getMessage());
                                 LogUtil.appendLog(
                                         LogUtil.failed(UiConstants.LOG_FAILED + ex.getMessage() + " | SQL: " + GlobalUtil.truncateSql(subSql)),
                                         LogUtil.DIFF_SYNC_LOG_AREA);
+                                log.error(error, ex);
                             }
                         }
                     } else {
@@ -2222,10 +2226,12 @@ public class DataSyncUI extends JFrame {
                             executed++;
                             LogUtil.appendLog(LogUtil.success("[OK] " + GlobalUtil.truncateSql(sql)), LogUtil.DIFF_SYNC_LOG_AREA);
                         } catch (SQLException ex) {
+                            String error = sql + "，异常";
                             failed++;
-                            failSqlInfo.add(sql + ",异常：" + ex.getMessage());
+                            failSqlInfo.add(error + ex.getMessage());
                             LogUtil.appendLog(LogUtil.failed(UiConstants.LOG_FAILED + ex.getMessage() + " | SQL: " + GlobalUtil.truncateSql(sql)),
                                     LogUtil.DIFF_SYNC_LOG_AREA);
+                            log.error(error, ex);
                         }
                     }
                 }

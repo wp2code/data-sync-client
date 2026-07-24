@@ -129,6 +129,7 @@ public final class LogUtil {
     }
     
     public static String success(String message) {
+        logger.info(message);
         if (!message.startsWith("[") || message.length() == 1 || isNotNumber(message.charAt(1))) {
             message = LogUtil.logTime() + message;
         }
@@ -138,6 +139,7 @@ public final class LogUtil {
     }
     
     public static String failed(String message) {
+        logger.error(message);
         if (!message.startsWith("[") || message.length() == 1 || isNotNumber(message.charAt(1))) {
             message = LogUtil.logTime() + message;
         }
@@ -147,6 +149,7 @@ public final class LogUtil {
     }
     
     public static String warn(String message) {
+        logger.warn(message);
         if (!message.startsWith("[") || message.length() == 1 || isNotNumber(message.charAt(1))) {
             message = LogUtil.logTime() + message;
         }
