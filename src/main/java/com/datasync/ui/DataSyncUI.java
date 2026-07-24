@@ -1702,6 +1702,7 @@ public class DataSyncUI extends JFrame {
                     syncButton.setEnabled(true);
                 });
             } catch (Exception ex) {
+                log.error("同步异常", ex);
                 SwingUtilities.invokeLater(() -> {
                     appendLog(LogUtil.logLine(UiConstants.LOG_ERROR + "同步异常: " + ex.getMessage()));
                     syncButton.setEnabled(true);
@@ -1821,6 +1822,8 @@ public class DataSyncUI extends JFrame {
                 });
             } catch (Exception e) {
                 String failMsg = e.getMessage();
+                String error = "连接失败: " + failMsg;
+                log.error(error, e);
                 SwingUtilities.invokeLater(() -> {
                     if (isReset) {
                         dataSyncUI.appendLog(LogUtil.logLine(UiConstants.LOG_REFRESH + UiConstants.LOG_FAILED + "连接失败" + failMsg));
