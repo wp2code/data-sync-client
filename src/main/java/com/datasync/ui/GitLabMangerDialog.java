@@ -88,11 +88,9 @@ public class GitLabMangerDialog extends AbsDialog {
         
         // 按钮面板
         JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 12, 10));
-        JButton saveBtn = new JButton("登录&保存");
-        saveBtn.setFont(UiConstants.FONT_SANS_12);
+        JButton saveBtn = ButtonFactory.createPrimary("登录&保存");
         saveBtn.addActionListener(e -> saveConfig());
-        JButton cancelBtn = new JButton("取消");
-        cancelBtn.setFont(UiConstants.FONT_SANS_12);
+        JButton cancelBtn = ButtonFactory.createSecondary("取消");
         cancelBtn.addActionListener(e -> dispose());
         
         // 回车键触发保存

@@ -122,6 +122,13 @@ public class OptionJPanel extends JPanel {
         setBackground(selected ? selectedColor : UIManager.getColor("Panel.background"));
         repaint();
     }
+
+    /**
+     * 更新主文本（用于列表项状态标记动态刷新）
+     */
+    public void updateText(String text) {
+        label.setText(text);
+    }
     
     
     @Override

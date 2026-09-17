@@ -43,6 +43,14 @@ dependencies {
     // FlatLaf 现代化 UI 美化
     implementation 'com.formdev:flatlaf:3.4.1'
 
+    // Jackson JSON 处理（AI 问题外部接口对接）
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.17.2'
+
+    // Apache POI Excel 解析与生成（AI 问题 Excel 导入/模板下载）
+    implementation 'org.apache.poi:poi-ooxml:5.2.5'
+    // POI 内部日志走 log4j-api，桥接到 slf4j/logback
+    implementation 'org.apache.logging.log4j:log4j-to-slf4j:2.23.1'
+
     // MySQL 官方 JDBC 驱动
     implementation 'com.mysql:mysql-connector-j:8.3.0'
 
@@ -66,6 +74,13 @@ dependencies {
 
 application {
     mainClass = 'com.datasync.Main'
+}
+
+// 临时冒烟测试任务（验证后删除）
+tasks.register('smokeTestExcel', JavaExec) {
+    group = 'verification'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.datasync.SmokeTestExcel'
 }
 
 // 配置可执行 JAR 打包 —— 将所有依赖整合进一个 Fat JAR

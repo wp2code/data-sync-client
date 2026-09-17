@@ -190,13 +190,16 @@ public class DataSyncUI extends JFrame {
         title.setFont(UiConstants.FONT_SANS_BOLD_22);
         panel.add(title, BorderLayout.WEST);
         JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.TRAILING, 5, 0));
-        JButton scriptBtn = new JButton("脚本管理");
+        JButton aiMockBtn = ButtonFactory.createToolbar("Ai问题");
+        rightPanel.add(aiMockBtn);
+        aiMockBtn.addActionListener(e -> openAiMockMangerDialog());
+        JButton scriptBtn = ButtonFactory.createToolbar("脚本管理");
         scriptBtn.addActionListener(e -> openScriptManager());
         rightPanel.add(scriptBtn);
-        JButton manageBtn = new JButton("管理数据源");
+        JButton manageBtn = ButtonFactory.createToolbar("管理数据源");
         manageBtn.addActionListener(e -> openDataSourceManager());
         rightPanel.add(manageBtn);
-        JButton gitLabBtn = new JButton("GitLab配置");
+        JButton gitLabBtn = ButtonFactory.createToolbar("GitLab配置");
         gitLabBtn.addActionListener(e -> openGitLabManager());
         rightPanel.add(gitLabBtn);
         panel.add(rightPanel, BorderLayout.EAST);
@@ -268,10 +271,8 @@ public class DataSyncUI extends JFrame {
         JPanel tableCheckPanel = null;
         if (side == Side.SOURCE) {
             selectRow = new ChildLayoutPanel();
-            JButton selectAllTablesBtn = new JButton("全选");
-            selectAllTablesBtn.setFont(UiConstants.FONT_SANS_11);
-            JButton deselectTablesBtn = new JButton("取消选中");
-            deselectTablesBtn.setFont(UiConstants.FONT_SANS_11);
+            JButton selectAllTablesBtn = ButtonFactory.createToolbar("全选");
+            JButton deselectTablesBtn = ButtonFactory.createToolbar("取消选中");
             // ── 表筛选框──
             final JTextField searchText = new CustomTextField("输入关键字过滤表");
             searchText.setPreferredSize(new Dimension(150, 25));
@@ -307,19 +308,16 @@ public class DataSyncUI extends JFrame {
                     filterTables(searchText, finalTableCheckPanelForExport);
                 }
             });
-            final JButton exportScriptBtn = new JButton("表DDL");
-            exportScriptBtn.setFont(UiConstants.FONT_SANS_11);
+            final JButton exportScriptBtn = ButtonFactory.createToolbar("表DDL");
             exportScriptBtn.addActionListener(e -> DataSyncUI.this.showStructureScript(finalTableCheckPanelForExport));
             btnRow.add(exportScriptBtn);
-            final JButton exportBtn = new JButton("导出数据SQL");
-            exportBtn.setFont(UiConstants.FONT_SANS_11);
+            final JButton exportBtn = ButtonFactory.createToolbar("导出数据SQL");
             exportBtn.addActionListener(e -> DataSyncUI.this.exportInsertScript(finalTableCheckPanelForExport));
             selectAllTablesBtn.addActionListener(e -> selectAllTables(finalTableCheckPanelForExport));
             deselectTablesBtn.addActionListener(e -> clearTableSelection(finalTableCheckPanelForExport));
             btnRow.add(exportBtn);
         }
-        JButton refreshBtn = new JButton("刷新连接");
-        refreshBtn.setFont(UiConstants.FONT_SANS_11);
+        JButton refreshBtn = ButtonFactory.createToolbar("刷新连接");
         refreshBtn.addActionListener(e -> refreshConnection(side, infoLabel));
         btnRow.add(refreshBtn);
         // ── 组装面板：使用 GridBagLayout 让下拉框宽度一致 ──
@@ -495,7 +493,9 @@ public class DataSyncUI extends JFrame {
         arrowLabel.setForeground(UiConstants.COLOR_PRIMARY);
         arrowLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
         
-        syncButton = new JButton("开始同步");
+        syncButton = ButtonFactory.createPrimary("开始同步");
+        // 主操作按钮在中间面板需要更大字号以突出，再叠加一次 font 覆盖
+        syncButton.setFont(UiConstants.FONT_SANS_BOLD_16);
         diffLink = new LinkJLabel("比较结构差异", null);
         diffLink.setAlignmentX(Component.CENTER_ALIGNMENT);
         diffLink.addMouseListener(new MouseAdapter() {
@@ -504,7 +504,6 @@ public class DataSyncUI extends JFrame {
                 compareTableStructure();
             }
         });
-        syncButton.setFont(UiConstants.FONT_SANS_BOLD_16);
         syncButton.setAlignmentX(Component.CENTER_ALIGNMENT);
         syncButton.addActionListener(e -> startSync());
         
@@ -535,7 +534,7 @@ public class DataSyncUI extends JFrame {
         JScrollPane scrollPane = new JScrollPane(LogUtil.DATA_SYNC_UI_LOG_AREA);
         scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
         panel.add(scrollPane, BorderLayout.CENTER);
-        JButton clearBtn = new JButton("清空日志");
+        JButton clearBtn = ButtonFactory.createDestructive("清空日志");
         clearBtn.addActionListener(e -> {
             LogUtil.clearLog(LogUtil.DATA_SYNC_UI_LOG_AREA);
         });
@@ -561,6 +560,11 @@ public class DataSyncUI extends JFrame {
         dialog.setVisible(true);
         // 对话框关闭后刷新主页下拉框
         refreshConfigCombos();
+    }
+    
+    private void openAiMockMangerDialog() {
+        AiQuestionMangerDialog dialog = new AiQuestionMangerDialog(this);
+        dialog.setVisible(true);
     }
     
     // ────────── 脚本管理对话框 ──────────
@@ -943,11 +947,9 @@ public class DataSyncUI extends JFrame {
         
         // ── 按钮栏 ──
         JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
-        JButton saveBtn = new JButton("保存脚本");
-        saveBtn.setFont(UiConstants.FONT_SANS_12);
+        JButton saveBtn = ButtonFactory.createPrimary("保存脚本");
         saveBtn.addActionListener(e -> saveScript(textArea.getText().trim(), ds.getDbType()));
-        JButton copyBtn = new JButton("一键复制");
-        copyBtn.setFont(UiConstants.FONT_SANS_12);
+        JButton copyBtn = ButtonFactory.createSecondary("一键复制");
         copyBtn.addActionListener(e -> {
             textArea.selectAll();
             textArea.copy();
@@ -955,8 +957,7 @@ public class DataSyncUI extends JFrame {
             JOptionPane.showMessageDialog(ddlDialog, "DDL 已复制到剪贴板", "提示", JOptionPane.INFORMATION_MESSAGE);
         });
         
-        JButton exportBtn = new JButton("导出 SQL 文件");
-        exportBtn.setFont(UiConstants.FONT_SANS_12);
+        JButton exportBtn = ButtonFactory.createSecondary("导出 SQL 文件");
         exportBtn.addActionListener(e -> {
             JFileChooser fileChooser = new JFileChooser();
             fileChooser.setDialogTitle("导出表结构 SQL 文件");
@@ -979,8 +980,7 @@ public class DataSyncUI extends JFrame {
                 JOptionPane.showMessageDialog(ddlDialog, "导出失败: " + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
             }
         });
-        JButton closeBtn = new JButton("关闭");
-        closeBtn.setFont(UiConstants.FONT_SANS_12);
+        JButton closeBtn = ButtonFactory.createSecondary("关闭");
         closeBtn.addActionListener(e -> ddlDialog.dispose());
         btnPanel.add(saveBtn);
         btnPanel.add(copyBtn);
@@ -1328,10 +1328,8 @@ public class DataSyncUI extends JFrame {
             
             // 该表的全选/全不选按钮
             if (columns.size() > 3) {
-                JButton tbSelectAll = new JButton("全选");
-                tbSelectAll.setFont(UiConstants.FONT_SANS_10);
-                JButton tbDeselectAll = new JButton("全不选");
-                tbDeselectAll.setFont(UiConstants.FONT_SANS_10);
+                JButton tbSelectAll = ButtonFactory.createLink("全选");
+                JButton tbDeselectAll = ButtonFactory.createLink("全不选");
                 titleRow.add(tbSelectAll);
                 titleRow.add(tbDeselectAll);
                 
@@ -1392,8 +1390,7 @@ public class DataSyncUI extends JFrame {
         dialog.add(jSplitPane, BorderLayout.CENTER);
         // 底部按钮面板
         JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
-        JButton cancelIncrementBtn = new JButton("取消自增列");
-        cancelIncrementBtn.setFont(UiConstants.FONT_SANS_12_BOLD);
+        JButton cancelIncrementBtn = ButtonFactory.createSecondary("取消自增列");
         cancelIncrementBtn.addActionListener(e -> {
             for (java.util.Map.Entry<String, List<String>> entry : allTableColumns.entrySet()) {
                 String tableName = entry.getKey();
@@ -1411,13 +1408,10 @@ public class DataSyncUI extends JFrame {
                 }
             }
         });
-        JButton copyScriptBtn = new JButton("一键复制");
-        JButton saveScriptBtn = new JButton("保存脚本");
-        saveScriptBtn.setFont(UiConstants.FONT_SANS_12);
-        JButton exportBtn = new JButton("导出SQL文件");
-        exportBtn.setFont(UiConstants.FONT_SANS_12_BOLD);
-        JButton cancelBtn = new JButton("关闭");
-        cancelBtn.setFont(UiConstants.FONT_SANS_12);
+        JButton copyScriptBtn = ButtonFactory.createSecondary("一键复制");
+        JButton saveScriptBtn = ButtonFactory.createPrimary("保存脚本");
+        JButton exportBtn = ButtonFactory.createPrimary("导出SQL文件");
+        JButton cancelBtn = ButtonFactory.createSecondary("关闭");
         cancelBtn.addActionListener(e -> dialog.dispose());
         btnPanel.add(saveScriptBtn);
         btnPanel.add(copyScriptBtn);
@@ -2085,16 +2079,14 @@ public class DataSyncUI extends JFrame {
             mainPanel.add(splitPane, BorderLayout.CENTER);
             // 按钮行
             JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 5));
-            JButton clearBtn = new JButton("清空日志");
+            JButton clearBtn = ButtonFactory.createDestructive("清空日志");
             clearBtn.addActionListener(e -> LogUtil.clearLog(LogUtil.DIFF_SYNC_LOG_AREA));
             btnPanel.add(clearBtn);
-            JButton copyBtn = new JButton("一键复制");
+            JButton copyBtn = ButtonFactory.createSecondary("一键复制");
             copyBtn.addActionListener(e -> GlobalUtil.copy(alterScript, dialog));
             btnPanel.add(copyBtn);
             
-            JButton applyBtn = new JButton("应用到目标库");
-            applyBtn.setBackground(UiConstants.COLOR_PRIMARY);
-            applyBtn.setForeground(Color.WHITE);
+            JButton applyBtn = ButtonFactory.createPrimary("应用到目标库");
             applyBtn.addActionListener(e -> {
                 int confirm = JOptionPane.showConfirmDialog(dialog,
                         "确定要在目标库[" + target.getSourceName() + "]执行以下 ALTER TABLE 脚本吗？\n此操作将修改目标库表结构！", "确认执行",
@@ -2113,13 +2105,13 @@ public class DataSyncUI extends JFrame {
             });
             btnPanel.add(applyBtn);
             btnPanel.add(Box.createHorizontalStrut(20));
-            JButton closeBtn = new JButton("关闭");
+            JButton closeBtn = ButtonFactory.createSecondary("关闭");
             closeBtn.addActionListener(e -> dialog.dispose());
             btnPanel.add(closeBtn);
             
             bottomPanel.add(btnPanel, BorderLayout.SOUTH);
         } else {
-            JButton closeBtn = new JButton("关闭");
+            JButton closeBtn = ButtonFactory.createSecondary("关闭");
             closeBtn.addActionListener(e -> dialog.dispose());
             JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
             btnPanel.add(closeBtn);

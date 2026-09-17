@@ -67,6 +67,21 @@ public final class UiConstants {
     
     public static final Color COLOR_ERROR = Color.RED;
     
+    /**
+     * 危险操作色（柔和红，用于删除类按钮的文字与描边）
+     */
+    public static final Color COLOR_DANGER = new Color(0xDC2626);
+    
+    /**
+     * 主色亮色变体（暗色主题下用作按钮文字 / 描边，保证清晰对比度）
+     */
+    public static final Color COLOR_PRIMARY_LIGHT = new Color(0xA5B4FC);
+    
+    /**
+     * 危险色亮色变体（暗色主题下用作删除类按钮文字 / 描边）
+     */
+    public static final Color COLOR_DANGER_LIGHT = new Color(0xF87171);
+    
     // ─── 字体 ───
     public static final Font FONT_MONO_11 = new Font("Monospaced", Font.PLAIN, 11);
     

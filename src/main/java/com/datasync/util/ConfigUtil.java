@@ -1,5 +1,6 @@
 package com.datasync.util;
 
+import com.datasync.model.AiEnvConfig;
 import com.datasync.model.DataSource;
 import com.datasync.model.GitLabAuthConfig;
 import com.datasync.model.Script;
@@ -71,5 +72,32 @@ public final class ConfigUtil {
     /** 根据 ID 加载 GitLab 配置 */
     public static GitLabAuthConfig loadGitLabAuthConfigById(Long id) {
         return SQLiteConfigUtil.getInstance().loadGitLabAuthConfigById(id);
+    }
+
+    // ────────── AI 问题保存环境（问题数据通过外部接口存取，本地仅维护环境配置） ──────────
+
+    /** 加载全部问题保存环境配置 */
+    public static List<AiEnvConfig> loadAiEnvConfigs() {
+        return SQLiteConfigUtil.getInstance().loadAiEnvConfigs();
+    }
+
+    /** 新增问题保存环境配置 */
+    public static boolean saveAiEnvConfig(AiEnvConfig config) {
+        return SQLiteConfigUtil.getInstance().saveAiEnvConfig(config);
+    }
+
+    /** 更新问题保存环境配置（环境重命名时同步更新问题关联） */
+    public static boolean updateAiEnvConfig(AiEnvConfig config) {
+        return SQLiteConfigUtil.getInstance().updateAiEnvConfig(config);
+    }
+
+    /** 删除问题保存环境配置 */
+    public static boolean deleteAiEnvConfig(Long id) {
+        return SQLiteConfigUtil.getInstance().deleteAiEnvConfig(id);
+    }
+
+    /** 切换全局选中的环境（其余环境取消选中） */
+    public static boolean updateSelectedAiEnv(Long id) {
+        return SQLiteConfigUtil.getInstance().updateSelectedAiEnv(id);
     }
 }

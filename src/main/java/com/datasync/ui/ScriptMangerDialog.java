@@ -145,7 +145,7 @@ public class ScriptMangerDialog extends FullscreenJDialog {
         listScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
         leftPanel.add(listScrollPane, BorderLayout.CENTER);
         
-        JButton addBtn = new JButton("新建脚本");
+        JButton addBtn = ButtonFactory.createPrimary("新建脚本");
         addBtn.addActionListener(e -> createNewScript());
         JPanel leftBtnPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
         leftBtnPanel.add(addBtn);
@@ -200,12 +200,12 @@ public class ScriptMangerDialog extends FullscreenJDialog {
         
         // 按钮
         JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
-        runBtn = new JButton("运行");
+        runBtn = ButtonFactory.createPrimary("运行");
         runBtn.addActionListener(e -> runSelectedScript());
         btnPanel.add(runBtn);
         
         // 更多操作下拉
-        JButton moreBtn = new JButton("更多操作 ▼");
+        JButton moreBtn = ButtonFactory.createToolbar("更多操作 ▼");
         JPopupMenu moreMenu = new JPopupMenu();
         saveMenuItem = new JMenuItem("保存脚本(Ctrl+S)");
         saveMenuItem.addActionListener(e -> saveSelectedScript());
