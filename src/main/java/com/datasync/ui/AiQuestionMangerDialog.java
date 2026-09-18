@@ -51,7 +51,7 @@ import javax.swing.text.JTextComponent;
  * 问题数据通过外部接口存取（环境 host + 接口路径，见 {@link AiEnvConfig}）：<br>
  * 批量保存、更新、删除、列表查询均调用远端服务，问题列表只加载当前所选环境，全量拉取后本地做关键字过滤与分页。<br>
  * 上屏：问题录入（右上角选择当前环境；Tab 切换「界面手动录入」与「批量粘贴录入」两种方式，手动录入支持 Excel 模板导入）<br>
- * 下屏：问题列表（仅展示当前环境、模糊查询、分页、复选框勾选与表头全选、行内查看详情/编辑/删除、双击编辑、批量触发训练、批量更新用户信息 / 训练参数）
+ * 下屏：问题列表（仅展示当前环境、模糊查询、分页、复选框勾选与表头全选、行内查看详情/编辑/删除、双击编辑、批量触发训练、批量更新用户信息 / 训练参数、批量删除）
  *
  * @author liuweiping
  * @date 2026-09-16
@@ -360,8 +360,8 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         JPanel bottomPanel = buildQuestionListPanel();
 
         JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, topPanel, bottomPanel);
-        splitPane.setResizeWeight(0.55);
-        splitPane.setDividerLocation(0.55);
+        splitPane.setResizeWeight(0.25);
+        splitPane.setDividerLocation(0.25);
         add(splitPane, BorderLayout.CENTER);
 
         statusLabel = new JLabel(" ");
@@ -759,14 +759,37 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
 
     // ────────── 上屏：批量粘贴录入 ──────────
 
+    /**
+     * 批量粘贴录入面板：左侧（问题内容）与右侧（归属信息、训练参数）左右分栏，底部操作按钮
+     */
     private JComponent buildPasteEntryPanel() {
-        JPanel panel = new JPanel(new GridBagLayout());
+        JPanel panel = new JPanel(new BorderLayout(0, 6));
         panel.setBorder(new EmptyBorder(8, 10, 8, 10));
 
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(4, 4, 4, 4);
-        gbc.anchor = GridBagConstraints.WEST;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
+        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, buildPasteQuestionPanel(), buildPasteMetaPanel());
+        splitPane.setResizeWeight(0.6);
+        splitPane.setDividerLocation(0.6);
+        panel.add(splitPane, BorderLayout.CENTER);
+
+        ChildLayoutPanel btnPanel = new ChildLayoutPanel(new Insets(2, 4, 2, 4), ChildLayoutPanel.LayoutType.RIGHT);
+        JButton clearBtn = ButtonFactory.createDestructive("清空");
+        clearBtn.addActionListener(e -> clearPasteInputs());
+        pasteSaveBtn = ButtonFactory.createPrimary("批量保存");
+        pasteSaveBtn.addActionListener(e -> savePastedQuestions());
+        btnPanel.add(clearBtn);
+        btnPanel.add(pasteSaveBtn);
+        panel.add(btnPanel, BorderLayout.SOUTH);
+
+        return panel;
+    }
+
+    /**
+     * 批量粘贴左屏：问题内容输入区 + 底部实时解析预览
+     */
+    private JPanel buildPasteQuestionPanel() {
+        JPanel panel = new JPanel(new BorderLayout(0, 4));
+        panel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createTitledBorder("问题内容"), new EmptyBorder(2, 8, 6, 8)));
 
         pasteQuestionArea = new JTextArea(8, 30);
         pasteQuestionArea.setLineWrap(true);
@@ -787,71 +810,68 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
                 updateParsePreview();
             }
         });
-
-        gbc.gridx = 0;
-        gbc.gridy = 0;
-        gbc.weightx = 0;
-        gbc.weighty = 0;
-        panel.add(new JLabel("问题内容："), gbc);
-        gbc.gridx = 1;
-        gbc.weightx = 1.0;
-        gbc.weighty = 0.55;
-        gbc.fill = GridBagConstraints.BOTH;
-        panel.add(new JScrollPane(pasteQuestionArea), gbc);
+        panel.add(new JScrollPane(pasteQuestionArea), BorderLayout.CENTER);
 
         parsePreviewLabel = new JLabel("已识别 0 个问题");
         parsePreviewLabel.setForeground(Color.GRAY);
-        gbc.gridx = 1;
-        gbc.gridy = 1;
-        gbc.weighty = 0;
+        panel.add(parsePreviewLabel, BorderLayout.SOUTH);
+        return panel;
+    }
+
+    /**
+     * 批量粘贴右屏：用户ID / 用户Session / 问题分类（适用全部问题，可留空）与训练参数
+     */
+    private JPanel buildPasteMetaPanel() {
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createTitledBorder("问题归属与训练参数"), new EmptyBorder(2, 8, 6, 8)));
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 4, 5, 4);
+        gbc.anchor = GridBagConstraints.WEST;
         gbc.fill = GridBagConstraints.HORIZONTAL;
-        panel.add(parsePreviewLabel, gbc);
 
         pasteUserIdField = new CustomTextField("归属用户ID（适用全部问题，可留空）");
         gbc.gridx = 0;
-        gbc.gridy = 2;
+        gbc.gridy = 0;
+        gbc.weightx = 0;
         panel.add(new JLabel("用户ID："), gbc);
         gbc.gridx = 1;
+        gbc.weightx = 1.0;
         panel.add(pasteUserIdField, gbc);
 
         pasteUserSessionField = new CustomTextField("用户Session（适用全部问题，可留空）");
         gbc.gridx = 0;
-        gbc.gridy = 3;
+        gbc.gridy = 1;
+        gbc.weightx = 0;
         panel.add(new JLabel("用户Session："), gbc);
         gbc.gridx = 1;
+        gbc.weightx = 1.0;
         panel.add(pasteUserSessionField, gbc);
 
         pasteClassifyField = new CustomTextField("问题的分类（适用全部问题，可留空）");
         gbc.gridx = 0;
-        gbc.gridy = 4;
+        gbc.gridy = 2;
+        gbc.weightx = 0;
         panel.add(new JLabel("问题分类："), gbc);
         gbc.gridx = 1;
+        gbc.weightx = 1.0;
         panel.add(pasteClassifyField, gbc);
 
-        pasteTrainingParamArea = new JTextArea(3, 30);
+        pasteTrainingParamArea = new JTextArea(3, 20);
         pasteTrainingParamArea.setLineWrap(true);
         pasteTrainingParamArea.setWrapStyleWord(true);
         gbc.gridx = 0;
-        gbc.gridy = 5;
+        gbc.gridy = 3;
+        gbc.weightx = 0;
+        gbc.weighty = 1.0;
+        gbc.anchor = GridBagConstraints.NORTHWEST;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
         panel.add(new JLabel("训练参数："), gbc);
         gbc.gridx = 1;
-        gbc.weighty = 0.3;
+        gbc.weightx = 1.0;
         gbc.fill = GridBagConstraints.BOTH;
         panel.add(new JScrollPane(pasteTrainingParamArea), gbc);
-
-        ChildLayoutPanel btnPanel = new ChildLayoutPanel(new Insets(2, 4, 2, 4), ChildLayoutPanel.LayoutType.RIGHT);
-        JButton clearBtn = ButtonFactory.createDestructive("清空");
-        clearBtn.addActionListener(e -> clearPasteInputs());
-        pasteSaveBtn = ButtonFactory.createPrimary("批量保存");
-        pasteSaveBtn.addActionListener(e -> savePastedQuestions());
-        btnPanel.add(clearBtn);
-        btnPanel.add(pasteSaveBtn);
-        gbc.gridx = 0;
-        gbc.gridy = 6;
-        gbc.gridwidth = 2;
-        gbc.weighty = 0;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        panel.add(btnPanel, gbc);
 
         return panel;
     }
@@ -1116,6 +1136,10 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         batchUpdateBtn.setToolTipText("批量更新勾选问题的用户ID、用户Session与训练参数（点击表头复选框可全选当前页）");
         batchUpdateBtn.addActionListener(e -> batchUpdateUserQuestions());
         toolbar.add(batchUpdateBtn);
+        JButton batchDeleteBtn = ButtonFactory.createDestructive("批量删除");
+        batchDeleteBtn.setToolTipText("批量删除勾选的问题，删除后不可恢复（点击表头复选框可全选当前页）");
+        batchDeleteBtn.addActionListener(e -> batchDeleteQuestions());
+        toolbar.add(batchDeleteBtn);
         checkedCountLabel = new JLabel("已选 0 条");
         checkedCountLabel.setForeground(Color.GRAY);
         checkedCountLabel.setFont(UiConstants.FONT_SANS_11);
@@ -1678,6 +1702,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     /**
      * 触发训练已勾选的问题（勾选跨页 / 跨搜索保留；点击表头复选框可全选当前页）
      * <p>
+     * 触发前校验勾选问题必须全部有归属用户ID，存在缺少用户ID的问题时不允许触发；<br>
      * 确认弹窗中选择智能体类型（safety / system / ops / auto，默认 auto），随请求 agentType 字段提交；<br>
      * 按问题所属环境分组调用对应环境配置的训练接口；
      * 单个环境失败不影响其它环境，全部环境完成后汇总提示结果。
@@ -1690,6 +1715,30 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         List<AiQuestion> checkedQuestions = tableModel.collectChecked(allQuestions);
         if (checkedQuestions.isEmpty()) {
             JOptionPane.showMessageDialog(this, "请先在列表中勾选要触发训练的问题（点击表头复选框可全选当前页）", "提示", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        // 触发训练要求问题必须有归属用户ID：存在缺少用户ID的问题时不允许触发，提示先通过批量更新补充
+        List<AiQuestion> missingUserIdQuestions = new ArrayList<>();
+        for (AiQuestion question : checkedQuestions) {
+            if (question.getUserId() == null || question.getUserId().isBlank()) {
+                missingUserIdQuestions.add(question);
+            }
+        }
+        if (!missingUserIdQuestions.isEmpty()) {
+            int maxShown = 10;
+            List<String> lines = new ArrayList<>();
+            for (int i = 0; i < missingUserIdQuestions.size() && i < maxShown; i++) {
+                AiQuestion question = missingUserIdQuestions.get(i);
+                lines.add("　ID " + question.getId() + "：" + abbreviate(question.getQuestion(), 30));
+            }
+            if (missingUserIdQuestions.size() > maxShown) {
+                lines.add("　…等共 " + missingUserIdQuestions.size() + " 条");
+            }
+            JOptionPane.showMessageDialog(this,
+                    "选中的 " + checkedQuestions.size() + " 条问题中有 " + missingUserIdQuestions.size() + " 条缺少用户ID，不允许触发训练：\n"
+                            + String.join("\n", lines)
+                            + "\n\n请先通过「批量更新」为这些问题补充用户ID后再触发训练。",
+                    "提示", JOptionPane.WARNING_MESSAGE);
             return;
         }
         // 按问题所属环境分组收集 ID（同一环境合并为一次请求）
@@ -1896,6 +1945,100 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
                 } else {
                     setStatus("批量更新失败：" + String.join("；", errors), false);
                     JOptionPane.showMessageDialog(this, "批量更新失败：\n" + String.join("\n", errors), "错误", JOptionPane.ERROR_MESSAGE);
+                }
+            };
+        });
+    }
+
+    /**
+     * 批量删除已勾选的问题（勾选跨页 / 跨搜索保留，删除后不可恢复）
+     * <p>
+     * 确认弹窗中展示各环境删除条数并附不可恢复警告；<br>
+     * 按问题所属环境分组调用删除接口，同一环境合并一次请求，单环境失败不影响其它环境。
+     */
+    private void batchDeleteQuestions() {
+        if (apiBusy) {
+            JOptionPane.showMessageDialog(this, "请等待当前操作完成", "提示", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        List<AiQuestion> checkedQuestions = tableModel.collectChecked(allQuestions);
+        if (checkedQuestions.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "请先在列表中勾选要批量删除的问题（点击表头复选框可全选当前页）", "提示", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        // 按问题所属环境分组收集 ID（同一环境合并为一次请求）
+        LinkedHashMap<String, List<Long>> envIdGroups = new LinkedHashMap<>();
+        for (AiQuestion question : checkedQuestions) {
+            envIdGroups.computeIfAbsent(question.getEnvName(), key -> new ArrayList<>()).add(question.getId());
+        }
+        List<AiEnvConfig> targets = new ArrayList<>();
+        List<String> summaryLines = new ArrayList<>();
+        int selectedTotal = 0;
+        for (Map.Entry<String, List<Long>> entry : envIdGroups.entrySet()) {
+            AiEnvConfig envConfig = findEnvByName(entry.getKey());
+            if (envConfig == null) {
+                JOptionPane.showMessageDialog(this, "未找到问题所属环境配置 [" + nullToEmpty(entry.getKey()) + "]", "错误", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+            targets.add(envConfig);
+            selectedTotal += entry.getValue().size();
+            summaryLines.add("　环境 [" + envConfig.getEnvName() + "] " + entry.getValue().size() + " 条");
+        }
+        // 确认弹窗：勾选摘要 + 不可恢复警告
+        JPanel confirmPanel = new JPanel();
+        confirmPanel.setLayout(new BoxLayout(confirmPanel, BoxLayout.Y_AXIS));
+        confirmPanel.setBorder(new EmptyBorder(4, 8, 4, 8));
+        JLabel titleLabel = new JLabel("确定批量删除勾选的 " + selectedTotal + " 条问题吗？");
+        titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        confirmPanel.add(titleLabel);
+        for (String line : summaryLines) {
+            JLabel envLabel = new JLabel(line);
+            envLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            confirmPanel.add(envLabel);
+        }
+        JLabel warningLabel = new JLabel("删除后不可恢复，请谨慎操作");
+        warningLabel.setForeground(UiConstants.COLOR_DANGER_LIGHT);
+        warningLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        confirmPanel.add(Box.createVerticalStrut(6));
+        confirmPanel.add(warningLabel);
+        int confirm = JOptionPane.showConfirmDialog(this, confirmPanel, "确认批量删除",
+                JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        if (confirm != JOptionPane.YES_OPTION) {
+            return;
+        }
+        runApiTask("批量删除", () -> {
+            List<String> successDetails = new ArrayList<>();
+            List<String> errors = new ArrayList<>();
+            int successCount = 0;
+            for (AiEnvConfig envConfig : targets) {
+                List<Long> ids = envIdGroups.get(envConfig.getEnvName());
+                try {
+                    String message = AiQuestionApiClient.getInstance().deleteQuestions(envConfig, ids);
+                    successCount += ids.size();
+                    successDetails.add("环境 [" + envConfig.getEnvName() + "] " + ids.size() + " 条：" + message);
+                } catch (AiQuestionApiClient.AiApiException ex) {
+                    logger.error("环境 [{}] 批量删除失败", envConfig.getEnvName(), ex);
+                    errors.add("环境 [" + envConfig.getEnvName() + "]：" + ex.getMessage());
+                }
+            }
+            int successTotal = successCount;
+            return () -> {
+                // 全部成功时清空勾选；部分 / 全部失败时保留勾选便于修正后重试
+                if (errors.isEmpty()) {
+                    tableModel.clearChecked();
+                }
+                updateCheckControls();
+                invalidateLoadedData();
+                refreshQuestionTable();
+                if (errors.isEmpty()) {
+                    setStatus("批量删除成功：共 " + successTotal + " 条问题（" + String.join("；", successDetails) + "）", true);
+                } else if (successTotal > 0) {
+                    setStatus("批量删除部分成功：" + successTotal + " 条成功；" + String.join("；", errors), false);
+                    JOptionPane.showMessageDialog(this, "已成功删除 " + successTotal + " 条问题。\n\n以下环境删除失败：\n" + String.join("\n", errors),
+                            "批量删除结果", JOptionPane.WARNING_MESSAGE);
+                } else {
+                    setStatus("批量删除失败：" + String.join("；", errors), false);
+                    JOptionPane.showMessageDialog(this, "批量删除失败：\n" + String.join("\n", errors), "错误", JOptionPane.ERROR_MESSAGE);
                 }
             };
         });

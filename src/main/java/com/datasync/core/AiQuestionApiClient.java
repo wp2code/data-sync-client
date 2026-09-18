@@ -28,7 +28,7 @@ import org.slf4j.LoggerFactory;
 /**
  * AI 问题外部接口客户端。
  * <p>
- * 按环境配置（host + 接口路径）调用远端服务，完成问题的批量保存、更新、删除、全量列表查询、触发训练与批量更新（用户信息 / 训练参数）。<br> 接口约定：POST + JSON，响应格式 {code:"0", message, data}，code 为 "0" 表示成功。
+ * 按环境配置（host + 接口路径）调用远端服务，完成问题的批量保存、更新、删除（单个 / 批量）、全量列表查询、触发训练与批量更新（用户信息 / 训练参数）。<br> 接口约定：POST + JSON，响应格式 {code:"0", message, data}，code 为 "0" 表示成功。
  *
  * @author liuweiping
  * @date 2026-09-16
@@ -76,15 +76,24 @@ public final class AiQuestionApiClient {
     }
     
     /**
-     * 删除问题
+     * 批量删除问题
+     *
+     * @return 成功时返回接口 message，失败时抛出异常
+     */
+    public String deleteQuestions(AiEnvConfig env, List<Long> ids) throws AiApiException {
+        String url = buildUrl(env, env.getDeleteApi());
+        ObjectNode body = objectMapper.createObjectNode();
+        body.set("ids", objectMapper.valueToTree(ids));
+        return postForMessage(env, url, body);
+    }
+    
+    /**
+     * 删除单个问题（批量删除的便捷封装）
      *
      * @return 成功时返回接口 message，失败时抛出异常
      */
     public String deleteQuestion(AiEnvConfig env, Long id) throws AiApiException {
-        String url = buildUrl(env, env.getDeleteApi());
-        ObjectNode body = objectMapper.createObjectNode();
-        body.set("ids", objectMapper.valueToTree(Collections.singleton(id)));
-        return postForMessage(env, url, body);
+        return deleteQuestions(env, Collections.singletonList(id));
     }
     
     /**
