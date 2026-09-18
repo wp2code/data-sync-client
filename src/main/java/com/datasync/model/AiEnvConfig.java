@@ -50,6 +50,26 @@ public class AiEnvConfig {
      */
     public static final String DEFAULT_UPDATE_USER_API = "/pilot/training/knowledge/batch-update";
     
+    /**
+     * 问题回复详情查询接口默认路径（问题列表点击回复ID查询回复详情）
+     */
+    public static final String DEFAULT_ANSWER_INFO_API = "/pilot/training/knowledge/answer/info";
+    
+    /**
+     * 问题回复列表接口默认路径（回复审计页查询问题回复）
+     */
+    public static final String DEFAULT_ANSWER_LIST_API = "/pilot/training/knowledge/answer/list";
+    
+    /**
+     * 问题回复更新接口默认路径（回复审计页更新单条回复 / 批量更新是否允许修改状态）
+     */
+    public static final String DEFAULT_ANSWER_UPDATE_API = "/pilot/training/knowledge/answer/update";
+    
+    /**
+     * 问题回复删除接口默认路径（回复审计页删除问题回复）
+     */
+    public static final String DEFAULT_ANSWER_DELETE_API = "/pilot/training/knowledge/answer/delete";
+    
     private Long id;
     
     /**
@@ -91,6 +111,26 @@ public class AiEnvConfig {
      * 批量更新用户接口路径（问题列表勾选问题后批量更新用户ID与用户Session）
      */
     private String updateUserApi = DEFAULT_UPDATE_USER_API;
+    
+    /**
+     * 问题回复详情查询接口路径（问题列表点击回复ID查询回复详情）
+     */
+    private String answerInfoApi = DEFAULT_ANSWER_INFO_API;
+    
+    /**
+     * 问题回复列表接口路径（回复审计页查询问题回复）
+     */
+    private String answerListApi = DEFAULT_ANSWER_LIST_API;
+    
+    /**
+     * 问题回复更新接口路径（回复审计页更新单条回复 / 批量更新是否允许修改状态）
+     */
+    private String answerUpdateApi = DEFAULT_ANSWER_UPDATE_API;
+    
+    /**
+     * 问题回复删除接口路径（回复审计页删除问题回复）
+     */
+    private String answerDeleteApi = DEFAULT_ANSWER_DELETE_API;
     
     /**
      * 环境通用请求头参数 JSON（如 {"Authorization":"Bearer xxx"}），调用该环境所有接口时附加

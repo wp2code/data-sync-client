@@ -97,6 +97,11 @@ public final class UiConstants {
      */
     public static final Color COLOR_NEUTRAL_LIGHT = new Color(0x9CA3AF);
     
+    /**
+     * 链接色（回复ID超链接文字，青绿色调，弱化蓝色饱和感）
+     */
+    public static final Color COLOR_LINK = new Color(0x0D9488);
+    
     // ─── 字体 ───
     public static final Font FONT_MONO_11 = new Font("Monospaced", Font.PLAIN, 11);
     

@@ -8,6 +8,7 @@
  */
 package com.datasync.core;
 
+import com.datasync.model.AiAnswer;
 import com.datasync.model.AiEnvConfig;
 import com.datasync.model.AiQuestion;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -21,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,7 +30,8 @@ import org.slf4j.LoggerFactory;
 /**
  * AI 问题外部接口客户端。
  * <p>
- * 按环境配置（host + 接口路径）调用远端服务，完成问题的批量保存、更新、删除（单个 / 批量）、全量列表查询、触发训练与批量更新（用户信息 / 训练参数）。<br> 接口约定：POST + JSON，响应格式 {code:"0", message, data}，code 为 "0" 表示成功。
+ * 按环境配置（host + 接口路径）调用远端服务，完成问题的批量保存、更新、删除（单个 / 批量）、列表查询（训练状态服务端筛选）、触发训练与批量更新（用户信息 / 训练参数）、问题回复详情查询，以及问题回复的列表查询、更新与删除（回复审计）。<br> 接口约定：POST + JSON，响应格式
+ * {code:"0", message, data}，code 为 "0" 表示成功。
  *
  * @author liuweiping
  * @date 2026-09-16
@@ -97,11 +100,17 @@ public final class AiQuestionApiClient {
     }
     
     /**
-     * 查询全部问题列表（本地再做关键字过滤与分页）
+     * 查询问题列表（训练状态筛选随请求提交由服务端过滤，其余关键字过滤与分页在本地完成）
+     *
+     * @param trainingStatus 训练状态筛选（null 表示不筛选，返回全部；0-成功；1-失败；2-成功(给答案表)；3-训练中；4-超时）
      */
-    public List<AiQuestion> listQuestions(AiEnvConfig env) throws AiApiException {
+    public List<AiQuestion> listQuestions(AiEnvConfig env, Integer trainingStatus) throws AiApiException {
         String url = buildUrl(env, env.getListApi());
-        String responseText = executePost(env, url, objectMapper.createObjectNode());
+        ObjectNode body = objectMapper.createObjectNode();
+        if (trainingStatus != null) {
+            body.put("trainingStatus", trainingStatus);
+        }
+        String responseText = executePost(env, url, body);
         JsonNode root = parseResponse(url, responseText);
         JsonNode data = root.get("data");
         List<AiQuestion> questions = new ArrayList<>();
@@ -156,6 +165,120 @@ public final class AiQuestionApiClient {
         return postForMessage(env, url, body);
     }
     
+    /**
+     * 按问题回复 ID 查询回复详情（问题列表点击回复ID超链接触发）
+     * <p>
+     * answerId 以 URL 查询参数提交，响应 data 为回复详情对象；返回原始键值对（字段名 → 文本值）供界面展示。
+     *
+     * @param answerId 问题回复 ID
+     */
+    public LinkedHashMap<String, String> getAnswerInfo(AiEnvConfig env, Long answerId) throws AiApiException {
+        String url = buildUrl(env, env.getAnswerInfoApi());
+        url += "?answerId=" + answerId;
+        String responseText = executePost(env, url, null);
+        JsonNode root = parseResponse(url, responseText);
+        LinkedHashMap<String, String> fields = new LinkedHashMap<>();
+        JsonNode data = root.get("data");
+        if (data != null && data.isObject()) {
+            data.fields().forEachRemaining(entry -> fields.put(entry.getKey(),
+                    entry.getValue() instanceof com.fasterxml.jackson.databind.node.NullNode nullNode ? "" : entry.getValue().asText("")));
+        }
+        return fields;
+    }
+    
+    /**
+     * 查询问题回复列表（回复审计，本地再做分页）
+     * <p>
+     * 问题 / 回复内容模糊查询与是否允许修改筛选随请求提交，参数为空时不提交对应字段（不参与筛选）。
+     *
+     * @param query       问题内容关键字（null / 空白表示不筛选）
+     * @param answer      回复内容关键字（null / 空白表示不筛选）
+     * @param allowModify 是否允许修改筛选（null 表示不筛选；0-不允许；1-允许）
+     */
+    public List<AiAnswer> listAnswers(AiEnvConfig env, String query, String answer, Integer allowModify) throws AiApiException {
+        String url = buildUrl(env, env.getAnswerListApi());
+        ObjectNode body = objectMapper.createObjectNode();
+        if (query != null && !query.isBlank()) {
+            body.put("query", query);
+        }
+        if (answer != null && !answer.isBlank()) {
+            body.put("answer", answer);
+        }
+        if (allowModify != null) {
+            body.put("allowModify", allowModify);
+        }
+        String responseText = executePost(env, url, body);
+        JsonNode root = parseResponse(url, responseText);
+        JsonNode data = root.get("data");
+        List<AiAnswer> answers = new ArrayList<>();
+        if (data != null && data.isArray()) {
+            for (JsonNode item : data) {
+                try {
+                    answers.add(objectMapper.treeToValue(item, AiAnswer.class));
+                } catch (Exception e) {
+                    logger.error("[AiApi] 解析问题回复数据失败: {}", item);
+                    throw new AiApiException("解析问题回复数据失败: " + e.getMessage());
+                }
+            }
+        }
+        return answers;
+    }
+    
+    /**
+     * 更新单条问题回复（问题、回复内容与是否允许修改状态）
+     *
+     * @return 成功时返回接口 message，失败时抛出异常
+     */
+    public String updateAnswer(AiEnvConfig env, Long id, String query, String answer, Integer allowModify) throws AiApiException {
+        String url = buildUrl(env, env.getAnswerUpdateApi());
+        ObjectNode body = objectMapper.createObjectNode();
+        body.set("ids", objectMapper.valueToTree(Collections.singletonList(id)));
+        if (query != null) {
+            body.put("query", query);
+        }
+        if (answer != null) {
+            body.put("answer", answer);
+        }
+        if (allowModify != null) {
+            body.put("allowModify", allowModify);
+        }
+        return postForMessage(env, url, body);
+    }
+    
+    /**
+     * 批量更新勾选问题回复的是否允许修改状态（批量更新仅支持该字段）
+     *
+     * @return 成功时返回接口 message，失败时抛出异常
+     */
+    public String batchUpdateAnswerModify(AiEnvConfig env, List<Long> ids, int allowModify) throws AiApiException {
+        String url = buildUrl(env, env.getAnswerUpdateApi());
+        ObjectNode body = objectMapper.createObjectNode();
+        body.set("ids", objectMapper.valueToTree(ids));
+        body.put("allowModify", allowModify);
+        return postForMessage(env, url, body);
+    }
+    
+    /**
+     * 批量删除问题回复
+     *
+     * @return 成功时返回接口 message，失败时抛出异常
+     */
+    public String deleteAnswers(AiEnvConfig env, List<Long> ids) throws AiApiException {
+        String url = buildUrl(env, env.getAnswerDeleteApi());
+        ObjectNode body = objectMapper.createObjectNode();
+        body.set("ids", objectMapper.valueToTree(ids));
+        return postForMessage(env, url, body);
+    }
+    
+    /**
+     * 删除单条问题回复（批量删除的便捷封装）
+     *
+     * @return 成功时返回接口 message，失败时抛出异常
+     */
+    public String deleteAnswer(AiEnvConfig env, Long id) throws AiApiException {
+        return deleteAnswers(env, Collections.singletonList(id));
+    }
+    
     // ────────── 私有方法 ──────────
     
     /**
@@ -171,11 +294,13 @@ public final class AiQuestionApiClient {
      * 执行 POST 请求，返回响应体文本（附加环境通用请求头）
      */
     private String executePost(AiEnvConfig env, String url, Object body) throws AiApiException {
-        String json;
-        try {
-            json = objectMapper.writeValueAsString(body);
-        } catch (Exception e) {
-            throw new AiApiException("序列化请求参数失败: " + e.getMessage());
+        String json = "{}";
+        if (body != null) {
+            try {
+                json = objectMapper.writeValueAsString(body);
+            } catch (Exception e) {
+                throw new AiApiException("序列化请求参数失败: " + e.getMessage());
+            }
         }
         logger.debug("[AiApi] POST {} body: {}", url, json);
         try {

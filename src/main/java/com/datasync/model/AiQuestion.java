@@ -25,6 +25,31 @@ public class AiQuestion {
      */
     public static final int TRAINING_DISABLED = 2;
     
+    /**
+     * 训练状态：成功
+     */
+    public static final int TRAINING_STATUS_SUCCESS = 0;
+    
+    /**
+     * 训练状态：失败
+     */
+    public static final int TRAINING_STATUS_FAILED = 1;
+    
+    /**
+     * 训练状态：成功（给答案表）
+     */
+    public static final int TRAINING_STATUS_SUCCESS_ANSWER = 2;
+    
+    /**
+     * 训练状态：训练中
+     */
+    public static final int TRAINING_STATUS_RUNNING = 3;
+    
+    /**
+     * 训练状态：超时
+     */
+    public static final int TRAINING_STATUS_TIMEOUT = 4;
+    
     private Long id;
     
     /**
@@ -59,9 +84,29 @@ public class AiQuestion {
     private String remark;
     
     /**
+     * 问题回复ID（接口返回数据，客户端仅展示；有值时列表中以超链接样式展示，点击可查询回复详情）
+     */
+    private Long answerId;
+    
+    /**
      * 训练参数
      */
     private String trainingParam;
+    
+    /**
+     * 训练状态：0-成功；1-失败；2-成功(给答案表)；3-训练中；4-超时（接口返回数据，客户端仅展示）
+     */
+    private Integer trainingStatus;
+    
+    /**
+     * 开始训练时间（毫秒时间戳，接口返回数据，客户端展示时格式化为 yyyy-MM-dd HH:mm:ss）
+     */
+    private Long startTrainingTime;
+    
+    /**
+     * 最近完成训练时间（毫秒时间戳，接口返回数据，客户端展示时格式化为 yyyy-MM-dd HH:mm:ss）
+     */
+    private Long lastTrainingTime;
     
     /**
      * 固定答案（默认空，问题命中时优先返回的固定答案）
