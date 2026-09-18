@@ -87,6 +87,16 @@ public final class UiConstants {
      */
     public static final Color COLOR_SUCCESS_LIGHT = new Color(0x6EE7B7);
     
+    /**
+     * 中性动作色（工具栏中性按钮的悬浮填充色与描边基准色）
+     */
+    public static final Color COLOR_NEUTRAL = new Color(0x6B7280);
+    
+    /**
+     * 中性动作亮色变体（暗色主题下用作中性按钮的文字与常态描边）
+     */
+    public static final Color COLOR_NEUTRAL_LIGHT = new Color(0x9CA3AF);
+    
     // ─── 字体 ───
     public static final Font FONT_MONO_11 = new Font("Monospaced", Font.PLAIN, 11);
     
