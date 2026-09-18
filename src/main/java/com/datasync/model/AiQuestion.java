@@ -44,7 +44,7 @@ public class AiQuestion {
     private String questionClassify;
     
     /**
-     * 用户ID（关联的用户标识，问题归属人；必填，会随问题一起提交到远端接口）
+     * 用户ID（关联的用户标识，问题归属人；非必填，会随问题一起提交到远端接口）
      */
     private String userId;
     
@@ -52,6 +52,11 @@ public class AiQuestion {
      * 用户session（用户会话标识，可通过问题列表批量更新接口修改）
      */
     private String userSession;
+    
+    /**
+     * 备注（接口返回数据，客户端仅展示，不提供录入与编辑入口）
+     */
+    private String remark;
     
     /**
      * 训练参数

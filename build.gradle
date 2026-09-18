@@ -83,6 +83,13 @@ tasks.register('smokeTestExcel', JavaExec) {
     mainClass = 'com.datasync.SmokeTestExcel'
 }
 
+// 临时冒烟测试任务（验证后删除）：AI 问题管理双击全屏
+tasks.register('smokeTestFullscreen', JavaExec) {
+    group = 'verification'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.datasync.SmokeTestFullscreen'
+}
+
 // 配置可执行 JAR 打包 —— 将所有依赖整合进一个 Fat JAR
 jar {
     manifest {

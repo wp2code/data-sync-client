@@ -28,7 +28,7 @@ import org.slf4j.LoggerFactory;
 /**
  * AI 问题外部接口客户端。
  * <p>
- * 按环境配置（host + 接口路径）调用远端服务，完成问题的批量保存、更新、删除、全量列表查询、触发训练与批量更新用户信息。<br> 接口约定：POST + JSON，响应格式 {code:"0", message, data}，code 为 "0" 表示成功。
+ * 按环境配置（host + 接口路径）调用远端服务，完成问题的批量保存、更新、删除、全量列表查询、触发训练与批量更新（用户信息 / 训练参数）。<br> 接口约定：POST + JSON，响应格式 {code:"0", message, data}，code 为 "0" 表示成功。
  *
  * @author liuweiping
  * @date 2026-09-16
@@ -124,13 +124,14 @@ public final class AiQuestionApiClient {
     }
     
     /**
-     * 批量更新选中问题的用户ID / 用户Session（留空的字段不提交，接口侧保持原值不变）
+     * 批量更新选中问题的用户ID / 用户Session / 训练参数（留空的字段不提交，接口侧保持原值不变）
      *
-     * @param userId      用户ID（null / 空白表示不更新该字段）
-     * @param userSession 用户session（null / 空白表示不更新该字段）
+     * @param userId        用户ID（null / 空白表示不更新该字段）
+     * @param userSession   用户session（null / 空白表示不更新该字段）
+     * @param trainingParam 训练参数（null / 空白表示不更新该字段）
      * @return 成功时返回接口 message，失败时抛出异常
      */
-    public String batchUpdateUser(AiEnvConfig env, List<Long> ids, String userId, String userSession) throws AiApiException {
+    public String batchUpdateUser(AiEnvConfig env, List<Long> ids, String userId, String userSession, String trainingParam) throws AiApiException {
         String url = buildUrl(env, env.getUpdateUserApi());
         ObjectNode body = objectMapper.createObjectNode();
         body.set("ids", objectMapper.valueToTree(ids));
@@ -139,6 +140,9 @@ public final class AiQuestionApiClient {
         }
         if (userSession != null && !userSession.isBlank()) {
             body.put("userSession", userSession);
+        }
+        if (trainingParam != null && !trainingParam.isBlank()) {
+            body.put("trainingParam", trainingParam);
         }
         return postForMessage(env, url, body);
     }

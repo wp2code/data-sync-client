@@ -82,6 +82,11 @@ public final class UiConstants {
      */
     public static final Color COLOR_DANGER_LIGHT = new Color(0xF87171);
     
+    /**
+     * 成功色亮色变体（暗色主题下用作查看类按钮文字 / 描边）
+     */
+    public static final Color COLOR_SUCCESS_LIGHT = new Color(0x6EE7B7);
+    
     // ─── 字体 ───
     public static final Font FONT_MONO_11 = new Font("Monospaced", Font.PLAIN, 11);
     
