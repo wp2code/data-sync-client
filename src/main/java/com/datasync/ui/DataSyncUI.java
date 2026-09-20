@@ -190,7 +190,7 @@ public class DataSyncUI extends JFrame {
         title.setFont(UiConstants.FONT_SANS_BOLD_22);
         panel.add(title, BorderLayout.WEST);
         JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.TRAILING, 5, 0));
-        JButton aiMockBtn = ButtonFactory.createToolbar("Ai问题");
+        JButton aiMockBtn = ButtonFactory.createToolbar("AI 问题");
         rightPanel.add(aiMockBtn);
         aiMockBtn.addActionListener(e -> openAiMockMangerDialog());
         JButton scriptBtn = ButtonFactory.createToolbar("脚本管理");
@@ -199,7 +199,7 @@ public class DataSyncUI extends JFrame {
         JButton manageBtn = ButtonFactory.createToolbar("管理数据源");
         manageBtn.addActionListener(e -> openDataSourceManager());
         rightPanel.add(manageBtn);
-        JButton gitLabBtn = ButtonFactory.createToolbar("GitLab配置");
+        JButton gitLabBtn = ButtonFactory.createToolbar("GitLab 配置");
         gitLabBtn.addActionListener(e -> openGitLabManager());
         rightPanel.add(gitLabBtn);
         panel.add(rightPanel, BorderLayout.EAST);
@@ -272,7 +272,7 @@ public class DataSyncUI extends JFrame {
         if (side == Side.SOURCE) {
             selectRow = new ChildLayoutPanel();
             JButton selectAllTablesBtn = ButtonFactory.createToolbar("全选");
-            JButton deselectTablesBtn = ButtonFactory.createToolbar("取消选中");
+            JButton deselectTablesBtn = ButtonFactory.createToolbar("取消全选");
             // ── 表筛选框──
             final JTextField searchText = new CustomTextField("输入关键字过滤表");
             searchText.setPreferredSize(new Dimension(150, 25));
@@ -308,10 +308,10 @@ public class DataSyncUI extends JFrame {
                     filterTables(searchText, finalTableCheckPanelForExport);
                 }
             });
-            final JButton exportScriptBtn = ButtonFactory.createToolbar("表DDL");
+            final JButton exportScriptBtn = ButtonFactory.createToolbar("表 DDL");
             exportScriptBtn.addActionListener(e -> DataSyncUI.this.showStructureScript(finalTableCheckPanelForExport));
             btnRow.add(exportScriptBtn);
-            final JButton exportBtn = ButtonFactory.createToolbar("导出数据SQL");
+            final JButton exportBtn = ButtonFactory.createToolbar("导出数据 SQL");
             exportBtn.addActionListener(e -> DataSyncUI.this.exportInsertScript(finalTableCheckPanelForExport));
             selectAllTablesBtn.addActionListener(e -> selectAllTables(finalTableCheckPanelForExport));
             deselectTablesBtn.addActionListener(e -> clearTableSelection(finalTableCheckPanelForExport));
@@ -1326,10 +1326,10 @@ public class DataSyncUI extends JFrame {
             tableTitle.setVerticalAlignment(SwingConstants.CENTER);
             titleRow.add(tableTitle);
             
-            // 该表的全选/全不选按钮
+            // 该表的全选/取消全选按钮
             if (columns.size() > 3) {
                 JButton tbSelectAll = ButtonFactory.createLink("全选");
-                JButton tbDeselectAll = ButtonFactory.createLink("全不选");
+                JButton tbDeselectAll = ButtonFactory.createLink("取消全选");
                 titleRow.add(tbSelectAll);
                 titleRow.add(tbDeselectAll);
                 
@@ -1390,7 +1390,7 @@ public class DataSyncUI extends JFrame {
         dialog.add(jSplitPane, BorderLayout.CENTER);
         // 底部按钮面板
         JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
-        JButton cancelIncrementBtn = ButtonFactory.createSecondary("取消自增列");
+        JButton cancelIncrementBtn = ButtonFactory.createSecondary("排除自增列");
         cancelIncrementBtn.addActionListener(e -> {
             for (java.util.Map.Entry<String, List<String>> entry : allTableColumns.entrySet()) {
                 String tableName = entry.getKey();
@@ -1410,7 +1410,7 @@ public class DataSyncUI extends JFrame {
         });
         JButton copyScriptBtn = ButtonFactory.createSecondary("一键复制");
         JButton saveScriptBtn = ButtonFactory.createPrimary("保存脚本");
-        JButton exportBtn = ButtonFactory.createPrimary("导出SQL文件");
+        JButton exportBtn = ButtonFactory.createPrimary("导出 SQL 文件");
         JButton cancelBtn = ButtonFactory.createSecondary("关闭");
         cancelBtn.addActionListener(e -> dialog.dispose());
         btnPanel.add(saveScriptBtn);

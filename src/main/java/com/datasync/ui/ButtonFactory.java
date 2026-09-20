@@ -28,6 +28,7 @@ import java.awt.RenderingHints;
  *   <li>统一关闭 focusPainted（FlatLaf 已有 focusWidth 高亮，避免重复方框）</li>
  *   <li>统一设置 HAND_CURSOR，提示可点击</li>
  *   <li>SECONDARY / TOOLBAR 仅统一字体、margin 与光标，背景沿用 FlatLaf 主题</li>
+ *   <li>所有按钮字号统一 12pt（中文可读性下限，避免 11pt 点阵发虚），层级靠粗细与颜色区分</li>
  * </ul>
  */
 public final class ButtonFactory {
@@ -46,7 +47,7 @@ public final class ButtonFactory {
         return btn;
     }
     
-    /** 危险操作按钮：主色填充背景 + 白字 + 加粗
+    /** 危险操作按钮（备用）：主色填充背景 + 白字 + 加粗
      * @param text
      * @return
      */
@@ -78,21 +79,21 @@ public final class ButtonFactory {
         return btn;
     }
 
-    /** 工具栏按钮：默认外观 + 11pt，用于导航 / 侧边工具 / 刷新等 */
+    /** 工具栏按钮：默认外观 + 12pt，用于导航 / 侧边工具 / 刷新等 */
     public static JButton createToolbar(String text) {
         JButton btn = new JButton(text);
-        btn.setFont(UiConstants.FONT_SANS_11);
-        applyCommonStyle(btn, new Insets(2, 8, 2, 8));
+        btn.setFont(UiConstants.FONT_SANS_12);
+        applyCommonStyle(btn, new Insets(2, 10, 2, 10));
         return btn;
     }
 
-    /** 链接式小按钮：11pt + 危险色文字 + 紧凑 margin，适合内嵌操作（行内删除） */
+    /** 链接式小按钮：12pt + 危险色文字 + 紧凑 margin，适合内嵌操作（行内删除） */
     public static JButton createLink(String text) {
         JButton btn = new JButton(text);
-        btn.setFont(UiConstants.FONT_SANS_11);
+        btn.setFont(UiConstants.FONT_SANS_12);
         btn.setForeground(UiConstants.COLOR_DANGER_LIGHT);
         btn.setOpaque(false);
-        applyCommonStyle(btn, new Insets(1, 6, 1, 6));
+        applyCommonStyle(btn, new Insets(1, 8, 1, 8));
         return btn;
     }
 

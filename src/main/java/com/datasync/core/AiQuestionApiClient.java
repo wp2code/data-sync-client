@@ -102,7 +102,7 @@ public final class AiQuestionApiClient {
     /**
      * 查询问题列表（训练状态筛选随请求提交由服务端过滤，其余关键字过滤与分页在本地完成）
      *
-     * @param trainingStatus 训练状态筛选（null 表示不筛选，返回全部；0-成功；1-失败；2-成功(给答案表)；3-训练中；4-超时）
+     * @param trainingStatus 训练状态筛选（null 表示不筛选，返回全部；-1-待训练；0-成功；1-失败；2-成功(同步回复)；3-训练中；4-超时）
      */
     public List<AiQuestion> listQuestions(AiEnvConfig env, Integer trainingStatus) throws AiApiException {
         String url = buildUrl(env, env.getListApi());

@@ -43,6 +43,8 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
+import javax.swing.event.PopupMenuEvent;
+import javax.swing.event.PopupMenuListener;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
@@ -124,9 +126,14 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     private static final String ALL_TRAINING_STATUS = "全部状态";
     
     /**
-     * 训练状态筛选项文字（下标即训练状态值：0-成功；1-失败；2-成功(给答案表)；3-训练中；4-超时）
+     * 训练状态筛选项文字（下标即训练状态值：-1-待训练；0-成功；1-失败；2-成功(同步回复)；3-训练中；4-超时）
      */
-    private static final String[] TRAINING_STATUS_TEXTS = {"成功", "失败", "成功(给答案表)", "训练中", "超时"};
+    private static final String[] TRAINING_STATUS_TEXTS = {"待训练", "成功", "失败", "成功(同步回复)", "训练中", "超时"};
+    
+    /**
+     * 训练状态筛选下拉选项对应的训练状态值（顺序与 TRAINING_STATUS_TEXTS 一致：下标 0 为待训练 -1，其余为状态值本身）
+     */
+    private static final int[] TRAINING_STATUS_VALUES = {AiQuestion.TRAINING_STATUS_PENDING, 0, 1, 2, 3, 4};
     
     /**
      * 训练时间展示格式（接口返回毫秒时间戳，展示时按本地时区格式化）
@@ -600,7 +607,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         
         JPanel bottomPanel = new JPanel(new BorderLayout(8, 0));
         JLabel hintLabel = new JLabel(
-                "提示：用户ID选填，问题为空的行自动忽略；第 2 行起用户ID / 分类 / 开启训练 / 优先级别支持『同上』继承上一行；支持 Excel 导入（先『下载模板』）");
+                "提示：用户ID选填，问题为空的行自动忽略；支持 Excel 导入（先『下载模板』）");
         hintLabel.setForeground(Color.GRAY);
         hintLabel.setFont(UiConstants.FONT_SANS_10);
         bottomPanel.add(hintLabel, BorderLayout.WEST);
@@ -1324,11 +1331,11 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             statusFilterCombo.addItem(statusText);
         }
         statusFilterCombo.setPreferredSize(new Dimension(126, 26));
-        statusFilterCombo.setToolTipText("按训练状态过滤问题列表（0-成功；1-失败；2-成功(给答案表)；3-训练中；4-超时）");
+        statusFilterCombo.setToolTipText("按训练状态过滤问题列表（-1-待训练；0-成功；1-失败；2-成功(同步回复)；3-训练中；4-超时）");
         statusFilterCombo.addActionListener(e -> onTrainingStatusFilterChanged());
         filterPanel.add(statusFilterCombo);
         // 筛选动作按钮：胶囊描边样式（常态轻填充 + 彩色描边，悬浮 / 按下填充反白，与操作列按钮同一视觉语言）
-        JButton refreshBtn = ButtonFactory.createPill("查 询", UiConstants.COLOR_SUCCESS, UiConstants.COLOR_SUCCESS_LIGHT);
+        JButton refreshBtn = ButtonFactory.createPill("查询", UiConstants.COLOR_SUCCESS, UiConstants.COLOR_SUCCESS_LIGHT);
         refreshBtn.addActionListener(e -> {
             currentPage = 1;
             invalidateLoadedData();
@@ -1336,7 +1343,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         });
         filterPanel.add(refreshBtn);
         // 重置：清空关键字并恢复分类 / 训练状态筛选为全部，回到第一页重新查询
-        JButton resetBtn = ButtonFactory.createPill("重 置", UiConstants.COLOR_NEUTRAL, UiConstants.COLOR_NEUTRAL_LIGHT);
+        JButton resetBtn = ButtonFactory.createPill("重置", UiConstants.COLOR_NEUTRAL, UiConstants.COLOR_NEUTRAL_LIGHT);
         resetBtn.setToolTipText("清空关键字并恢复分类 / 训练状态为全部，回到第一页重新查询");
         resetBtn.addActionListener(e -> resetQuestionFilters());
         filterPanel.add(resetBtn);
@@ -1822,14 +1829,14 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     }
     
     /**
-     * 当前选中的训练状态筛选值（null 表示『全部状态』，不参与过滤；下拉索引减 1 即训练状态值）
+     * 当前选中的训练状态筛选值（null 表示『全部状态』，不参与过滤；下拉索引减 1 后经 TRAINING_STATUS_VALUES 映射，含待训练 -1）
      */
     private Integer selectedTrainingStatusFilter() {
         if (statusFilterCombo == null) {
             return null;
         }
         int index = statusFilterCombo.getSelectedIndex();
-        return index <= 0 ? null : index - 1;
+        return index <= 0 ? null : TRAINING_STATUS_VALUES[index - 1];
     }
     
     /**
@@ -2507,11 +2514,11 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             }
         });
         filterPanel.add(allowModifyFilterCombo);
-        JButton answerSearchBtn = ButtonFactory.createPill("查 询", UiConstants.COLOR_SUCCESS, UiConstants.COLOR_SUCCESS_LIGHT);
+        JButton answerSearchBtn = ButtonFactory.createPill("查询", UiConstants.COLOR_SUCCESS, UiConstants.COLOR_SUCCESS_LIGHT);
         answerSearchBtn.addActionListener(e -> triggerAnswerSearch());
         filterPanel.add(answerSearchBtn);
         // 重置：清空问题 / 回复关键字并恢复允许修改筛选为全部，回到第一页重新查询
-        JButton answerResetBtn = ButtonFactory.createPill("重 置", UiConstants.COLOR_NEUTRAL, UiConstants.COLOR_NEUTRAL_LIGHT);
+        JButton answerResetBtn = ButtonFactory.createPill("重置", UiConstants.COLOR_NEUTRAL, UiConstants.COLOR_NEUTRAL_LIGHT);
         answerResetBtn.setToolTipText("清空问题 / 回复关键字并恢复允许修改为全部，回到第一页重新查询");
         answerResetBtn.addActionListener(e -> resetAnswerFilters());
         filterPanel.add(answerResetBtn);
@@ -3255,13 +3262,47 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     
     /**
      * 创建只读多行文本组件（自动换行，配合滚动条查看长文本全文；统一弹窗宽度并按行数计算高度）
+     * <p>
+     * 文字可拖选选中，支持 Ctrl+C 快捷键与右键菜单「复制 / 全选」（回复详情对比区、问题详情等弹窗只读展示区）
      */
     private static JScrollPane readonlyArea(String text, int rows) {
         JTextArea area = new JTextArea(text, rows, 30);
         area.setLineWrap(true);
         area.setWrapStyleWord(true);
         area.setEditable(false);
+        area.setToolTipText("可拖选文字复制，或右键全选 / 复制");
+        attachCopyMenu(area);
         return dialogScroll(area, rows);
+    }
+    
+    /**
+     * 为只读文本组件附加右键「复制 / 全选」菜单（复制项仅在有选中文字时可用）
+     */
+    private static void attachCopyMenu(JTextComponent textComponent) {
+        JPopupMenu popupMenu = new JPopupMenu();
+        JMenuItem copyItem = new JMenuItem("复制");
+        JMenuItem selectAllItem = new JMenuItem("全选");
+        copyItem.addActionListener(e -> textComponent.copy());
+        selectAllItem.addActionListener(e -> textComponent.selectAll());
+        // 菜单显示前按当前选中状态刷新复制项可用性（无选中时置灰）
+        popupMenu.addPopupMenuListener(new PopupMenuListener() {
+            @Override
+            public void popupMenuWillBecomeVisible(PopupMenuEvent e) {
+                copyItem.setEnabled(textComponent.getSelectedText() != null);
+            }
+            
+            @Override
+            public void popupMenuWillBecomeInvisible(PopupMenuEvent e) {
+            }
+            
+            @Override
+            public void popupMenuCanceled(PopupMenuEvent e) {
+            }
+        });
+        popupMenu.add(copyItem);
+        popupMenu.addSeparator();
+        popupMenu.add(selectAllItem);
+        textComponent.setComponentPopupMenu(popupMenu);
     }
     
     /**
@@ -3296,23 +3337,31 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     }
     
     /**
-     * 训练状态值 → 展示文字（0-成功；1-失败；2-成功(给答案表)；3-训练中；4-超时，空 / 越界值显示为空）
+     * 训练状态值 → 展示文字（-1-待训练；0-成功；1-失败；2-成功(同步回复)；3-训练中；4-超时，空 / 越界值显示为空）
      */
     private static String trainingStatusText(Integer status) {
-        if (status == null || status < 0 || status >= TRAINING_STATUS_TEXTS.length) {
+        if (status == null) {
             return "";
         }
-        return TRAINING_STATUS_TEXTS[status];
+        if (status == AiQuestion.TRAINING_STATUS_PENDING) {
+            return TRAINING_STATUS_TEXTS[0];
+        }
+        int nonNegativeIndex = status + 1;
+        if (nonNegativeIndex <= 0 || nonNegativeIndex >= TRAINING_STATUS_TEXTS.length) {
+            return "";
+        }
+        return TRAINING_STATUS_TEXTS[nonNegativeIndex];
     }
     
     /**
-     * 训练状态值 → 展示颜色（成功类绿色、失败 / 超时红色、训练中主色、无状态时灰色）
+     * 训练状态值 → 展示颜色（待训练琥珀色、成功类绿色、失败 / 超时红色、训练中主色、无状态时灰色）
      */
     private static Color trainingStatusColor(Integer status) {
         if (status == null) {
             return Color.GRAY;
         }
         return switch (status) {
+            case AiQuestion.TRAINING_STATUS_PENDING -> UiConstants.COLOR_PENDING;
             case AiQuestion.TRAINING_STATUS_SUCCESS, AiQuestion.TRAINING_STATUS_SUCCESS_ANSWER -> UiConstants.COLOR_SUCCESS;
             case AiQuestion.TRAINING_STATUS_FAILED, AiQuestion.TRAINING_STATUS_TIMEOUT -> UiConstants.COLOR_DANGER;
             case AiQuestion.TRAINING_STATUS_RUNNING -> UiConstants.COLOR_PRIMARY;

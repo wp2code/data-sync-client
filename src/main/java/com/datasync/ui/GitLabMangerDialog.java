@@ -31,7 +31,7 @@ public class GitLabMangerDialog extends AbsDialog {
     
     
     public GitLabMangerDialog(Frame owner) {
-        super( owner, "GitLab配置", true, 520, 440);
+        super( owner, "GitLab 配置", true, 520, 440);
         initUI();
         loadSavedConfig();
     }
@@ -88,7 +88,7 @@ public class GitLabMangerDialog extends AbsDialog {
         
         // 按钮面板
         JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 12, 10));
-        JButton saveBtn = ButtonFactory.createPrimary("登录&保存");
+        JButton saveBtn = ButtonFactory.createPrimary("登录并保存");
         saveBtn.addActionListener(e -> saveConfig());
         JButton cancelBtn = ButtonFactory.createSecondary("取消");
         cancelBtn.addActionListener(e -> dispose());
