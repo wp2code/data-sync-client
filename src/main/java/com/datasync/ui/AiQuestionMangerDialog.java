@@ -60,7 +60,7 @@ import org.slf4j.LoggerFactory;
  * <p>
  * 问题数据通过外部接口存取（环境 host + 接口路径，见 {@link AiEnvConfig}）：<br> 批量保存、更新、删除、列表查询均调用远端服务，列表只加载当前所选环境，训练状态筛选随列表请求提交由服务端过滤，关键字 / 分类过滤与分页在本地完成。<br>
  * 页签一「问题训练」：上屏问题录入（Tab 切换「界面手动录入」与「批量粘贴录入」两种方式，手动录入支持 Excel 模板导入）+
- * 下屏问题列表（仅展示当前环境、模糊查询、分类与训练状态筛选、分页、复选框勾选与表头全选、回复ID超链接查询回复详情、行内查看详情/编辑/删除、双击编辑、批量触发训练、批量更新用户信息 / 训练参数、批量删除）<br> 页签二「回复审计」：问题回复列表（问题 /
+ * 下屏问题列表（仅展示当前环境、模糊查询、分类与训练状态筛选、分页、复选框勾选与表头全选、回复ID超链接查询回复详情、行内查看详情/编辑/训练/删除、双击编辑、批量触发训练、批量更新用户信息 / 训练参数、批量删除）<br> 页签二「回复审计」：问题回复列表（问题 /
  * 回复内容模糊查询与允许修改筛选由接口完成、本地分页、复选框勾选与表头全选、行内查看详情 / 编辑 / 删除、批量更新是否允许修改状态、批量删除）
  *
  * @author liuweiping
@@ -177,21 +177,33 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     
     private static final int COL_LAST_TRAINING_TIME = 10;
     
-    private static final int COL_REMARK = 11;
+    /**
+     * 训练耗时列（最近完成训练时间 - 开始训练时间，单位秒）
+     */
+    private static final int COL_TRAINING_COST = 11;
     
-    private static final int COL_ACTION = 12;
+    private static final int COL_REMARK = 12;
+    
+    private static final int COL_ACTION = 13;
     
     /**
      * 复选框列固定宽度
      */
     private static final int CHECK_COLUMN_WIDTH = 46;
     
-    // ── 操作列动作区域（单元格三等分：左查看详情、中编辑、右删除）──
+    // ── 操作列动作区域（问题表单元格四等分：左查看详情、中编辑、中训练、右删除；回复表三等分：左查看详情、中编辑、右删除）──
     private static final int ACTION_VIEW = 0;
     
     private static final int ACTION_EDIT = 1;
     
-    private static final int ACTION_DELETE = 2;
+    private static final int ACTION_TRAIN = 2;
+    
+    private static final int ACTION_DELETE = 3;
+    
+    /**
+     * 回复审计操作列删除区域值（三等分无训练动作，删除为第 3 区）
+     */
+    private static final int ANSWER_ACTION_DELETE = 2;
     
     // ── 业务页签（问题训练 / 回复审计）──
     private static final int TAB_QUESTION_TRAINING = 0;
@@ -304,7 +316,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     private int hoverActionRow = -1;
     
     /**
-     * 操作列悬浮高亮的动作区域（ACTION_VIEW / ACTION_EDIT / ACTION_DELETE，-1 表示无）
+     * 操作列悬浮高亮的动作区域（ACTION_VIEW / ACTION_EDIT / ACTION_TRAIN / ACTION_DELETE，-1 表示无）
      */
     private int hoverActionZone = -1;
     
@@ -399,7 +411,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     private int answerHoverActionRow = -1;
     
     /**
-     * 回复审计操作列悬浮高亮的动作区域（ACTION_VIEW / ACTION_EDIT / ACTION_DELETE，-1 表示无）
+     * 回复审计操作列悬浮高亮的动作区域（ACTION_VIEW / ACTION_EDIT / ANSWER_ACTION_DELETE，-1 表示无）
      */
     private int answerHoverActionZone = -1;
     
@@ -1348,12 +1360,12 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         resetBtn.addActionListener(e -> resetQuestionFilters());
         filterPanel.add(resetBtn);
         
-        // 右侧批量操作组：已选计数 + 触发训练 / 批量更新 / 批量删除（右对齐）
+        // 右侧批量操作组：已选计数 + 批量训练 / 批量更新 / 批量删除（右对齐）
         checkedCountLabel = new JLabel("已选 0 条");
         checkedCountLabel.setForeground(Color.GRAY);
         checkedCountLabel.setFont(UiConstants.FONT_SANS_11);
         actionPanel.add(checkedCountLabel);
-        JButton trainBtn = ButtonFactory.createPill("触发训练", UiConstants.COLOR_PRIMARY, UiConstants.COLOR_PRIMARY_LIGHT);
+        JButton trainBtn = ButtonFactory.createPill("批量训练", UiConstants.COLOR_PRIMARY, UiConstants.COLOR_PRIMARY_LIGHT);
         trainBtn.setToolTipText("触发勾选问题的训练（点击表头复选框可全选当前页）");
         trainBtn.addActionListener(e -> triggerTrainingQuestions());
         actionPanel.add(trainBtn);
@@ -1375,7 +1387,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         questionTable.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         questionTable.setRowHeight(28);
         questionTable.getTableHeader().setReorderingAllowed(false);
-        int[] columnWidths = {CHECK_COLUMN_WIDTH, 50, 280, 90, 150, 150, 90, 80, 90, 140, 140, 110, 170};
+        int[] columnWidths = {CHECK_COLUMN_WIDTH, 50, 280, 90, 150, 150, 90, 80, 90, 140, 140, 100, 110, 260};
         for (int i = 0; i < columnWidths.length; i++) {
             questionTable.getColumnModel().getColumn(i).setPreferredWidth(columnWidths[i]);
         }
@@ -1410,9 +1422,11 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         });
         questionTable.getColumnModel().getColumn(COL_START_TRAINING_TIME).setCellRenderer(centeredRenderer());
         questionTable.getColumnModel().getColumn(COL_LAST_TRAINING_TIME).setCellRenderer(centeredRenderer());
+        // 训练耗时列：数值居中展示（列头已注明单位秒）
+        questionTable.getColumnModel().getColumn(COL_TRAINING_COST).setCellRenderer(centeredRenderer());
         questionTable.getColumnModel().getColumn(COL_REMARK).setCellRenderer(new TextCellRenderer(20));
         questionTable.getColumnModel().getColumn(COL_ACTION)
-                .setCellRenderer(new ActionCellRenderer(() -> hoverActionRow, () -> hoverActionZone, "查看问题详情（全部字段）"));
+                .setCellRenderer(new ActionCellRenderer(() -> hoverActionRow, () -> hoverActionZone, "查看问题详情（全部字段）", true, ACTION_DELETE));
         questionTable.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -1491,7 +1505,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     }
     
     /**
-     * 表格点击处理：复选框列单击切换勾选；回复ID列单击查询回复详情（有值时）；操作列三等分区域查看详情 / 编辑 / 删除；问题 / 固定回复列双击进入选择复制模式；其它列双击编辑；空白区域双击切换全屏
+     * 表格点击处理：复选框列单击切换勾选；回复ID列单击查询回复详情（有值时）；操作列四等分区域查看详情 / 编辑 / 训练 / 删除；问题 / 固定回复列双击进入选择复制模式；其它列双击编辑；空白区域双击切换全屏
      */
     private void handleTableClick(MouseEvent e) {
         int row = questionTable.rowAtPoint(e.getPoint());
@@ -1516,11 +1530,13 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             }
         } else if (column == COL_ACTION) {
             Rectangle cellRect = questionTable.getCellRect(row, column, false);
-            int zone = actionZoneAt(e.getX(), cellRect);
+            int zone = actionZoneAt(e.getX(), cellRect, 4);
             if (zone == ACTION_VIEW) {
                 showQuestionDetail(question);
             } else if (zone == ACTION_EDIT) {
                 editQuestion(question);
+            } else if (zone == ACTION_TRAIN) {
+                trainSingleQuestion(question);
             } else {
                 deleteQuestion(question);
             }
@@ -1533,15 +1549,14 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     }
     
     /**
-     * 判断横坐标落在操作单元格的哪个动作区域（三等分：左查看详情、中编辑、右删除）
+     * 判断横坐标落在操作单元格的哪个动作区域（问题表四等分：查看详情 / 编辑 / 训练 / 删除；回复表三等分：查看详情 / 编辑 / 删除）
+     *
+     * @param zoneCount 动作区域数（问题表 4，回复表 3）
      */
-    private static int actionZoneAt(int x, Rectangle cellRect) {
-        double third = cellRect.width / 3.0;
-        double offset = x - cellRect.x;
-        if (offset <= third) {
-            return ACTION_VIEW;
-        }
-        return offset <= third * 2 ? ACTION_EDIT : ACTION_DELETE;
+    private static int actionZoneAt(int x, Rectangle cellRect, int zoneCount) {
+        double zoneWidth = cellRect.width / (double) zoneCount;
+        int zone = (int) ((x - cellRect.x) / zoneWidth);
+        return Math.max(0, Math.min(zone, zoneCount - 1));
     }
     
     /**
@@ -1558,7 +1573,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             int hitColumn = questionTable.columnAtPoint(point);
             if (hitRow >= 0 && hitColumn == COL_ACTION) {
                 row = hitRow;
-                zone = actionZoneAt(point.x, questionTable.getCellRect(hitRow, COL_ACTION, false));
+                zone = actionZoneAt(point.x, questionTable.getCellRect(hitRow, COL_ACTION, false), 4);
                 clickable = true;
             } else if (hitRow >= 0 && hitColumn == COL_CHECK) {
                 clickable = true;
@@ -1926,8 +1941,10 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         addFormRow(form, gbc, 10, new JLabel("训练状态："), new JLabel(trainingStatusText(question.getTrainingStatus())));
         addFormRow(form, gbc, 11, new JLabel("开始训练时间："), new JLabel(formatEpochMillis(question.getStartTrainingTime())));
         addFormRow(form, gbc, 12, new JLabel("最近完成训练时间："), new JLabel(formatEpochMillis(question.getLastTrainingTime())));
-        addFormRow(form, gbc, 13, new JLabel("优先级别："), new JLabel(String.valueOf(question.getPriority() != null ? question.getPriority() : 0)));
-        addFormRow(form, gbc, 14, new JLabel("备注："), readonlyArea(nullToEmpty(question.getRemark()), 3));
+        String trainingCost = trainingCostText(question);
+        addFormRow(form, gbc, 13, new JLabel("训练耗时："), new JLabel(trainingCost.isEmpty() ? "" : trainingCost + " 秒"));
+        addFormRow(form, gbc, 14, new JLabel("优先级别："), new JLabel(String.valueOf(question.getPriority() != null ? question.getPriority() : 0)));
+        addFormRow(form, gbc, 15, new JLabel("备注："), readonlyArea(nullToEmpty(question.getRemark()), 3));
         JOptionPane.showMessageDialog(this, form, "问题详情", JOptionPane.PLAIN_MESSAGE);
     }
     
@@ -2139,6 +2156,72 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     }
     
     /**
+     * 触发单个问题的训练（操作列『训练』按钮）
+     * <p>
+     * 与批量触发训练一致：触发前校验问题必须有归属用户ID，缺少时提示补充后再触发；<br> 确认弹窗中完整展示问题全文（不截断）并选择智能体类型（safety / system / ops / auto，默认 auto）随请求 agentType 字段提交；<br> 调用训练接口提交单条 ID，成功后刷新列表。
+     */
+    private void trainSingleQuestion(AiQuestion question) {
+        if (apiBusy) {
+            JOptionPane.showMessageDialog(this, "请等待当前操作完成", "提示", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        if (question.getId() == null) {
+            JOptionPane.showMessageDialog(this, "该问题缺少 ID，无法调用训练接口", "错误", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        // 训练要求问题必须有归属用户ID：缺少时提示先补充再触发
+        if (question.getUserId() == null || question.getUserId().isBlank()) {
+            JOptionPane.showMessageDialog(this, "该问题缺少用户ID，不允许触发训练，请先通过「编辑」或「批量更新」补充用户ID。", "提示",
+                    JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        AiEnvConfig envConfig = findEnvByName(question.getEnvName());
+        if (envConfig == null) {
+            JOptionPane.showMessageDialog(this, "未找到问题所属环境配置 [" + nullToEmpty(question.getEnvName()) + "]", "错误",
+                    JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        // 确认弹窗：问题全文（自动换行可滚动，不截断）+ 环境信息 + 智能体类型下拉
+        JComboBox<String> agentTypeCombo = new JComboBox<>(AGENT_TYPES);
+        agentTypeCombo.setSelectedItem(DEFAULT_AGENT_TYPE);
+        agentTypeCombo.setToolTipText("训练请求 agentType 字段值");
+        JPanel confirmPanel = new JPanel();
+        confirmPanel.setLayout(new BoxLayout(confirmPanel, BoxLayout.Y_AXIS));
+        confirmPanel.setBorder(new EmptyBorder(8, 12, 8, 12));
+        JLabel titleLabel = new JLabel("确定对该问题触发训练吗？");
+        titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        confirmPanel.add(titleLabel);
+        // 问题内容完整展示（自动换行 + 滚动查看全文，不截断为省略号）
+        JLabel envLabel = new JLabel("环境 [" + envConfig.getEnvName() + "]　问题ID " + question.getId());
+        envLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        confirmPanel.add(envLabel);
+        JLabel questionCaptionLabel = new JLabel("问题："+nullToEmpty(question.getQuestion()));
+        questionCaptionLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        confirmPanel.add(questionCaptionLabel);
+        JPanel agentPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        agentPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        agentPanel.add(new JLabel("智能体类型："));
+        agentPanel.add(agentTypeCombo);
+        confirmPanel.add(Box.createVerticalStrut(8));
+        confirmPanel.add(agentPanel);
+        int confirm = JOptionPane.showConfirmDialog(this, confirmPanel, "确认触发训练", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        if (confirm != JOptionPane.YES_OPTION) {
+            return;
+        }
+        String agentType = (String) agentTypeCombo.getSelectedItem();
+        Long questionId = question.getId();
+        String questionText = question.getQuestion();
+        runApiTask("触发训练", () -> {
+            String message = AiQuestionApiClient.getInstance().triggerTraining(envConfig, List.of(questionId), agentType);
+            return () -> {
+                invalidateLoadedData();
+                refreshQuestionTable();
+                setStatus("触发训练成功：" + abbreviate(questionText, 30) + "（" + message + "）", true);
+            };
+        });
+    }
+    
+    /**
      * 触发训练已勾选的问题（勾选跨页 / 跨搜索保留；点击表头复选框可全选当前页）
      * <p>
      * 触发前校验勾选问题必须全部有归属用户ID，存在缺少用户ID的问题时不允许触发；<br> 确认弹窗中选择智能体类型（safety / system / ops / auto，默认 auto），随请求 agentType 字段提交；<br> 按问题所属环境分组调用对应环境配置的训练接口；
@@ -2202,7 +2285,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         agentTypeCombo.setToolTipText("训练请求 agentType 字段值");
         JPanel confirmPanel = new JPanel();
         confirmPanel.setLayout(new BoxLayout(confirmPanel, BoxLayout.Y_AXIS));
-        confirmPanel.setBorder(new EmptyBorder(4, 8, 4, 8));
+        confirmPanel.setBorder(new EmptyBorder(8, 12, 8, 12));
         JLabel titleLabel = new JLabel("确定触发训练勾选的 " + selectedTotal + " 条问题吗？");
         titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         confirmPanel.add(titleLabel);
@@ -2316,7 +2399,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         emptyHintLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         JPanel confirmPanel = new JPanel();
         confirmPanel.setLayout(new BoxLayout(confirmPanel, BoxLayout.Y_AXIS));
-        confirmPanel.setBorder(new EmptyBorder(4, 8, 4, 8));
+        confirmPanel.setBorder(new EmptyBorder(8, 12, 8, 12));
         JLabel titleLabel = new JLabel("确定批量更新勾选的 " + selectedTotal + " 条问题吗？");
         titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         confirmPanel.add(titleLabel);
@@ -2424,7 +2507,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         // 确认弹窗：勾选摘要 + 不可恢复警告
         JPanel confirmPanel = new JPanel();
         confirmPanel.setLayout(new BoxLayout(confirmPanel, BoxLayout.Y_AXIS));
-        confirmPanel.setBorder(new EmptyBorder(4, 8, 4, 8));
+        confirmPanel.setBorder(new EmptyBorder(8, 12, 8, 12));
         JLabel titleLabel = new JLabel("确定批量删除勾选的 " + selectedTotal + " 条问题吗？");
         titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         confirmPanel.add(titleLabel);
@@ -2546,7 +2629,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         answerTable.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         answerTable.setRowHeight(28);
         answerTable.getTableHeader().setReorderingAllowed(false);
-        int[] columnWidths = {CHECK_COLUMN_WIDTH, 50, 240, 240, 90, 90, 130, 130, 170};
+        int[] columnWidths = {CHECK_COLUMN_WIDTH, 50, 240, 240, 90, 90, 130, 130, 190};
         for (int i = 0; i < columnWidths.length; i++) {
             answerTable.getColumnModel().getColumn(i).setPreferredWidth(columnWidths[i]);
         }
@@ -2574,7 +2657,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         answerTable.getColumnModel().getColumn(ACOL_CREATE_TIME).setCellRenderer(new TextCellRenderer(20));
         answerTable.getColumnModel().getColumn(ACOL_UPDATE_TIME).setCellRenderer(new TextCellRenderer(20));
         answerTable.getColumnModel().getColumn(ACOL_ACTION)
-                .setCellRenderer(new ActionCellRenderer(() -> answerHoverActionRow, () -> answerHoverActionZone, "查看回复详情（全部字段）"));
+                .setCellRenderer(new ActionCellRenderer(() -> answerHoverActionRow, () -> answerHoverActionZone, "查看回复详情（全部字段）", false, ANSWER_ACTION_DELETE));
         answerTable.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -2874,7 +2957,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             }
         } else if (column == ACOL_ACTION) {
             Rectangle cellRect = answerTable.getCellRect(row, column, false);
-            int zone = actionZoneAt(e.getX(), cellRect);
+            int zone = actionZoneAt(e.getX(), cellRect, 3);
             if (zone == ACTION_VIEW) {
                 showAnswerDetail(answer);
             } else if (zone == ACTION_EDIT) {
@@ -2904,7 +2987,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             int hitColumn = answerTable.columnAtPoint(point);
             if (hitRow >= 0 && hitColumn == ACOL_ACTION) {
                 row = hitRow;
-                zone = actionZoneAt(point.x, answerTable.getCellRect(hitRow, ACOL_ACTION, false));
+                zone = actionZoneAt(point.x, answerTable.getCellRect(hitRow, ACOL_ACTION, false), 3);
                 clickable = true;
             } else if (hitRow >= 0 && hitColumn == ACOL_CHECK) {
                 clickable = true;
@@ -3083,7 +3166,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         allowModifyCombo.setToolTipText("批量更新后统一设置的是否允许修改状态");
         JPanel confirmPanel = new JPanel();
         confirmPanel.setLayout(new BoxLayout(confirmPanel, BoxLayout.Y_AXIS));
-        confirmPanel.setBorder(new EmptyBorder(4, 8, 4, 8));
+        confirmPanel.setBorder(new EmptyBorder(8, 12, 8, 12));
         JLabel titleLabel = new JLabel("确定批量更新勾选的 " + selectedTotal + " 条回复吗？");
         titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         confirmPanel.add(titleLabel);
@@ -3178,7 +3261,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         // 确认弹窗：勾选摘要 + 不可恢复警告
         JPanel confirmPanel = new JPanel();
         confirmPanel.setLayout(new BoxLayout(confirmPanel, BoxLayout.Y_AXIS));
-        confirmPanel.setBorder(new EmptyBorder(4, 8, 4, 8));
+        confirmPanel.setBorder(new EmptyBorder(8, 12, 8, 12));
         JLabel titleLabel = new JLabel("确定批量删除勾选的 " + selectedTotal + " 条回复吗？");
         titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         confirmPanel.add(titleLabel);
@@ -3380,6 +3463,18 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     }
     
     /**
+     * 训练耗时（秒）：最近完成训练时间 - 开始训练时间（毫秒差换算为秒并保留 1 位小数；任一时间无效或差值非正时返回空串）
+     */
+    private static String trainingCostText(AiQuestion question) {
+        Long start = question.getStartTrainingTime();
+        Long last = question.getLastTrainingTime();
+        if (start == null || last == null || start <= 0 || last <= start) {
+            return "";
+        }
+        return String.format("%.1f", (last - start) / 1000.0);
+    }
+    
+    /**
      * 长文本单行截断（用于表格单元格与提示信息）
      */
     private static String abbreviate(String text, int maxLength) {
@@ -3552,7 +3647,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     private static class QuestionTableModel extends AbstractTableModel {
         
         private final String[] columns = {"选择", "ID", "问题", "分类", "训练参数", "固定回复", "回复ID", "开启训练", "训练状态", "开始训练时间",
-                "最近完成训练时间", "备注", "操作"};
+                "最近完成训练时间", "训练耗时(秒)", "备注", "操作"};
         
         private final List<AiQuestion> questions = new ArrayList<>();
         
@@ -3715,6 +3810,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
                 case COL_TRAINING_STATUS -> question.getTrainingStatus();
                 case COL_START_TRAINING_TIME -> formatEpochMillis(question.getStartTrainingTime());
                 case COL_LAST_TRAINING_TIME -> formatEpochMillis(question.getLastTrainingTime());
+                case COL_TRAINING_COST -> trainingCostText(question);
                 case COL_REMARK -> nullToEmpty(question.getRemark());
                 default -> "";
             };
@@ -4018,15 +4114,17 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     }
     
     /**
-     * 操作列渲染器：胶囊样式的详情 / 编辑 / 删除按钮，悬浮时按钮以饱和色填充并反白文字 （点击区域三等分：左查看详情、中编辑、右删除，与 {@link #actionZoneAt} 判定保持一致）
+     * 操作列渲染器：胶囊样式的详情 / 编辑 /（问题表含）训练 / 删除按钮，悬浮时按钮以饱和色填充并反白文字 （问题表点击区域四等分：查看详情 / 编辑 / 训练 / 删除；回复表三等分：查看详情 / 编辑 / 删除，与 {@link #actionZoneAt} 判定保持一致）
      */
     private static class ActionCellRenderer implements TableCellRenderer {
         
-        private final JPanel panel = new JPanel(new GridLayout(1, 3, 6, 0));
+        private final JPanel panel;
         
         private final ActionLabel viewLabel = new ActionLabel("详情", UiConstants.COLOR_SUCCESS_LIGHT, UiConstants.COLOR_SUCCESS);
         
         private final ActionLabel editLabel = new ActionLabel("编辑", UiConstants.COLOR_PRIMARY_LIGHT, UiConstants.COLOR_PRIMARY);
+        
+        private final ActionLabel trainLabel = new ActionLabel("训练", UiConstants.COLOR_PENDING, UiConstants.COLOR_TRAINING);
         
         private final ActionLabel deleteLabel = new ActionLabel("删除", UiConstants.COLOR_DANGER_LIGHT, UiConstants.COLOR_DANGER);
         
@@ -4036,18 +4134,35 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         private final IntSupplier hoverRowSupplier;
         
         /**
-         * 悬浮动作区域提供者（ACTION_VIEW / ACTION_EDIT / ACTION_DELETE，-1 表示无悬浮）
+         * 悬浮动作区域提供者（-1 表示无悬浮）
          */
         private final IntSupplier hoverZoneSupplier;
         
-        private ActionCellRenderer(IntSupplier hoverRowSupplier, IntSupplier hoverZoneSupplier, String viewTooltip) {
+        /**
+         * 删除动作的区域值（问题表四等分为 ACTION_DELETE，回复表三等分为 ANSWER_ACTION_DELETE）
+         */
+        private final int deleteZone;
+        
+        /**
+         * 是否含训练动作（问题表 true，回复表 false）
+         */
+        private final boolean withTrainAction;
+        
+        private ActionCellRenderer(IntSupplier hoverRowSupplier, IntSupplier hoverZoneSupplier, String viewTooltip, boolean withTrainAction, int deleteZone) {
             this.hoverRowSupplier = hoverRowSupplier;
             this.hoverZoneSupplier = hoverZoneSupplier;
+            this.withTrainAction = withTrainAction;
+            this.deleteZone = deleteZone;
             viewLabel.setToolTipText(viewTooltip);
+            panel = new JPanel(new GridLayout(1, withTrainAction ? 4 : 3, 6, 0));
             panel.setOpaque(false);
-            panel.setBorder(new EmptyBorder(4, 6, 4, 6));
+            panel.setBorder(new EmptyBorder(4, 10, 4, 10));
             panel.add(viewLabel);
             panel.add(editLabel);
+            if (withTrainAction) {
+                trainLabel.setToolTipText("触发该问题的训练");
+                panel.add(trainLabel);
+            }
             panel.add(deleteLabel);
         }
         
@@ -4057,7 +4172,10 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             int hoverZone = hoverZoneSupplier.getAsInt();
             viewLabel.setHovered(row == hoverRow && hoverZone == ACTION_VIEW);
             editLabel.setHovered(row == hoverRow && hoverZone == ACTION_EDIT);
-            deleteLabel.setHovered(row == hoverRow && hoverZone == ACTION_DELETE);
+            if (withTrainAction) {
+                trainLabel.setHovered(row == hoverRow && hoverZone == ACTION_TRAIN);
+            }
+            deleteLabel.setHovered(row == hoverRow && hoverZone == deleteZone);
             return panel;
         }
     }
@@ -4098,6 +4216,8 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             setFont(uiFont != null ? uiFont.deriveFont(Font.BOLD) : UiConstants.FONT_SANS_12_BOLD);
             setOpaque(false);
             setForeground(normalTextColor);
+            // 文字与胶囊边缘留白（胶囊矩形绘制整个标签区域，border 仅内缩文字）；宽度不足时 FlatLaf 会截断为省略号，需保证操作列宽度足够
+            setBorder(new EmptyBorder(2, 4, 2, 4));
         }
         
         private static Color withAlpha(Color color, int alpha) {
@@ -4126,11 +4246,23 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             } finally {
                 g2.dispose();
             }
-            // 文字单独开启抗锯齿绘制，保证小字号清晰
+            // 文字自行居中绘制（避开 JLabel UI 的省略号截断逻辑，宽度不足时边溢出边完整展示）
             Graphics2D textGraphics = (Graphics2D) g.create();
             try {
                 textGraphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-                super.paintComponent(textGraphics);
+                String text = getText();
+                if (text != null) {
+                    textGraphics.setColor(getForeground());
+                    textGraphics.setFont(getFont());
+                    FontMetrics metrics = textGraphics.getFontMetrics(getFont());
+                    // 在 border 内缩后的区域内居中（保留文字与胶囊边缘的留白）
+                    Insets insets = getInsets();
+                    int availableWidth = getWidth() - insets.left - insets.right;
+                    int availableHeight = getHeight() - insets.top - insets.bottom;
+                    int textX = insets.left + Math.max(0, (availableWidth - metrics.stringWidth(text)) / 2);
+                    int textY = insets.top + Math.max(0, (availableHeight - metrics.getHeight()) / 2) + metrics.getAscent();
+                    textGraphics.drawString(text, textX, textY);
+                }
             } finally {
                 textGraphics.dispose();
             }
