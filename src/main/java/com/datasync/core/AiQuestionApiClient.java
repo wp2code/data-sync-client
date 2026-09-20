@@ -189,13 +189,14 @@ public final class AiQuestionApiClient {
     /**
      * 查询问题回复列表（回复审计，本地再做分页）
      * <p>
-     * 问题 / 回复内容模糊查询与是否允许修改筛选随请求提交，参数为空时不提交对应字段（不参与筛选）。
+     * 问题 / 回复内容模糊查询与是否允许修改、是否来源训练筛选随请求提交，参数为空时不提交对应字段（不参与筛选）。
      *
-     * @param query       问题内容关键字（null / 空白表示不筛选）
-     * @param answer      回复内容关键字（null / 空白表示不筛选）
-     * @param allowModify 是否允许修改筛选（null 表示不筛选；0-不允许；1-允许）
+     * @param query           问题内容关键字（null / 空白表示不筛选）
+     * @param answer          回复内容关键字（null / 空白表示不筛选）
+     * @param allowModify     是否允许修改筛选（null 表示不筛选；0-不允许；1-允许）
+     * @param sourceTraining  是否来源训练筛选（null 表示不筛选；true-是；false-否）
      */
-    public List<AiAnswer> listAnswers(AiEnvConfig env, String query, String answer, Integer allowModify) throws AiApiException {
+    public List<AiAnswer> listAnswers(AiEnvConfig env, String query, String answer, Integer allowModify, Boolean sourceTraining) throws AiApiException {
         String url = buildUrl(env, env.getAnswerListApi());
         ObjectNode body = objectMapper.createObjectNode();
         if (query != null && !query.isBlank()) {
@@ -206,6 +207,9 @@ public final class AiQuestionApiClient {
         }
         if (allowModify != null) {
             body.put("allowModify", allowModify);
+        }
+        if (sourceTraining != null) {
+            body.put("sourceTraining", sourceTraining);
         }
         String responseText = executePost(env, url, body);
         JsonNode root = parseResponse(url, responseText);

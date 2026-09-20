@@ -53,6 +53,11 @@ public class AiAnswer {
     private Integer allowModify;
     
     /**
+     * 是否来源训练：true-是（训练生成）；false-否（接口返回数据，客户端仅展示）
+     */
+    private Boolean sourceTraining;
+    
+    /**
      * 创建时间（接口返回字符串，客户端仅展示）
      */
     private String createTime;
@@ -70,5 +75,12 @@ public class AiAnswer {
      */
     public boolean isModifyAllowed() {
         return allowModify != null && allowModify == MODIFY_ALLOWED;
+    }
+    
+    /**
+     * 是否来源训练（null 视为否）
+     */
+    public boolean isFromTraining() {
+        return Boolean.TRUE.equals(sourceTraining);
     }
 }

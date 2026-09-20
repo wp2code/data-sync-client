@@ -61,7 +61,7 @@ import org.slf4j.LoggerFactory;
  * 问题数据通过外部接口存取（环境 host + 接口路径，见 {@link AiEnvConfig}）：<br> 批量保存、更新、删除、列表查询均调用远端服务，列表只加载当前所选环境，训练状态筛选随列表请求提交由服务端过滤，关键字 / 分类过滤与分页在本地完成。<br>
  * 页签一「问题训练」：上屏问题录入（Tab 切换「界面手动录入」与「批量粘贴录入」两种方式，手动录入支持 Excel 模板导入）+
  * 下屏问题列表（仅展示当前环境、模糊查询、分类与训练状态筛选、分页、复选框勾选与表头全选、回复ID超链接查询回复详情、行内查看详情/编辑/训练/删除、双击编辑、批量触发训练、批量更新用户信息 / 训练参数、批量删除）<br> 页签二「回复审计」：问题回复列表（问题 /
- * 回复内容模糊查询与允许修改筛选由接口完成、本地分页、复选框勾选与表头全选、行内查看详情 / 编辑 / 删除、批量更新是否允许修改状态、批量删除）
+ * 回复内容模糊查询与允许修改、来源训练筛选由接口完成、本地分页、复选框勾选与表头全选、行内查看详情 / 编辑 / 删除、批量更新是否允许修改状态、批量删除）
  *
  * @author liuweiping
  * @date 2026-09-16
@@ -223,11 +223,13 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     
     private static final int ACOL_MODIFY = 5;
     
-    private static final int ACOL_CREATE_TIME = 6;
+    private static final int ACOL_SOURCE_TRAINING = 6;
     
-    private static final int ACOL_UPDATE_TIME = 7;
+    private static final int ACOL_CREATE_TIME = 7;
     
-    private static final int ACOL_ACTION = 8;
+    private static final int ACOL_UPDATE_TIME = 8;
+    
+    private static final int ACOL_ACTION = 9;
     
     /**
      * 回复审计允许修改筛选下拉的『全部』选项（选中时不过滤该状态）
@@ -243,6 +245,21 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
      * 回复审计允许修改下拉选项：不允许修改（筛选值 0）
      */
     private static final String ALLOW_MODIFY_NO = "不允许修改";
+    
+    /**
+     * 回复审计来源训练筛选下拉的『全部』选项（选中时不过滤该状态）
+     */
+    private static final String SOURCE_TRAINING_ALL = "全部";
+    
+    /**
+     * 回复审计来源训练下拉选项：是（筛选值 true）
+     */
+    private static final String SOURCE_TRAINING_YES = "是";
+    
+    /**
+     * 回复审计来源训练下拉选项：不是（筛选值 false）
+     */
+    private static final String SOURCE_TRAINING_NO = "不是";
     
     /**
      * 回复审计列表排序：ID 降序（新回复在前）
@@ -394,6 +411,11 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
      * 允许修改筛选下拉（全部 / 允许修改 / 不允许修改，选中后重新查询列表）
      */
     private JComboBox<String> allowModifyFilterCombo;
+    
+    /**
+     * 来源训练筛选下拉（全部 / 是 / 不是，选中后重新查询列表）
+     */
+    private JComboBox<String> sourceTrainingFilterCombo;
     
     /**
      * 重置回复审计筛选期间抑制联动刷新（避免中间状态触发条件不完整的接口加载，由重置统一触发一次查询）
@@ -2597,12 +2619,22 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             }
         });
         filterPanel.add(allowModifyFilterCombo);
+        filterPanel.add(new JLabel("来源训练："));
+        sourceTrainingFilterCombo = new JComboBox<>(new String[] {SOURCE_TRAINING_ALL, SOURCE_TRAINING_YES, SOURCE_TRAINING_NO});
+        sourceTrainingFilterCombo.setPreferredSize(new Dimension(90, 26));
+        sourceTrainingFilterCombo.setToolTipText("按是否来源训练过滤回复列表");
+        sourceTrainingFilterCombo.addActionListener(e -> {
+            if (!suppressAnswerFilterEvents) {
+                triggerAnswerSearch();
+            }
+        });
+        filterPanel.add(sourceTrainingFilterCombo);
         JButton answerSearchBtn = ButtonFactory.createPill("查询", UiConstants.COLOR_SUCCESS, UiConstants.COLOR_SUCCESS_LIGHT);
         answerSearchBtn.addActionListener(e -> triggerAnswerSearch());
         filterPanel.add(answerSearchBtn);
-        // 重置：清空问题 / 回复关键字并恢复允许修改筛选为全部，回到第一页重新查询
+        // 重置：清空问题 / 回复关键字并恢复允许修改 / 来源训练筛选为全部，回到第一页重新查询
         JButton answerResetBtn = ButtonFactory.createPill("重置", UiConstants.COLOR_NEUTRAL, UiConstants.COLOR_NEUTRAL_LIGHT);
-        answerResetBtn.setToolTipText("清空问题 / 回复关键字并恢复允许修改为全部，回到第一页重新查询");
+        answerResetBtn.setToolTipText("清空问题 / 回复关键字并恢复允许修改 / 来源训练为全部，回到第一页重新查询");
         answerResetBtn.addActionListener(e -> resetAnswerFilters());
         filterPanel.add(answerResetBtn);
         
@@ -2629,7 +2661,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         answerTable.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         answerTable.setRowHeight(28);
         answerTable.getTableHeader().setReorderingAllowed(false);
-        int[] columnWidths = {CHECK_COLUMN_WIDTH, 50, 240, 240, 90, 90, 130, 130, 190};
+        int[] columnWidths = {CHECK_COLUMN_WIDTH, 50, 240, 240, 90, 90, 90, 130, 130, 190};
         for (int i = 0; i < columnWidths.length; i++) {
             answerTable.getColumnModel().getColumn(i).setPreferredWidth(columnWidths[i]);
         }
@@ -2652,6 +2684,13 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             JLabel label = new JLabel(value.toString());
             label.setHorizontalAlignment(SwingConstants.CENTER);
             label.setForeground(ALLOW_MODIFY_YES.equals(value.toString()) ? UiConstants.COLOR_SUCCESS : Color.GRAY);
+            return label;
+        });
+        // 来源训练列：是（训练生成）绿色、不是灰色，居中展示
+        answerTable.getColumnModel().getColumn(ACOL_SOURCE_TRAINING).setCellRenderer((table, value, isSelected, hasFocus, row, column) -> {
+            JLabel label = new JLabel(value.toString());
+            label.setHorizontalAlignment(SwingConstants.CENTER);
+            label.setForeground(SOURCE_TRAINING_YES.equals(value.toString()) ? UiConstants.COLOR_SUCCESS : Color.GRAY);
             return label;
         });
         answerTable.getColumnModel().getColumn(ACOL_CREATE_TIME).setCellRenderer(new TextCellRenderer(20));
@@ -2745,15 +2784,16 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     }
     
     /**
-     * 重置回复审计筛选条件：清空问题 / 回复关键字并恢复允许修改为全部，回到第一页重新查询
+     * 重置回复审计筛选条件：清空问题 / 回复关键字并恢复允许修改 / 来源训练为全部，回到第一页重新查询
      */
     private void resetAnswerFilters() {
-        // 抑制允许修改筛选的联动刷新，避免中间状态触发条件不完整的接口加载，由下方统一触发一次查询
+        // 抑制允许修改 / 来源训练筛选的联动刷新，避免中间状态触发条件不完整的接口加载，由下方统一触发一次查询
         suppressAnswerFilterEvents = true;
         try {
             answerQueryField.setText("");
             answerTextField.setText("");
             allowModifyFilterCombo.setSelectedIndex(0);
+            sourceTrainingFilterCombo.setSelectedIndex(0);
         } finally {
             suppressAnswerFilterEvents = false;
         }
@@ -2794,6 +2834,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         String queryKeyword = answerQueryField.getText().trim();
         String answerKeyword = answerTextField.getText().trim();
         Integer allowModifyFilter = selectedAllowModifyFilter();
+        Boolean sourceTrainingFilter = selectedSourceTrainingFilter();
         apiBusy = true;
         setSaveButtonsEnabled(false);
         setStatus("正在加载环境 [" + envConfig.getEnvName() + "] 的问题回复列表…", true);
@@ -2801,7 +2842,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             List<AiAnswer> loaded = new ArrayList<>();
             String error = null;
             try {
-                for (AiAnswer item : AiQuestionApiClient.getInstance().listAnswers(envConfig, queryKeyword, answerKeyword, allowModifyFilter)) {
+                for (AiAnswer item : AiQuestionApiClient.getInstance().listAnswers(envConfig, queryKeyword, answerKeyword, allowModifyFilter, sourceTrainingFilter)) {
                     item.setEnvName(envConfig.getEnvName());
                     loaded.add(item);
                 }
@@ -2937,6 +2978,21 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     }
     
     /**
+     * 回复审计当前选中的来源训练筛选值（null 表示『全部』，不参与筛选）
+     */
+    private Boolean selectedSourceTrainingFilter() {
+        Object selected = sourceTrainingFilterCombo.getSelectedItem();
+        String text = selected != null ? selected.toString() : null;
+        if (SOURCE_TRAINING_YES.equals(text)) {
+            return Boolean.TRUE;
+        }
+        if (SOURCE_TRAINING_NO.equals(text)) {
+            return Boolean.FALSE;
+        }
+        return null;
+    }
+    
+    /**
      * 回复审计表格点击处理：复选框列单击切换勾选；操作列三等分区域查看详情 / 编辑 / 删除；问题 / 回复内容列双击进入选择复制模式；其它列双击编辑；空白区域双击切换全屏
      */
     private void handleAnswerTableClick(MouseEvent e) {
@@ -3027,8 +3083,9 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         addFormRow(form, gbc, 3, new JLabel("回复内容："), readonlyArea(nullToEmpty(answer.getAnswer()), 15));
         addFormRow(form, gbc, 4, new JLabel("用户ID："), readonlyField(nullToEmpty(answer.getUserId())));
         addFormRow(form, gbc, 5, new JLabel("是否允许修改："), new JLabel(answer.isModifyAllowed() ? ALLOW_MODIFY_YES : ALLOW_MODIFY_NO));
-        addFormRow(form, gbc, 6, new JLabel("创建时间："), new JLabel(nullToEmpty(answer.getCreateTime())));
-        addFormRow(form, gbc, 7, new JLabel("更新时间："), new JLabel(nullToEmpty(answer.getUpdateTime())));
+        addFormRow(form, gbc, 6, new JLabel("是否来源训练："), new JLabel(answer.isFromTraining() ? SOURCE_TRAINING_YES : SOURCE_TRAINING_NO));
+        addFormRow(form, gbc, 7, new JLabel("创建时间："), new JLabel(nullToEmpty(answer.getCreateTime())));
+        addFormRow(form, gbc, 8, new JLabel("更新时间："), new JLabel(nullToEmpty(answer.getUpdateTime())));
         JOptionPane.showMessageDialog(this, form, "回复详情", JOptionPane.PLAIN_MESSAGE);
     }
     
@@ -3822,7 +3879,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
      */
     private static class AnswerTableModel extends AbstractTableModel {
         
-        private final String[] columns = {"选择", "ID", "问题", "回复内容", "用户ID", "是否允许修改", "创建时间", "更新时间", "操作"};
+        private final String[] columns = {"选择", "ID", "问题", "回复内容", "用户ID", "是否允许修改", "是否来源训练", "创建时间", "更新时间", "操作"};
         
         private final List<AiAnswer> answers = new ArrayList<>();
         
@@ -3980,6 +4037,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
                 case ACOL_ANSWER -> nullToEmpty(answer.getAnswer());
                 case ACOL_USER -> nullToEmpty(answer.getUserId());
                 case ACOL_MODIFY -> answer.isModifyAllowed() ? ALLOW_MODIFY_YES : ALLOW_MODIFY_NO;
+                case ACOL_SOURCE_TRAINING -> answer.isFromTraining() ? SOURCE_TRAINING_YES : SOURCE_TRAINING_NO;
                 case ACOL_CREATE_TIME -> nullToEmpty(answer.getCreateTime());
                 case ACOL_UPDATE_TIME -> nullToEmpty(answer.getUpdateTime());
                 default -> "";
