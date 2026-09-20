@@ -154,7 +154,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         return Long.compare(idB, idA);
     };
     
-    // ── 下屏表格列索引（表格不展示用户ID / 用户Session / 优先级，可在详情与编辑弹窗查看）──
+    // ── 下屏表格列索引（表格不展示用户Session / 优先级，可在详情与编辑弹窗查看）──
     private static final int COL_CHECK = 0;
     
     private static final int COL_ID = 1;
@@ -163,28 +163,30 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     
     private static final int COL_CLASSIFY = 3;
     
-    private static final int COL_TRAINING_PARAM = 4;
+    private static final int COL_USER = 4;
     
-    private static final int COL_ANSWER = 5;
+    private static final int COL_TRAINING_PARAM = 5;
     
-    private static final int COL_ANSWER_ID = 6;
+    private static final int COL_ANSWER = 6;
     
-    private static final int COL_ENABLE = 7;
+    private static final int COL_ANSWER_ID = 7;
     
-    private static final int COL_TRAINING_STATUS = 8;
+    private static final int COL_ENABLE = 8;
     
-    private static final int COL_START_TRAINING_TIME = 9;
+    private static final int COL_TRAINING_STATUS = 9;
     
-    private static final int COL_LAST_TRAINING_TIME = 10;
+    private static final int COL_START_TRAINING_TIME = 10;
+    
+    private static final int COL_LAST_TRAINING_TIME = 11;
     
     /**
      * 训练耗时列（最近完成训练时间 - 开始训练时间，单位秒）
      */
-    private static final int COL_TRAINING_COST = 11;
+    private static final int COL_TRAINING_COST = 12;
     
-    private static final int COL_REMARK = 12;
+    private static final int COL_REMARK = 13;
     
-    private static final int COL_ACTION = 13;
+    private static final int COL_ACTION = 14;
     
     /**
      * 复选框列固定宽度
@@ -483,7 +485,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     private final Frame ownerFrame;
     
     public AiQuestionMangerDialog(Frame owner) {
-        super("AIQUESTION", owner, "AI 问题管理", true, 1200, 780);
+        super("AIQUESTION", owner, "AI 问题管理", true, 1280, 780);
         this.ownerFrame = owner;
         SQLiteConfigUtil.getInstance().initialize();
         initUI();
@@ -1409,7 +1411,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         questionTable.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         questionTable.setRowHeight(28);
         questionTable.getTableHeader().setReorderingAllowed(false);
-        int[] columnWidths = {CHECK_COLUMN_WIDTH, 50, 280, 90, 150, 150, 90, 80, 90, 140, 140, 100, 110, 260};
+        int[] columnWidths = {CHECK_COLUMN_WIDTH, 50, 280, 90, 120, 150, 150, 90, 80, 90, 140, 140, 100, 110, 260};
         for (int i = 0; i < columnWidths.length; i++) {
             questionTable.getColumnModel().getColumn(i).setPreferredWidth(columnWidths[i]);
         }
@@ -1422,6 +1424,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         questionTable.getColumnModel().getColumn(COL_ID).setCellRenderer(centeredRenderer());
         questionTable.getColumnModel().getColumn(COL_QUESTION).setCellRenderer(new TextCellRenderer(48));
         questionTable.getColumnModel().getColumn(COL_CLASSIFY).setCellRenderer(new TextCellRenderer(12));
+        questionTable.getColumnModel().getColumn(COL_USER).setCellRenderer(new TextCellRenderer(20));
         questionTable.getColumnModel().getColumn(COL_TRAINING_PARAM).setCellRenderer(new TextCellRenderer(24));
         questionTable.getColumnModel().getColumn(COL_ANSWER).setCellRenderer(new TextCellRenderer(24));
         // 问题 / 固定回复列：双击进入只读选择复制模式（文字自动全选，可拖选部分文字复制，不修改数据）
@@ -3703,7 +3706,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
      */
     private static class QuestionTableModel extends AbstractTableModel {
         
-        private final String[] columns = {"选择", "ID", "问题", "分类", "训练参数", "固定回复", "回复ID", "开启训练", "训练状态", "开始训练时间",
+        private final String[] columns = {"选择", "ID", "问题", "分类", "用户ID", "训练参数", "固定回复", "回复ID", "开启训练", "训练状态", "开始训练时间",
                 "最近完成训练时间", "训练耗时(秒)", "备注", "操作"};
         
         private final List<AiQuestion> questions = new ArrayList<>();
@@ -3860,6 +3863,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
                 case COL_ID -> question.getId();
                 case COL_QUESTION -> nullToEmpty(question.getQuestion());
                 case COL_CLASSIFY -> nullToEmpty(question.getQuestionClassify());
+                case COL_USER -> nullToEmpty(question.getUserId());
                 case COL_TRAINING_PARAM -> nullToEmpty(question.getTrainingParam());
                 case COL_ANSWER -> nullToEmpty(question.getAnswer());
                 case COL_ANSWER_ID -> question.getAnswerId();
