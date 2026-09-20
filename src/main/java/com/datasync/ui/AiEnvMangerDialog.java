@@ -29,7 +29,7 @@ import javax.swing.table.AbstractTableModel;
 /**
  * AI 问题保存环境管理对话框（左右分栏布局）
  * <p>
- * 左侧：环境列表（点击切换全局选中的环境并持久化，◉ 标记当前选中环境；支持新增、删除）；<br> 右侧：环境接口配置（环境名称、Host、通用请求头参数，以及按问题训练 / 回复审计分组的接口路径）。
+ * 左侧：环境列表（点击切换全局选中的环境并持久化，◉ 标记当前选中环境；支持新增、删除）；<br> 右侧：环境接口配置（环境名称、Host、通用请求头参数，以及按问题训练 / 回复审计分组的接口路径，每个接口行提供“示例”链接，点击弹窗查看该接口的请求 / 响应参数 JSON 示例）。
  *
  * @author liuweiping
  * @date 2026-09-16
@@ -266,17 +266,17 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         updateHeaderTableHeight();
         
         addFormGroupTitle(formPanel, gbc, 4, "问题训练接口");
-        addFormRow(formPanel, gbc, 5, new JLabel("批量保存："), saveApiField);
-        addFormRow(formPanel, gbc, 6, new JLabel("更新："), updateApiField);
-        addFormRow(formPanel, gbc, 7, new JLabel("删除："), deleteApiField);
-        addFormRow(formPanel, gbc, 8, new JLabel("查询："), listApiField);
-        addFormRow(formPanel, gbc, 9, new JLabel("触发训练："), trainApiField);
-        addFormRow(formPanel, gbc, 10, new JLabel("批量更新接口："), updateUserApiField);
-        addFormRow(formPanel, gbc, 11, new JLabel("回复详情查询："), answerInfoApiField);
+        addFormRow(formPanel, gbc, 5, new JLabel("批量保存："), saveApiField, exampleLink(SAVE_EXAMPLE, saveApiField));
+        addFormRow(formPanel, gbc, 6, new JLabel("更新："), updateApiField, exampleLink(UPDATE_EXAMPLE, updateApiField));
+        addFormRow(formPanel, gbc, 7, new JLabel("删除："), deleteApiField, exampleLink(DELETE_EXAMPLE, deleteApiField));
+        addFormRow(formPanel, gbc, 8, new JLabel("查询："), listApiField, exampleLink(LIST_EXAMPLE, listApiField));
+        addFormRow(formPanel, gbc, 9, new JLabel("触发训练："), trainApiField, exampleLink(TRAIN_EXAMPLE, trainApiField));
+        addFormRow(formPanel, gbc, 10, new JLabel("批量更新接口："), updateUserApiField, exampleLink(UPDATE_USER_EXAMPLE, updateUserApiField));
+        addFormRow(formPanel, gbc, 11, new JLabel("回复详情查询："), answerInfoApiField, exampleLink(ANSWER_INFO_EXAMPLE, answerInfoApiField));
         addFormGroupTitle(formPanel, gbc, 12, "回复审计接口");
-        addFormRow(formPanel, gbc, 13, new JLabel("回复列表："), answerListApiField);
-        addFormRow(formPanel, gbc, 14, new JLabel("回复更新："), answerUpdateApiField);
-        addFormRow(formPanel, gbc, 15, new JLabel("回复删除："), answerDeleteApiField);
+        addFormRow(formPanel, gbc, 13, new JLabel("回复列表："), answerListApiField, exampleLink(ANSWER_LIST_EXAMPLE, answerListApiField));
+        addFormRow(formPanel, gbc, 14, new JLabel("回复更新："), answerUpdateApiField, exampleLink(ANSWER_UPDATE_EXAMPLE, answerUpdateApiField));
+        addFormRow(formPanel, gbc, 15, new JLabel("回复删除："), answerDeleteApiField, exampleLink(ANSWER_DELETE_EXAMPLE, answerDeleteApiField));
         addFormRow(formPanel, gbc, 16, new JLabel("备注："), remarkField);
         
         // 表单整体放入滚动面板：窗口高度不足时出现滚动条，内容与表格高度不被压缩
@@ -680,6 +680,27 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
     }
     
     /**
+     * 表单行重载：标签 + 输入框 + 尾部组件（接口行尾部的“示例”链接，链接列不参与拉伸）
+     */
+    private void addFormRow(JPanel panel, GridBagConstraints gbc, int row, JLabel label, JComponent field, JComponent trailing) {
+        gbc.gridx = 0;
+        gbc.gridy = row;
+        gbc.weightx = 0;
+        gbc.fill = GridBagConstraints.NONE;
+        panel.add(label, gbc);
+        
+        gbc.gridx = 1;
+        gbc.weightx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        panel.add(field, gbc);
+        
+        gbc.gridx = 2;
+        gbc.weightx = 0;
+        gbc.fill = GridBagConstraints.NONE;
+        panel.add(trailing, gbc);
+    }
+    
+    /**
      * 表单分组标题行：跨两列的加粗主色标签（接口按问题训练 / 回复审计分组标示）
      */
     private void addFormGroupTitle(JPanel panel, GridBagConstraints gbc, int row, String title) {
@@ -761,12 +782,333 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
     }
     
     /**
-     * 接口路径空值兜底（未配置时使用默认路径）
+     * 接口路径空值兑底（未配置时使用默认路径）
      */
     private static String valueOrDefault(String apiPath) {
         return apiPath == null || apiPath.isBlank() ? "" : apiPath;
     }
-    
+        
+    // ────────── 接口示例 ──────────
+        
+    /**
+     * 接口示例定义（弹窗标题 / 路径空值兑底的默认路径 / 请求参数示例 / 响应参数示例 / URL 查询参数示例，无则为 null）
+     */
+    private record ApiExample(String title, String defaultPath, String requestExample, String responseExample, String urlQuery) {
+        
+        /**
+         * 便利构造器：无 URL 查询参数的接口（urlQuery 为 null）
+         */
+        ApiExample(String title, String defaultPath, String requestExample, String responseExample) {
+            this(title, defaultPath, requestExample, responseExample, null);
+        }
+    }
+        
+    /**
+     * 批量保存问题接口示例（请求体为问题数组，数组内可选字段可省略）
+     */
+    private static final ApiExample SAVE_EXAMPLE = new ApiExample("批量保存问题", AiEnvConfig.DEFAULT_SAVE_API, """
+            [
+              {
+                "question": "如何配置数据源",
+                "questionClassify": "数据源",
+                "userId": "u10001",
+                "userSession": "sess-8f3e2a1c",
+                "trainingParam": "{\\"topK\\":3}",
+                "answer": "",
+                "enableTraining": 1,
+                "priority": 0
+              },
+              {
+                "question": "如何测试数据源连通性",
+                "questionClassify": "数据源",
+                "enableTraining": 1,
+                "priority": 0
+              }
+            ]
+            """, """
+            {
+              "code": "0",
+              "message": "保存成功",
+              "data": null
+            }
+            """);
+        
+    /**
+     * 更新问题接口示例（请求体为单个问题对象，id 为待更新的问题 ID）
+     */
+    private static final ApiExample UPDATE_EXAMPLE = new ApiExample("更新问题", AiEnvConfig.DEFAULT_UPDATE_API, """
+            {
+              "id": 1001,
+              "question": "如何配置数据源",
+              "questionClassify": "数据源",
+              "userId": "u10001",
+              "userSession": "sess-8f3e2a1c",
+              "trainingParam": "{\\"topK\\":3}",
+              "answer": "进入数据源管理页面新增配置",
+              "enableTraining": 1,
+              "priority": 10
+            }
+            """, """
+            {
+              "code": "0",
+              "message": "更新成功",
+              "data": null
+            }
+            """);
+        
+    /**
+     * 删除问题接口示例（支持单个 / 批量，请求体为问题 ID 数组）
+     */
+    private static final ApiExample DELETE_EXAMPLE = new ApiExample("删除问题", AiEnvConfig.DEFAULT_DELETE_API, """
+            {
+              "ids": [1001, 1002]
+            }
+            """, """
+            {
+              "code": "0",
+              "message": "删除成功",
+              "data": null
+            }
+            """);
+        
+    /**
+     * 查询问题列表接口示例（trainingStatus 可选，不传返回全部：-1-待训练；0-成功；1-失败；2-成功同步回复；3-训练中；4-超时）
+     */
+    private static final ApiExample LIST_EXAMPLE = new ApiExample("查询问题列表", AiEnvConfig.DEFAULT_LIST_API, """
+            {
+              "trainingStatus": 0
+            }
+            """, """
+            {
+              "code": "0",
+              "message": "查询成功",
+              "data": [
+                {
+                  "id": 1001,
+                  "question": "如何配置数据源",
+                  "questionClassify": "数据源",
+                  "userId": "u10001",
+                  "userSession": "sess-8f3e2a1c",
+                  "remark": "",
+                  "answerId": 2001,
+                  "trainingParam": "{\\"topK\\":3}",
+                  "trainingStatus": 2,
+                  "startTrainingTime": 1758000000000,
+                  "lastTrainingTime": 1758000060000,
+                  "answer": "进入数据源管理页面新增配置",
+                  "enableTraining": 1,
+                  "priority": 10
+                }
+              ]
+            }
+            """);
+        
+    /**
+     * 触发训练接口示例（questionIds 为勾选的问题 ID 列表，agentType：safety / system / ops / auto）
+     */
+    private static final ApiExample TRAIN_EXAMPLE = new ApiExample("触发训练", AiEnvConfig.DEFAULT_TRAIN_API, """
+            {
+              "questionIds": [1001, 1002],
+              "agentType": "auto"
+            }
+            """, """
+            {
+              "code": "0",
+              "message": "触发成功",
+              "data": null
+            }
+            """);
+        
+    /**
+     * 批量更新问题接口示例（ids 为勾选的问题 ID 列表，userId / userSession / trainingParam 均可选，留空字段不提交保持原值）
+     */
+    private static final ApiExample UPDATE_USER_EXAMPLE = new ApiExample("批量更新问题", AiEnvConfig.DEFAULT_UPDATE_USER_API, """
+            {
+              "ids": [1001, 1002],
+              "userId": "u10001",
+              "userSession": "sess-8f3e2a1c",
+              "trainingParam": "{\\"topK\\":5}"
+            }
+            """, """
+            {
+              "code": "0",
+              "message": "更新成功",
+              "data": null
+            }
+            """);
+        
+    /**
+     * 回复详情查询接口示例（answerId 以 URL 查询参数提交，请求体为空对象；data 字段名 → 文本值全量返回）
+     */
+    private static final ApiExample ANSWER_INFO_EXAMPLE = new ApiExample("回复详情查询", AiEnvConfig.DEFAULT_ANSWER_INFO_API, """
+            {}
+            """, """
+            {
+              "code": "0",
+              "message": "查询成功",
+              "data": {
+                "answerId": 2001,
+                "query": "如何配置数据源",
+                "answer": "进入数据源管理页面新增配置",
+                "allowModify": 1,
+                "userId": "u10001"
+              }
+            }
+            """, "?answerId=2001");
+        
+    /**
+     * 回复列表查询接口示例（query / answer / allowModify / sourceTraining 均可选，不传字段不参与筛选）
+     */
+    private static final ApiExample ANSWER_LIST_EXAMPLE = new ApiExample("回复列表查询", AiEnvConfig.DEFAULT_ANSWER_LIST_API, """
+            {
+              "query": "数据源",
+              "answer": "配置",
+              "allowModify": 1,
+              "sourceTraining": true
+            }
+            """, """
+            {
+              "code": "0",
+              "message": "查询成功",
+              "data": [
+                {
+                  "id": 2001,
+                  "query": "如何配置数据源",
+                  "answer": "进入数据源管理页面新增配置",
+                  "userId": "u10001",
+                  "allowModify": 1,
+                  "sourceTraining": true,
+                  "createTime": "2026-09-18 10:30:00",
+                  "updateTime": "2026-09-18 10:35:00"
+                }
+              ]
+            }
+            """);
+        
+    /**
+     * 回复更新接口示例（ids 为待更新回复 ID 列表，单条更新传单元素数组；批量更新仅提交 ids 与 allowModify）
+     */
+    private static final ApiExample ANSWER_UPDATE_EXAMPLE = new ApiExample("回复更新", AiEnvConfig.DEFAULT_ANSWER_UPDATE_API, """
+            {
+              "ids": [2001],
+              "query": "如何配置数据源",
+              "answer": "进入数据源管理页面新增配置",
+              "allowModify": 1
+            }
+            """, """
+            {
+              "code": "0",
+              "message": "更新成功",
+              "data": null
+            }
+            """);
+        
+    /**
+     * 回复删除接口示例（支持单个 / 批量，请求体为回复 ID 数组）
+     */
+    private static final ApiExample ANSWER_DELETE_EXAMPLE = new ApiExample("回复删除", AiEnvConfig.DEFAULT_ANSWER_DELETE_API, """
+            {
+              "ids": [2001, 2002]
+            }
+            """, """
+            {
+              "code": "0",
+              "message": "删除成功",
+              "data": null
+            }
+            """);
+        
+    /**
+     * 创建接口“示例”链接（点击弹窗展示该接口的请求 / 响应参数 JSON 示例）
+     */
+    private LinkJLabel exampleLink(ApiExample example, JTextField pathField) {
+        LinkJLabel link = new LinkJLabel("示例", "");
+        link.setFont(UiConstants.FONT_SANS_12);
+        link.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                showApiExample(example, pathField.getText().trim());
+            }
+        });
+        return link;
+    }
+        
+    /**
+     * 弹窗展示接口示例（请求方式与地址、请求参数与响应参数 JSON 示例，地址按当前表单 Host 与接口路径动态拼接）
+     */
+    private void showApiExample(ApiExample example, String apiPath) {
+        JPanel form = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(6, 6, 6, 6);
+        gbc.anchor = GridBagConstraints.WEST;
+            
+        JLabel urlLabel = new JLabel("POST    " + buildExampleUrl(apiPath, example));
+        urlLabel.setFont(UiConstants.FONT_MONO_12);
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.gridwidth = 2;
+        gbc.weightx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        form.add(urlLabel, gbc);
+            
+        JLabel headerTip = new JLabel("请求头：Content-Type: application/json; charset=UTF-8（另自动附加该环境配置的通用请求头）");
+        headerTip.setForeground(Color.GRAY);
+        headerTip.setFont(UiConstants.FONT_SANS_10);
+        gbc.gridy = 1;
+        form.add(headerTip, gbc);
+            
+        String requestTitle = "请求参数示例" + (example.urlQuery() == null ? "" : "（参数已拼入上方地址）");
+        gbc.gridy = 2;
+        gbc.weighty = 1;
+        gbc.fill = GridBagConstraints.BOTH;
+        form.add(exampleScroll(requestTitle, example.requestExample()), gbc);
+        gbc.gridy = 3;
+        form.add(exampleScroll("响应参数示例", example.responseExample()), gbc);
+        gbc.gridwidth = 1;
+        gbc.weighty = 0;
+        gbc.fill = GridBagConstraints.NONE;
+            
+        JOptionPane.showMessageDialog(this, form, "接口示例 - " + example.title(), JOptionPane.PLAIN_MESSAGE);
+    }
+        
+    /**
+     * JSON 示例只读文本区（等宽字体、不换行保持 JSON 结构、高度按内容行数自适应，超出后内部滚动）
+     */
+    private static JScrollPane exampleScroll(String title, String json) {
+        JTextArea area = new JTextArea(json);
+        area.setFont(UiConstants.FONT_MONO_12);
+        area.setEditable(false);
+        area.setLineWrap(false);
+        area.setCaretPosition(0);
+        JScrollPane scroll = new JScrollPane(area);
+        scroll.setBorder(BorderFactory.createTitledBorder(title));
+        int lines = json.split("\n", -1).length;
+        scroll.setPreferredSize(new Dimension(700, Math.min(20 + lines * 18, 320)));
+        return scroll;
+    }
+        
+    /**
+     * 按当前表单 Host 与接口路径拼接完整示例地址（Host 未填写时用 {host} 占位，路径空值回退默认路径，协议补全与尾部斜杠处理与接口调用一致）
+     */
+    private String buildExampleUrl(String apiPath, ApiExample example) {
+        String host = hostField.getText().trim();
+        if (host.isEmpty() || "http://".equals(host)) {
+            host = "http://{host}";
+        } else {
+            if (!host.startsWith("http://") && !host.startsWith("https://")) {
+                host = "http://" + host;
+            }
+            while (host.endsWith("/")) {
+                host = host.substring(0, host.length() - 1);
+            }
+        }
+        String path = apiPath == null || apiPath.isBlank() ? example.defaultPath() : apiPath;
+        if (!path.startsWith("/")) {
+            path = "/" + path;
+        }
+        return host + path + (example.urlQuery() == null ? "" : example.urlQuery());
+    }
+        
     // ────────── 表格模型 ──────────
     
     /**
