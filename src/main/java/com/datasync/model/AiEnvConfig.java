@@ -38,7 +38,7 @@ public class AiEnvConfig {
     /**
      * 列表查询接口默认路径
      */
-    public static final String DEFAULT_LIST_API = "/pilot/training/knowledge/list";
+    public static final String DEFAULT_LIST_API = "/pilot/training/knowledge/all-list";
     
     /**
      * 触发训练接口默认路径

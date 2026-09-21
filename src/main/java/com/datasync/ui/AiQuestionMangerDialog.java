@@ -193,6 +193,16 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
      */
     private static final int CHECK_COLUMN_WIDTH = 46;
     
+    /**
+     * 问题列表操作列固定宽度（四个动作按钮所需宽度，不随表格自动调整拉伸）
+     */
+    private static final int ACTION_COLUMN_WIDTH = 260;
+    
+    /**
+     * 回复审计操作列固定宽度（三个动作按钮所需宽度，不随表格自动调整拉伸）
+     */
+    private static final int ANSWER_ACTION_COLUMN_WIDTH = 190;
+    
     // ── 操作列动作区域（问题表单元格四等分：左查看详情、中编辑、中训练、右删除；回复表三等分：左查看详情、中编辑、右删除）──
     private static final int ACTION_VIEW = 0;
     
@@ -1411,7 +1421,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         questionTable.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         questionTable.setRowHeight(28);
         questionTable.getTableHeader().setReorderingAllowed(false);
-        int[] columnWidths = {CHECK_COLUMN_WIDTH, 50, 280, 90, 120, 150, 150, 90, 80, 90, 140, 140, 100, 110, 260};
+        int[] columnWidths = {CHECK_COLUMN_WIDTH, 50, 280, 90, 120, 150, 150, 90, 80, 90, 140, 140, 100, 110, ACTION_COLUMN_WIDTH};
         for (int i = 0; i < columnWidths.length; i++) {
             questionTable.getColumnModel().getColumn(i).setPreferredWidth(columnWidths[i]);
         }
@@ -1421,6 +1431,10 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         checkColumn.setMaxWidth(CHECK_COLUMN_WIDTH);
         checkColumn.setCellRenderer(new CheckBoxCellRenderer());
         checkColumn.setHeaderRenderer(new HeaderCheckBoxRenderer(() -> tableModel.isCurrentPageAllChecked(), () -> tableModel.getRowCount()));
+        // 操作列：固定宽度，防止随表格自动调整拉伸变形（影响四等分动作区域判定）
+        TableColumn actionColumn = questionTable.getColumnModel().getColumn(COL_ACTION);
+        actionColumn.setMinWidth(ACTION_COLUMN_WIDTH);
+        actionColumn.setMaxWidth(ACTION_COLUMN_WIDTH);
         questionTable.getColumnModel().getColumn(COL_ID).setCellRenderer(centeredRenderer());
         questionTable.getColumnModel().getColumn(COL_QUESTION).setCellRenderer(new TextCellRenderer(48));
         questionTable.getColumnModel().getColumn(COL_CLASSIFY).setCellRenderer(new TextCellRenderer(12));
@@ -2664,7 +2678,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         answerTable.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         answerTable.setRowHeight(28);
         answerTable.getTableHeader().setReorderingAllowed(false);
-        int[] columnWidths = {CHECK_COLUMN_WIDTH, 50, 240, 240, 90, 90, 90, 130, 130, 190};
+        int[] columnWidths = {CHECK_COLUMN_WIDTH, 50, 240, 240, 90, 90, 90, 130, 130, ANSWER_ACTION_COLUMN_WIDTH};
         for (int i = 0; i < columnWidths.length; i++) {
             answerTable.getColumnModel().getColumn(i).setPreferredWidth(columnWidths[i]);
         }
@@ -2675,6 +2689,10 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         answerCheckColumn.setCellRenderer(new CheckBoxCellRenderer());
         answerCheckColumn.setHeaderRenderer(
                 new HeaderCheckBoxRenderer(() -> answerTableModel.isCurrentPageAllChecked(), () -> answerTableModel.getRowCount()));
+        // 操作列：固定宽度，防止随表格自动调整拉伸变形（影响三等分动作区域判定）
+        TableColumn answerActionColumn = answerTable.getColumnModel().getColumn(ACOL_ACTION);
+        answerActionColumn.setMinWidth(ANSWER_ACTION_COLUMN_WIDTH);
+        answerActionColumn.setMaxWidth(ANSWER_ACTION_COLUMN_WIDTH);
         answerTable.getColumnModel().getColumn(ACOL_ID).setCellRenderer(centeredRenderer());
         answerTable.getColumnModel().getColumn(ACOL_QUERY).setCellRenderer(new TextCellRenderer(48));
         answerTable.getColumnModel().getColumn(ACOL_ANSWER).setCellRenderer(new TextCellRenderer(48));

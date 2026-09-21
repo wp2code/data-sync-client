@@ -113,7 +113,7 @@ public class SQLiteConfigUtil {
                 save_api    VARCHAR(256) DEFAULT '/pilot/training/knowledge/batch-save',
                 update_api  VARCHAR(256) DEFAULT '/pilot/training/knowledge/update',
                 delete_api  VARCHAR(256) DEFAULT '/pilot/training/knowledge/delete',
-                list_api    VARCHAR(256) DEFAULT '/pilot/training/knowledge/list',
+                list_api    VARCHAR(256) DEFAULT '/pilot/training/knowledge/all-list',
                 train_api   VARCHAR(256) DEFAULT '/pilot/training/knowledge/runBatchTraining',
                 update_user_api VARCHAR(256) DEFAULT '/pilot/training/knowledge/batch-update',
                 answer_info_api VARCHAR(256) DEFAULT '/pilot/training/knowledge/answer/info',
