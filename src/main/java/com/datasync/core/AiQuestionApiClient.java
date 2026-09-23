@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,6 +47,11 @@ public final class AiQuestionApiClient {
      * 响应 code 成功标识
      */
     private static final String SUCCESS_CODE = "0";
+    
+    /**
+     * 默认 User-Agent（部分环境 WAF 拦截 JDK 默认的 Java-http-client 标识，导致连接被直接断开且无响应）
+     */
+    private static final String DEFAULT_USER_AGENT = "DataSync-Client/1.0.0";
     
     private final HttpClient httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
     
@@ -312,11 +318,14 @@ public final class AiQuestionApiClient {
                     .header("Content-Type", "application/json; charset=UTF-8")
                     .POST(HttpRequest.BodyPublishers.ofString(json, StandardCharsets.UTF_8));
             // 附加环境通用请求头（Content-Type 系统已维护，跳过避免被覆盖）
-            if (env != null) {
-                for (java.util.Map.Entry<String, String> entry : env.parseHeaders().entrySet()) {
-                    if (!"Content-Type".equalsIgnoreCase(entry.getKey())) {
-                        requestBuilder.header(entry.getKey(), entry.getValue());
-                    }
+            Map<String, String> envHeaders = env != null ? env.parseHeaders() : Collections.emptyMap();
+            // WAF 会拦截 JDK 默认 User-Agent 导致连接被直接断开，显式声明默认值；环境已配置 User-Agent 时以环境配置为准
+            if (envHeaders.keySet().stream().noneMatch("User-Agent"::equalsIgnoreCase)) {
+                requestBuilder.header("User-Agent", DEFAULT_USER_AGENT);
+            }
+            for (Map.Entry<String, String> entry : envHeaders.entrySet()) {
+                if (!"Content-Type".equalsIgnoreCase(entry.getKey())) {
+                    requestBuilder.header(entry.getKey(), entry.getValue());
                 }
             }
             HttpResponse<String> response = httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
@@ -369,7 +378,7 @@ public final class AiQuestionApiClient {
         }
         String path = apiPath != null ? apiPath.trim() : "";
         if (path.isEmpty()) {
-            throw new AiApiException("环境 [" + (env != null ? env.getEnvName() : "") + "] 未配置接口路径");
+            throw new AiApiException("环境 [" + env.getEnvName() + "] 未配置接口路径");
         }
         if (!path.startsWith("/")) {
             path = "/" + path;
