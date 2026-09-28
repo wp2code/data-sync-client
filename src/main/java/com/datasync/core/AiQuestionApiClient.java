@@ -281,7 +281,7 @@ public final class AiQuestionApiClient {
      *
      * @return 成功时返回接口 message，失败时抛出异常
      */
-    public String updateAnswer(AiEnvConfig env, Long id, String query, String answer, Integer allowModify) throws AiApiException {
+    public String updateAnswer(AiEnvConfig env, Long id, String query, String answer, Integer allowModify, String projectName) throws AiApiException {
         String url = buildUrl(env, env.getAnswerUpdateApi());
         ObjectNode body = objectMapper.createObjectNode();
         body.set("ids", objectMapper.valueToTree(Collections.singletonList(id)));
@@ -293,6 +293,9 @@ public final class AiQuestionApiClient {
         }
         if (allowModify != null) {
             body.put("allowModify", allowModify);
+        }
+        if (projectName != null) {
+            body.put("projectName", projectName);
         }
         return postForMessage(env, url, body);
     }

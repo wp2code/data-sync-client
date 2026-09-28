@@ -131,6 +131,11 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     private static final String ALL_PROJECT = "全部项目";
     
     /**
+     * 问题列表 / 回复列表用户筛选下拉的『全部用户』选项（选中时不过滤用户）
+     */
+    private static final String ALL_USER = "全部用户";
+    
+    /**
      * 训练状态筛选项文字（下标对应训练状态值 +2：-2-初始状态；-1-待训练；0-成功；1-失败；2-同步成功(给答案表)；3-训练中；4-超时；5-同步失败(给答案表)）
      */
     private static final String[] TRAINING_STATUS_TEXTS = {"初始状态", "待训练", "成功", "失败", "同步成功(给答案表)", "训练中", "超时", "同步失败(给答案表)"};
@@ -164,13 +169,13 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     
     private static final int COL_ID = 1;
     
-    private static final int COL_PROJECT = 2;
+    private static final int COL_QUESTION = 2;
     
-    private static final int COL_QUESTION = 3;
+    private static final int COL_CLASSIFY = 3;
     
-    private static final int COL_CLASSIFY = 4;
+    private static final int COL_USER = 4;
     
-    private static final int COL_USER = 5;
+    private static final int COL_PROJECT = 5;
     
     private static final int COL_TRAINING_PARAM = 6;
     
@@ -234,13 +239,13 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     
     private static final int ACOL_ID = 1;
     
-    private static final int ACOL_PROJECT = 2;
+    private static final int ACOL_QUERY = 2;
     
-    private static final int ACOL_QUERY = 3;
+    private static final int ACOL_ANSWER = 3;
     
-    private static final int ACOL_ANSWER = 4;
+    private static final int ACOL_USER = 4;
     
-    private static final int ACOL_USER = 5;
+    private static final int ACOL_PROJECT = 5;
     
     private static final int ACOL_MODIFY = 6;
     
@@ -363,6 +368,16 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     private boolean suppressProjectFilterEvents = false;
     
     /**
+     * 用户筛选下拉（选项来自 userOptions，选中后本地过滤列表）
+     */
+    private JComboBox<String> userFilterCombo;
+    
+    /**
+     * 程序化重建用户筛选下拉时抑制选择事件（避免逐项触发列表重新过滤）
+     */
+    private boolean suppressUserFilterEvents = false;
+    
+    /**
      * 训练状态筛选下拉（选项固定：全部状态 + 各训练状态，选中后本地过滤列表）
      */
     private JComboBox<String> statusFilterCombo;
@@ -472,6 +487,11 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
      * 回复列表项目筛选下拉（选项从已加载回复列表的项目名称动态生成，选中后本地过滤列表）
      */
     private JComboBox<String> answerProjectFilterCombo;
+    
+    /**
+     * 回复列表用户筛选下拉（选项来自 userOptions，选中后本地过滤列表）
+     */
+    private JComboBox<String> answerUserFilterCombo;
     
     /**
      * 重置回复审计筛选期间抑制联动刷新（避免中间状态触发条件不完整的接口加载，由重置统一触发一次查询）
@@ -730,7 +750,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
      * 手动录入网格表头：问题、用户ID、所属项目、分类、开启训练、训练参数、固定回复、操作
      */
     private void addManualGridHeader() {
-        String[] headers = {"问题", "用户ID", "所属项目", "分类", "开启训练", "训练参数", "固定回复", "操作"};
+        String[] headers = {"问题", "所属用户", "所属项目", "分类", "开启训练", "训练参数", "固定回复", "操作"};
         double[] weights = {3.0, 0.4, 0.35, 0.35, 0, 0.5, 0.5, 0};
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.gridy = 0;
@@ -1369,6 +1389,40 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
                         row.userIdField.setSelectedItem(currentSelection);
                     }
                 }
+                // 更新问题列表用户筛选下拉
+                if (userFilterCombo != null) {
+                    Object previousUserFilter = userFilterCombo.getSelectedItem();
+                    suppressUserFilterEvents = true;
+                    try {
+                        userFilterCombo.removeAllItems();
+                        userFilterCombo.addItem(ALL_USER);
+                        for (String userOption : userOptions) {
+                            userFilterCombo.addItem(formatUserOption(userOption));
+                        }
+                        if (previousUserFilter != null) {
+                            userFilterCombo.setSelectedItem(previousUserFilter);
+                        }
+                    } finally {
+                        suppressUserFilterEvents = false;
+                    }
+                }
+                // 更新回复列表用户筛选下拉
+                if (answerUserFilterCombo != null) {
+                    Object previousAnswerUserFilter = answerUserFilterCombo.getSelectedItem();
+                    suppressAnswerFilterEvents = true;
+                    try {
+                        answerUserFilterCombo.removeAllItems();
+                        answerUserFilterCombo.addItem(ALL_USER);
+                        for (String userOption : userOptions) {
+                            answerUserFilterCombo.addItem(formatUserOption(userOption));
+                        }
+                        if (previousAnswerUserFilter != null) {
+                            answerUserFilterCombo.setSelectedItem(previousAnswerUserFilter);
+                        }
+                    } finally {
+                        suppressAnswerFilterEvents = false;
+                    }
+                }
             });
         }, "refresh-user-options").start();
     }
@@ -1411,7 +1465,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
      */
     private static String projectButtonLabel(List<String> selectedCodes) {
         if (selectedCodes == null || selectedCodes.isEmpty()) {
-            return "请选择项目";
+            return "请选择项目（可留空）";
         }
         return "已选 " + selectedCodes.size() + " 个项目";
     }
@@ -1572,10 +1626,13 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         JPanel panel = new JPanel(new BorderLayout(0, 6));
         panel.setBorder(BorderFactory.createTitledBorder("问题列表"));
         
-        // 工具栏：左侧筛选（模糊查询 + 分类 + 训练状态 + 查询 / 重置按钮），右侧批量操作（已选计数 + 触发训练 / 批量更新 / 批量删除）
-        JPanel toolbar = new JPanel(new BorderLayout(6, 2));
-        JPanel filterPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
-        JPanel actionPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 2));
+        // 工具栏：筛选条件 + 查询 / 重置 | 批量训练 / 批量更新 / 批量删除（靠右）
+        JPanel toolbar = new JPanel(new BorderLayout(0, 2));
+        JPanel filterRow1 = new JPanel(new BorderLayout());
+        JPanel filterLeft = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+        JPanel filterRight = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 2));
+        JPanel filterRow2 = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+        filterRow2.setVisible(false);
         searchField = new CustomTextField("输入关键字模糊查询");
         searchField.setMinWidth(200);
         searchField.getDocument().addDocumentListener(new DocumentListener() {
@@ -1594,24 +1651,16 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
                 onSearchFieldChanged();
             }
         });
-        filterPanel.add(searchField);
-        filterPanel.add(new JLabel("分类："));
+        filterLeft.add(searchField);
+        filterLeft.add(new JLabel("分类："));
         // 分类筛选：选项由已加载问题列表的分类动态生成，选中后本地过滤列表
         classifyFilterCombo = new JComboBox<>();
         classifyFilterCombo.addItem(ALL_CLASSIFY);
         classifyFilterCombo.setPreferredSize(new Dimension(140, 26));
         classifyFilterCombo.setToolTipText("按分类过滤问题列表，选项来自当前环境问题列表的分类");
         classifyFilterCombo.addActionListener(e -> onClassifyFilterChanged());
-        filterPanel.add(classifyFilterCombo);
-        filterPanel.add(new JLabel("项目："));
-        // 项目筛选：选项由已加载问题列表的项目名称动态生成，选中后本地过滤列表
-        projectFilterCombo = new JComboBox<>();
-        projectFilterCombo.addItem(ALL_PROJECT);
-        projectFilterCombo.setPreferredSize(new Dimension(160, 26));
-        projectFilterCombo.setToolTipText("按项目过滤问题列表，选项来自当前环境问题列表的项目名称");
-        projectFilterCombo.addActionListener(e -> onProjectFilterChanged());
-        filterPanel.add(projectFilterCombo);
-        filterPanel.add(new JLabel("训练状态："));
+        filterLeft.add(classifyFilterCombo);
+        filterLeft.add(new JLabel("训练状态："));
         // 训练状态筛选：选项固定（全部状态 + 各训练状态），选中后触发接口重新拉取（服务端筛选）
         statusFilterCombo = new JComboBox<>();
         statusFilterCombo.addItem(ALL_TRAINING_STATUS);
@@ -1621,40 +1670,93 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         statusFilterCombo.setPreferredSize(new Dimension(126, 26));
         statusFilterCombo.setToolTipText("按训练状态过滤问题列表（-2-初始状态；-1-待训练；0-成功；1-失败；2-同步成功(给答案表)；3-训练中；4-超时；5-同步失败(给答案表)）");
         statusFilterCombo.addActionListener(e -> onTrainingStatusFilterChanged());
-        filterPanel.add(statusFilterCombo);
-        // 筛选动作按钮：胶囊描边样式（常态轻填充 + 彩色描边，悬浮 / 按下填充反白，与操作列按钮同一视觉语言）
+        filterLeft.add(statusFilterCombo);
         JButton refreshBtn = ButtonFactory.createPill("查询", UiConstants.COLOR_SUCCESS, UiConstants.COLOR_SUCCESS_LIGHT);
         refreshBtn.addActionListener(e -> {
             currentPage = 1;
             invalidateLoadedData();
             refreshQuestionTable();
         });
-        filterPanel.add(refreshBtn);
+        filterLeft.add(refreshBtn);
         // 重置：清空关键字并恢复分类 / 训练状态筛选为全部，回到第一页重新查询
         JButton resetBtn = ButtonFactory.createPill("重置", UiConstants.COLOR_NEUTRAL, UiConstants.COLOR_NEUTRAL_LIGHT);
-        resetBtn.setToolTipText("清空关键字并恢复分类 / 项目 / 训练状态为全部，回到第一页重新查询");
+        resetBtn.setToolTipText("清空关键字并恢复分类 / 项目 / 用户 / 训练状态为全部，回到第一页重新查询");
         resetBtn.addActionListener(e -> resetQuestionFilters());
-        filterPanel.add(resetBtn);
+        filterLeft.add(resetBtn);
+        // 更多条件展开链接（超文本样式）
+        JLabel moreConditionLink = new JLabel("<html><a href=\"#\">更多条件 &#9662;</a></html>");
+        moreConditionLink.setToolTipText("展开 / 收起项目、用户筛选条件");
+        moreConditionLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        final String expandedText = "<html><a href=\"#\">收起条件 &#9650;</a></html>";
+        final String collapsedText = "<html><a href=\"#\">更多条件 &#9662;</a></html>";
+        moreConditionLink.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                boolean show = !filterRow2.isVisible();
+                filterRow2.setVisible(show);
+                moreConditionLink.setText(show ? expandedText : collapsedText);
+                toolbar.revalidate();
+                toolbar.repaint();
+            }
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                moreConditionLink.setForeground(new Color(59, 72, 221));
+            }
+            @Override
+            public void mouseExited(MouseEvent e) {
+                moreConditionLink.setForeground(new Color(0x1A, 0x73, 0xE8));
+            }
+        });
+        filterLeft.add(moreConditionLink);
         
-        // 右侧批量操作组：已选计数 + 批量训练 / 批量更新 / 批量删除（右对齐）
+        // 右侧：已选计数 + 批量操作按钮
         checkedCountLabel = new JLabel("已选 0 条");
         checkedCountLabel.setForeground(Color.GRAY);
         checkedCountLabel.setFont(UiConstants.FONT_SANS_11);
-        actionPanel.add(checkedCountLabel);
+        filterRight.add(checkedCountLabel);
+        // 批量操作按钮
         JButton trainBtn = ButtonFactory.createPill("批量训练", UiConstants.COLOR_PRIMARY, UiConstants.COLOR_PRIMARY_LIGHT);
         trainBtn.setToolTipText("触发勾选问题的训练（点击表头复选框可全选当前页）");
         trainBtn.addActionListener(e -> triggerTrainingQuestions());
-        actionPanel.add(trainBtn);
+        filterRight.add(trainBtn);
         JButton batchUpdateBtn = ButtonFactory.createPill("批量更新", UiConstants.COLOR_PRIMARY, UiConstants.COLOR_PRIMARY_LIGHT);
         batchUpdateBtn.setToolTipText("批量更新勾选问题的用户ID、用户Session与训练参数（点击表头复选框可全选当前页）");
         batchUpdateBtn.addActionListener(e -> batchUpdateUserQuestions());
-        actionPanel.add(batchUpdateBtn);
+        filterRight.add(batchUpdateBtn);
         JButton batchDeleteBtn = ButtonFactory.createPill("批量删除", UiConstants.COLOR_DANGER, UiConstants.COLOR_DANGER_LIGHT);
         batchDeleteBtn.setToolTipText("批量删除勾选的问题，删除后不可恢复（点击表头复选框可全选当前页）");
         batchDeleteBtn.addActionListener(e -> batchDeleteQuestions());
-        actionPanel.add(batchDeleteBtn);
-        toolbar.add(filterPanel, BorderLayout.CENTER);
-        toolbar.add(actionPanel, BorderLayout.EAST);
+        filterRight.add(batchDeleteBtn);
+        
+        filterRow1.add(filterLeft, BorderLayout.WEST);
+        filterRow1.add(filterRight, BorderLayout.EAST);
+        toolbar.add(filterRow1, BorderLayout.NORTH);
+        // 第二行：项目 + 用户筛选（默认隐藏）
+        filterRow2.add(new JLabel("项目："));
+        // 项目筛选：选项由已加载问题列表的项目名称动态生成，选中后本地过滤列表
+        projectFilterCombo = new JComboBox<>();
+        projectFilterCombo.addItem(ALL_PROJECT);
+        projectFilterCombo.setPreferredSize(new Dimension(160, 26));
+        projectFilterCombo.setToolTipText("按项目过滤问题列表，选项来自当前环境问题列表的项目名称");
+        projectFilterCombo.addActionListener(e -> onProjectFilterChanged());
+        filterRow2.add(projectFilterCombo);
+        filterRow2.add(new JLabel("用户："));
+        // 用户筛选：选项来自 userOptions（格式"userId - userName"），选中后本地过滤列表
+        userFilterCombo = new JComboBox<>();
+        userFilterCombo.addItem(ALL_USER);
+        for (String userOption : userOptions) {
+            userFilterCombo.addItem(formatUserOption(userOption));
+        }
+        userFilterCombo.setPreferredSize(new Dimension(160, 26));
+        userFilterCombo.setToolTipText("按用户过滤问题列表，选项来自当前环境用户列表");
+        userFilterCombo.addActionListener(e -> {
+            if (!suppressUserFilterEvents) {
+                currentPage = 1;
+                applyLocalFilterAndPaging();
+            }
+        });
+        filterRow2.add(userFilterCombo);
+        toolbar.add(filterRow2, BorderLayout.SOUTH);
         panel.add(toolbar, BorderLayout.NORTH);
         
         // 问题表格
@@ -1663,7 +1765,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         questionTable.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         questionTable.setRowHeight(28);
         questionTable.getTableHeader().setReorderingAllowed(false);
-        int[] columnWidths = {CHECK_COLUMN_WIDTH, 50, 100, 280, 90, 120, 150, 150, 90, 80, 90, 140, 140, 100, 110, ACTION_COLUMN_WIDTH};
+        int[] columnWidths = {CHECK_COLUMN_WIDTH, 50, 280, 90, 120, 100, 150, 150, 90, 80, 90, 140, 140, 100, 110, ACTION_COLUMN_WIDTH};
         for (int i = 0; i < columnWidths.length; i++) {
             questionTable.getColumnModel().getColumn(i).setPreferredWidth(columnWidths[i]);
         }
@@ -1985,10 +2087,11 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         String keyword = searchField.getText().trim().toLowerCase();
         String classifyFilter = selectedClassifyFilter();
         String projectFilter = selectedProjectFilter();
+        String userFilter = selectedUserFilter();
         Integer statusFilter = selectedTrainingStatusFilter();
         List<AiQuestion> filtered = new ArrayList<>();
         for (AiQuestion item : allQuestions) {
-            if (matchesKeyword(item, keyword) && matchesClassify(item, classifyFilter) && matchesProject(item, projectFilter) && matchesTrainingStatus(item, statusFilter)) {
+            if (matchesKeyword(item, keyword) && matchesClassify(item, classifyFilter) && matchesProject(item, projectFilter) && matchesUserFilter(item, userFilter) && matchesTrainingStatus(item, statusFilter)) {
                 filtered.add(item);
             }
         }
@@ -2155,6 +2258,70 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     }
     
     /**
+     * 将 userOptions 中的“userId - userName”格式转换为“userName（userId）”展示格式
+     */
+    private String formatUserOption(String userOption) {
+        if (userOption == null) {
+            return "";
+        }
+        int dashIndex = userOption.indexOf(" - ");
+        if (dashIndex > 0) {
+            String userId = userOption.substring(0, dashIndex).trim();
+            String userName = userOption.substring(dashIndex + 3).trim();
+            return userName + "（" + userId + "）";
+        }
+        return userOption;
+    }
+    
+    /**
+     * 当前选中的用户筛选 userId（null 表示『全部用户』，不参与过滤）
+     */
+    private String selectedUserFilter() {
+        Object selected = userFilterCombo.getSelectedItem();
+        String text = selected != null ? selected.toString() : null;
+        if (text == null || ALL_USER.equals(text)) {
+            return null;
+        }
+        // 从“userName（userId）”格式中提取 userId
+        return extractUserIdFromDisplayText(text);
+    }
+    
+    /**
+     * 从“userName（userId）”展示文本中提取 userId
+     */
+    private String extractUserIdFromDisplayText(String displayText) {
+        if (displayText == null) {
+            return "";
+        }
+        int leftParen = displayText.lastIndexOf("（");
+        int rightParen = displayText.lastIndexOf("）");
+        if (leftParen > 0 && rightParen > leftParen) {
+            return displayText.substring(leftParen + 1, rightParen).trim();
+        }
+        return displayText.trim();
+    }
+    
+    /**
+     * 用户筛选匹配（按 userId 精确匹配）
+     */
+    private boolean matchesUserFilter(AiQuestion question, String userIdFilter) {
+        if (userIdFilter == null) {
+            return true;
+        }
+        return userIdFilter.equals(nullToEmpty(question.getUserId()).trim());
+    }
+    
+    /**
+     * 回复列表用户筛选匹配（按 userId 精确匹配）
+     */
+    private boolean matchesAnswerUserFilter(AiAnswer answer, String userIdFilter) {
+        if (userIdFilter == null) {
+            return true;
+        }
+        return userIdFilter.equals(nullToEmpty(answer.getUserId()).trim());
+    }
+    
+    /**
      * 搜索关键字变化：回到第一页并刷新列表（缓存未失效时为本地过滤，无需重新拉取接口）
      */
     private void onSearchFieldChanged() {
@@ -2177,21 +2344,24 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     }
     
     /**
-     * 重置问题列表筛选条件：清空关键字并恢复分类 / 项目 / 训练状态为全部，回到第一页重新从接口查询
+     * 重置问题列表筛选条件：清空关键字并恢复分类 / 项目 / 用户 / 训练状态为全部，回到第一页重新从接口查询
      */
     private void resetQuestionFilters() {
         // 抑制各筛选组件的联动刷新，避免中间状态触发条件不完整的接口加载，由下方统一触发一次查询
         suppressQuestionFilterEvents = true;
         suppressClassifyEvents = true;
         suppressProjectFilterEvents = true;
+        suppressUserFilterEvents = true;
         try {
             searchField.setText("");
             statusFilterCombo.setSelectedIndex(0);
             classifyFilterCombo.setSelectedItem(ALL_CLASSIFY);
             projectFilterCombo.setSelectedItem(ALL_PROJECT);
+            userFilterCombo.setSelectedItem(ALL_USER);
         } finally {
             suppressClassifyEvents = false;
             suppressProjectFilterEvents = false;
+            suppressUserFilterEvents = false;
             suppressQuestionFilterEvents = false;
         }
         currentPage = 1;
@@ -2951,10 +3121,13 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         JPanel panel = new JPanel(new BorderLayout(0, 6));
         panel.setBorder(BorderFactory.createTitledBorder("问题回复列表"));
         
-        // 工具栏：左侧筛选（问题 / 回复内容模糊查询 + 允许修改筛选 + 查询 / 重置按钮），右侧批量操作（已选计数 + 批量更新 / 批量删除）
-        JPanel toolbar = new JPanel(new BorderLayout(6, 2));
-        JPanel filterPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
-        JPanel actionPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 2));
+        // 工具栏：筛选条件 + 查询 / 重置 | 批量更新 / 批量删除（靠右），项目 + 用户第二行默认隐藏
+        JPanel toolbar = new JPanel(new BorderLayout(0, 2));
+        JPanel answerFilterRow1 = new JPanel(new BorderLayout());
+        JPanel answerFilterLeft = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+        JPanel answerFilterRight = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 2));
+        JPanel answerFilterRow2 = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+        answerFilterRow2.setVisible(false);
         // 问题 / 回复内容关键字：输入后按回车或点击『查 询』触发接口查询（筛选参数随请求提交给接口）
         answerQueryField = new CustomTextField("问题关键字模糊查询");
         answerQueryField.setMinWidth(180);
@@ -2964,9 +3137,9 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         answerTextField.setMinWidth(180);
         answerTextField.setToolTipText("按回复内容模糊查询（输入后按回车或点击『查 询』）");
         answerTextField.addActionListener(e -> triggerAnswerSearch());
-        filterPanel.add(answerQueryField);
-        filterPanel.add(answerTextField);
-        filterPanel.add(new JLabel("允许修改："));
+        answerFilterLeft.add(answerQueryField);
+        answerFilterLeft.add(answerTextField);
+        answerFilterLeft.add(new JLabel("允许修改："));
         allowModifyFilterCombo = new JComboBox<>(new String[] {ALLOW_MODIFY_ALL, ALLOW_MODIFY_YES, ALLOW_MODIFY_NO});
         allowModifyFilterCombo.setPreferredSize(new Dimension(112, 26));
         allowModifyFilterCombo.setToolTipText("按是否允许修改过滤回复列表");
@@ -2975,8 +3148,8 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
                 triggerAnswerSearch();
             }
         });
-        filterPanel.add(allowModifyFilterCombo);
-        filterPanel.add(new JLabel("来源训练："));
+        answerFilterLeft.add(allowModifyFilterCombo);
+        answerFilterLeft.add(new JLabel("来源训练："));
         sourceTrainingFilterCombo = new JComboBox<>(new String[] {SOURCE_TRAINING_ALL, SOURCE_TRAINING_YES, SOURCE_TRAINING_NO});
         sourceTrainingFilterCombo.setPreferredSize(new Dimension(90, 26));
         sourceTrainingFilterCombo.setToolTipText("按是否来源训练过滤回复列表");
@@ -2985,8 +3158,61 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
                 triggerAnswerSearch();
             }
         });
-        filterPanel.add(sourceTrainingFilterCombo);
-        filterPanel.add(new JLabel("项目："));
+        answerFilterLeft.add(sourceTrainingFilterCombo);
+        JButton answerSearchBtn = ButtonFactory.createPill("查询", UiConstants.COLOR_SUCCESS, UiConstants.COLOR_SUCCESS_LIGHT);
+        answerSearchBtn.addActionListener(e -> triggerAnswerSearch());
+        answerFilterLeft.add(answerSearchBtn);
+        // 重置：清空问题 / 回复关键字并恢复允许修改 / 来源训练筛选为全部，回到第一页重新查询
+        JButton answerResetBtn = ButtonFactory.createPill("重置", UiConstants.COLOR_NEUTRAL, UiConstants.COLOR_NEUTRAL_LIGHT);
+        answerResetBtn.setToolTipText("清空问题 / 回复关键字并恢复允许修改 / 来源训练 / 项目 / 用户为全部，回到第一页重新查询");
+        answerResetBtn.addActionListener(e -> resetAnswerFilters());
+        answerFilterLeft.add(answerResetBtn);
+        // 更多条件展开链接（超文本样式）
+        JLabel answerMoreConditionLink = new JLabel("<html><a href=\"#\">更多条件 &#9662;</a></html>");
+        answerMoreConditionLink.setToolTipText("展开 / 收起项目、用户筛选条件");
+        answerMoreConditionLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        final String answerExpandedText = "<html><a href=\"#\">收起条件 &#9650;</a></html>";
+        final String answerCollapsedText = "<html><a href=\"#\">更多条件 &#9662;</a></html>";
+        answerMoreConditionLink.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                boolean show = !answerFilterRow2.isVisible();
+                answerFilterRow2.setVisible(show);
+                answerMoreConditionLink.setText(show ? answerExpandedText : answerCollapsedText);
+                toolbar.revalidate();
+                toolbar.repaint();
+            }
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                answerMoreConditionLink.setForeground(new Color(59, 72, 221));
+            }
+            @Override
+            public void mouseExited(MouseEvent e) {
+                answerMoreConditionLink.setForeground(new Color(0x1A, 0x73, 0xE8));
+            }
+        });
+        answerFilterLeft.add(answerMoreConditionLink);
+        
+        // 右侧：已选计数 + 批量操作按钮
+        answerCheckedCountLabel = new JLabel("已选 0 条");
+        answerCheckedCountLabel.setForeground(Color.GRAY);
+        answerCheckedCountLabel.setFont(UiConstants.FONT_SANS_11);
+        answerFilterRight.add(answerCheckedCountLabel);
+        // 批量操作按钮
+        JButton answerBatchUpdateBtn = ButtonFactory.createPill("批量更新", UiConstants.COLOR_PRIMARY, UiConstants.COLOR_PRIMARY_LIGHT);
+        answerBatchUpdateBtn.setToolTipText("批量更新勾选回复的是否允许修改状态（点击表头复选框可全选当前页）");
+        answerBatchUpdateBtn.addActionListener(e -> batchUpdateAnswers());
+        answerFilterRight.add(answerBatchUpdateBtn);
+        JButton answerBatchDeleteBtn = ButtonFactory.createPill("批量删除", UiConstants.COLOR_DANGER, UiConstants.COLOR_DANGER_LIGHT);
+        answerBatchDeleteBtn.setToolTipText("批量删除勾选的问题回复，删除后不可恢复（点击表头复选框可全选当前页）");
+        answerBatchDeleteBtn.addActionListener(e -> batchDeleteAnswers());
+        answerFilterRight.add(answerBatchDeleteBtn);
+        
+        answerFilterRow1.add(answerFilterLeft, BorderLayout.WEST);
+        answerFilterRow1.add(answerFilterRight, BorderLayout.EAST);
+        toolbar.add(answerFilterRow1, BorderLayout.NORTH);
+        // 第二行：项目 + 用户筛选（默认隐藏）
+        answerFilterRow2.add(new JLabel("项目："));
         // 项目筛选：选项由已加载回复列表的项目名称动态生成，选中后本地过滤列表
         answerProjectFilterCombo = new JComboBox<>();
         answerProjectFilterCombo.addItem(ALL_PROJECT);
@@ -2998,31 +3224,24 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
                 applyAnswerPaging();
             }
         });
-        filterPanel.add(answerProjectFilterCombo);
-        JButton answerSearchBtn = ButtonFactory.createPill("查询", UiConstants.COLOR_SUCCESS, UiConstants.COLOR_SUCCESS_LIGHT);
-        answerSearchBtn.addActionListener(e -> triggerAnswerSearch());
-        filterPanel.add(answerSearchBtn);
-        // 重置：清空问题 / 回复关键字并恢复允许修改 / 来源训练筛选为全部，回到第一页重新查询
-        JButton answerResetBtn = ButtonFactory.createPill("重置", UiConstants.COLOR_NEUTRAL, UiConstants.COLOR_NEUTRAL_LIGHT);
-        answerResetBtn.setToolTipText("清空问题 / 回复关键字并恢复允许修改 / 来源训练 / 项目为全部，回到第一页重新查询");
-        answerResetBtn.addActionListener(e -> resetAnswerFilters());
-        filterPanel.add(answerResetBtn);
-        
-        // 右侧批量操作组：已选计数 + 批量更新 / 批量删除（右对齐）
-        answerCheckedCountLabel = new JLabel("已选 0 条");
-        answerCheckedCountLabel.setForeground(Color.GRAY);
-        answerCheckedCountLabel.setFont(UiConstants.FONT_SANS_11);
-        actionPanel.add(answerCheckedCountLabel);
-        JButton answerBatchUpdateBtn = ButtonFactory.createPill("批量更新", UiConstants.COLOR_PRIMARY, UiConstants.COLOR_PRIMARY_LIGHT);
-        answerBatchUpdateBtn.setToolTipText("批量更新勾选回复的是否允许修改状态（点击表头复选框可全选当前页）");
-        answerBatchUpdateBtn.addActionListener(e -> batchUpdateAnswers());
-        actionPanel.add(answerBatchUpdateBtn);
-        JButton answerBatchDeleteBtn = ButtonFactory.createPill("批量删除", UiConstants.COLOR_DANGER, UiConstants.COLOR_DANGER_LIGHT);
-        answerBatchDeleteBtn.setToolTipText("批量删除勾选的问题回复，删除后不可恢复（点击表头复选框可全选当前页）");
-        answerBatchDeleteBtn.addActionListener(e -> batchDeleteAnswers());
-        actionPanel.add(answerBatchDeleteBtn);
-        toolbar.add(filterPanel, BorderLayout.CENTER);
-        toolbar.add(actionPanel, BorderLayout.EAST);
+        answerFilterRow2.add(answerProjectFilterCombo);
+        answerFilterRow2.add(new JLabel("用户："));
+        // 用户筛选：选项来自 userOptions（格式"userId - userName"），选中后本地过滤列表
+        answerUserFilterCombo = new JComboBox<>();
+        answerUserFilterCombo.addItem(ALL_USER);
+        for (String userOption : userOptions) {
+            answerUserFilterCombo.addItem(formatUserOption(userOption));
+        }
+        answerUserFilterCombo.setPreferredSize(new Dimension(160, 26));
+        answerUserFilterCombo.setToolTipText("按用户过滤回复列表，选项来自当前环境用户列表");
+        answerUserFilterCombo.addActionListener(e -> {
+            if (!suppressAnswerFilterEvents) {
+                answerCurrentPage = 1;
+                applyAnswerPaging();
+            }
+        });
+        answerFilterRow2.add(answerUserFilterCombo);
+        toolbar.add(answerFilterRow2, BorderLayout.SOUTH);
         panel.add(toolbar, BorderLayout.NORTH);
         
         // 回复表格
@@ -3031,7 +3250,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         answerTable.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         answerTable.setRowHeight(28);
         answerTable.getTableHeader().setReorderingAllowed(false);
-        int[] columnWidths = {CHECK_COLUMN_WIDTH, 50, 100, 240, 240, 90, 90, 90, 130, 130, ANSWER_ACTION_COLUMN_WIDTH};
+        int[] columnWidths = {CHECK_COLUMN_WIDTH, 50, 240, 240, 90, 100, 90, 90, 130, 130, ANSWER_ACTION_COLUMN_WIDTH};
         for (int i = 0; i < columnWidths.length; i++) {
             answerTable.getColumnModel().getColumn(i).setPreferredWidth(columnWidths[i]);
         }
@@ -3159,10 +3378,10 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     }
     
     /**
-     * 重置回复审计筛选条件：清空问题 / 回复关键字并恢复允许修改 / 来源训练 / 项目为全部，回到第一页重新查询
+     * 重置回复审计筛选条件：清空问题 / 回复关键字并恢复允许修改 / 来源训练 / 项目 / 用户为全部，回到第一页重新查询
      */
     private void resetAnswerFilters() {
-        // 抑制允许修改 / 来源训练 / 项目筛选的联动刷新，避免中间状态触发条件不完整的接口加载，由下方统一触发一次查询
+        // 抑制允许修改 / 来源训练 / 项目 / 用户筛选的联动刷新，避免中间状态触发条件不完整的接口加载，由下方统一触发一次查询
         suppressAnswerFilterEvents = true;
         try {
             answerQueryField.setText("");
@@ -3170,6 +3389,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             allowModifyFilterCombo.setSelectedIndex(0);
             sourceTrainingFilterCombo.setSelectedIndex(0);
             answerProjectFilterCombo.setSelectedItem(ALL_PROJECT);
+            answerUserFilterCombo.setSelectedItem(ALL_USER);
         } finally {
             suppressAnswerFilterEvents = false;
         }
@@ -3259,9 +3479,10 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
      */
     private void applyAnswerPaging() {
         String answerProjectFilter = selectedAnswerProjectFilter();
+        String answerUserFilter = selectedAnswerUserFilter();
         List<AiAnswer> sorted = new ArrayList<>();
         for (AiAnswer item : loadedAnswers) {
-            if (matchesAnswerProject(item, answerProjectFilter)) {
+            if (matchesAnswerProject(item, answerProjectFilter) && matchesAnswerUserFilter(item, answerUserFilter)) {
                 sorted.add(item);
             }
         }
@@ -3437,6 +3658,21 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     }
     
     /**
+     * 当前选中的回复列表用户筛选 userId（null 表示『全部用户』，不参与过滤）
+     */
+    private String selectedAnswerUserFilter() {
+        if (answerUserFilterCombo == null) {
+            return null;
+        }
+        Object selected = answerUserFilterCombo.getSelectedItem();
+        String text = selected != null ? selected.toString() : null;
+        if (text == null || ALL_USER.equals(text)) {
+            return null;
+        }
+        return extractUserIdFromDisplayText(text);
+    }
+    
+    /**
      * 回复审计表格点击处理：复选框列单击切换勾选；操作列三等分区域查看详情 / 编辑 / 删除；问题 / 回复内容列双击进入选择复制模式；其它列双击编辑；空白区域双击切换全屏
      */
     private void handleAnswerTableClick(MouseEvent e) {
@@ -3548,6 +3784,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         JTextArea replyArea = new JTextArea(nullToEmpty(answer.getAnswer()), 15, 30);
         replyArea.setLineWrap(true);
         replyArea.setWrapStyleWord(true);
+        JLabel projectNameLabel = new JLabel(nullToEmpty(answer.getProjectName()));
         JComboBox<String> allowModifyCombo = new JComboBox<>(new String[] {ALLOW_MODIFY_YES, ALLOW_MODIFY_NO});
         allowModifyCombo.setSelectedIndex(answer.isModifyAllowed() ? 0 : 1);
         
@@ -3558,7 +3795,8 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         addFormRow(form, gbc, 0, new JLabel("环境："), new JLabel(nullToEmpty(answer.getEnvName())));
         addFormRow(form, gbc, 1, new JLabel("问题："), dialogScroll(queryArea, 2));
         addFormRow(form, gbc, 2, new JLabel("回复内容："), dialogScroll(replyArea, 15));
-        addFormRow(form, gbc, 3, new JLabel("是否允许修改："), allowModifyCombo);
+        addFormRow(form, gbc, 3, new JLabel("所属项目："), projectNameLabel);
+        addFormRow(form, gbc, 4, new JLabel("是否允许修改："), allowModifyCombo);
         
         int option = JOptionPane.showConfirmDialog(this, form, "编辑回复", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
         if (option != JOptionPane.OK_OPTION) {
@@ -3586,7 +3824,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             return;
         }
         runApiTask("更新回复", () -> {
-            String message = AiQuestionApiClient.getInstance().updateAnswer(envConfig, answer.getId(), newQuery, newReply, newAllowModify);
+            String message = AiQuestionApiClient.getInstance().updateAnswer(envConfig, answer.getId(), newQuery, newReply, newAllowModify, null);
             return () -> {
                 invalidateAnswers();
                 refreshAnswerTable();
@@ -4198,7 +4436,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
      */
     private static class QuestionTableModel extends AbstractTableModel {
         
-        private final String[] columns = {"选择", "ID", "所属项目", "问题", "分类", "用户ID", "训练参数", "固定回复", "回复ID", "开启训练", "训练状态", "开始训练时间",
+        private final String[] columns = {"选择", "ID", "问题", "分类", "所属用户", "所属项目", "训练参数", "固定回复", "回复ID", "开启训练", "训练状态", "开始训练时间",
                 "最近完成训练时间", "训练耗时(秒)", "备注", "操作"};
         
         private final List<AiQuestion> questions = new ArrayList<>();
@@ -4376,7 +4614,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
      */
     private static class AnswerTableModel extends AbstractTableModel {
         
-        private final String[] columns = {"选择", "ID", "所属项目", "问题", "回复内容", "用户ID", "是否允许修改", "是否来源训练", "创建时间", "更新时间", "操作"};
+        private final String[] columns = {"选择", "ID", "问题", "回复内容", "所属用户", "所属项目", "是否允许修改", "是否来源训练", "创建时间", "更新时间", "操作"};
         
         private final List<AiAnswer> answers = new ArrayList<>();
         
