@@ -26,6 +26,11 @@ public class AiQuestion {
     public static final int TRAINING_DISABLED = 2;
     
     /**
+     * 训练状态：初始状态
+     */
+    public static final int TRAINING_STATUS_INITIAL = -2;
+    
+    /**
      * 训练状态：待训练（尚未触发过训练）
      */
     public static final int TRAINING_STATUS_PENDING = -1;
@@ -55,6 +60,11 @@ public class AiQuestion {
      */
     public static final int TRAINING_STATUS_TIMEOUT = 4;
     
+    /**
+     * 训练状态：同步失败(给答案表)
+     */
+    public static final int TRAINING_STATUS_SYNC_FAILED = 5;
+    
     private Long id;
     
     /**
@@ -62,6 +72,11 @@ public class AiQuestion {
      */
     @JsonIgnore
     private String envName;
+    
+    /**
+     * 所属项目名称（接口返回数据，客户端仅展示）
+     */
+    private String projectName;
     
     /**
      * 问题内容
@@ -99,7 +114,7 @@ public class AiQuestion {
     private String trainingParam;
     
     /**
-     * 训练状态：-1-待训练；0-成功；1-失败；2-成功(同步回复)；3-训练中；4-超时（接口返回数据，客户端仅展示）
+     * 训练状态：-2-初始状态；-1-待训练；0-成功；1-失败；2-成功(同步回复)；3-训练中；4-超时；5-同步失败(给答案表)（接口返回数据，客户端仅展示）
      */
     private Integer trainingStatus;
     

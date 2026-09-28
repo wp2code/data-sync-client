@@ -126,14 +126,14 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     private static final String ALL_TRAINING_STATUS = "全部状态";
     
     /**
-     * 训练状态筛选项文字（下标即训练状态值：-1-待训练；0-成功；1-失败；2-成功(同步回复)；3-训练中；4-超时）
+     * 训练状态筛选项文字（下标对应训练状态值 +2：-2-初始状态；-1-待训练；0-成功；1-失败；2-同步成功(给答案表)；3-训练中；4-超时；5-同步失败(给答案表)）
      */
-    private static final String[] TRAINING_STATUS_TEXTS = {"待训练", "成功", "失败", "成功(同步回复)", "训练中", "超时"};
+    private static final String[] TRAINING_STATUS_TEXTS = {"初始状态", "待训练", "成功", "失败", "同步成功(给答案表)", "训练中", "超时", "同步失败(给答案表)"};
     
     /**
-     * 训练状态筛选下拉选项对应的训练状态值（顺序与 TRAINING_STATUS_TEXTS 一致：下标 0 为待训练 -1，其余为状态值本身）
+     * 训练状态筛选下拉选项对应的训练状态值（顺序与 TRAINING_STATUS_TEXTS 一致）
      */
-    private static final int[] TRAINING_STATUS_VALUES = {AiQuestion.TRAINING_STATUS_PENDING, 0, 1, 2, 3, 4};
+    private static final int[] TRAINING_STATUS_VALUES = {AiQuestion.TRAINING_STATUS_INITIAL, AiQuestion.TRAINING_STATUS_PENDING, 0, 1, 2, 3, 4, 5};
     
     /**
      * 训练时间展示格式（接口返回毫秒时间戳，展示时按本地时区格式化）
@@ -159,34 +159,36 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     
     private static final int COL_ID = 1;
     
-    private static final int COL_QUESTION = 2;
+    private static final int COL_PROJECT = 2;
     
-    private static final int COL_CLASSIFY = 3;
+    private static final int COL_QUESTION = 3;
     
-    private static final int COL_USER = 4;
+    private static final int COL_CLASSIFY = 4;
     
-    private static final int COL_TRAINING_PARAM = 5;
+    private static final int COL_USER = 5;
     
-    private static final int COL_ANSWER = 6;
+    private static final int COL_TRAINING_PARAM = 6;
     
-    private static final int COL_ANSWER_ID = 7;
+    private static final int COL_ANSWER = 7;
     
-    private static final int COL_ENABLE = 8;
+    private static final int COL_ANSWER_ID = 8;
     
-    private static final int COL_TRAINING_STATUS = 9;
+    private static final int COL_ENABLE = 9;
     
-    private static final int COL_START_TRAINING_TIME = 10;
+    private static final int COL_TRAINING_STATUS = 10;
     
-    private static final int COL_LAST_TRAINING_TIME = 11;
+    private static final int COL_START_TRAINING_TIME = 11;
+    
+    private static final int COL_LAST_TRAINING_TIME = 12;
     
     /**
      * 训练耗时列（最近完成训练时间 - 开始训练时间，单位秒）
      */
-    private static final int COL_TRAINING_COST = 12;
+    private static final int COL_TRAINING_COST = 13;
     
-    private static final int COL_REMARK = 13;
+    private static final int COL_REMARK = 14;
     
-    private static final int COL_ACTION = 14;
+    private static final int COL_ACTION = 15;
     
     /**
      * 复选框列固定宽度
@@ -227,21 +229,23 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     
     private static final int ACOL_ID = 1;
     
-    private static final int ACOL_QUERY = 2;
+    private static final int ACOL_PROJECT = 2;
     
-    private static final int ACOL_ANSWER = 3;
+    private static final int ACOL_QUERY = 3;
     
-    private static final int ACOL_USER = 4;
+    private static final int ACOL_ANSWER = 4;
     
-    private static final int ACOL_MODIFY = 5;
+    private static final int ACOL_USER = 5;
     
-    private static final int ACOL_SOURCE_TRAINING = 6;
+    private static final int ACOL_MODIFY = 6;
     
-    private static final int ACOL_CREATE_TIME = 7;
+    private static final int ACOL_SOURCE_TRAINING = 7;
     
-    private static final int ACOL_UPDATE_TIME = 8;
+    private static final int ACOL_CREATE_TIME = 8;
     
-    private static final int ACOL_ACTION = 9;
+    private static final int ACOL_UPDATE_TIME = 9;
+    
+    private static final int ACOL_ACTION = 10;
     
     /**
      * 回复审计允许修改筛选下拉的『全部』选项（选中时不过滤该状态）
@@ -1377,7 +1381,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             statusFilterCombo.addItem(statusText);
         }
         statusFilterCombo.setPreferredSize(new Dimension(126, 26));
-        statusFilterCombo.setToolTipText("按训练状态过滤问题列表（-1-待训练；0-成功；1-失败；2-成功(同步回复)；3-训练中；4-超时）");
+        statusFilterCombo.setToolTipText("按训练状态过滤问题列表（-2-初始状态；-1-待训练；0-成功；1-失败；2-同步成功(给答案表)；3-训练中；4-超时；5-同步失败(给答案表)）");
         statusFilterCombo.addActionListener(e -> onTrainingStatusFilterChanged());
         filterPanel.add(statusFilterCombo);
         // 筛选动作按钮：胶囊描边样式（常态轻填充 + 彩色描边，悬浮 / 按下填充反白，与操作列按钮同一视觉语言）
@@ -1421,7 +1425,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         questionTable.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         questionTable.setRowHeight(28);
         questionTable.getTableHeader().setReorderingAllowed(false);
-        int[] columnWidths = {CHECK_COLUMN_WIDTH, 50, 280, 90, 120, 150, 150, 90, 80, 90, 140, 140, 100, 110, ACTION_COLUMN_WIDTH};
+        int[] columnWidths = {CHECK_COLUMN_WIDTH, 50, 100, 280, 90, 120, 150, 150, 90, 80, 90, 140, 140, 100, 110, ACTION_COLUMN_WIDTH};
         for (int i = 0; i < columnWidths.length; i++) {
             questionTable.getColumnModel().getColumn(i).setPreferredWidth(columnWidths[i]);
         }
@@ -1436,6 +1440,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         actionColumn.setMinWidth(ACTION_COLUMN_WIDTH);
         actionColumn.setMaxWidth(ACTION_COLUMN_WIDTH);
         questionTable.getColumnModel().getColumn(COL_ID).setCellRenderer(centeredRenderer());
+        questionTable.getColumnModel().getColumn(COL_PROJECT).setCellRenderer(new TextCellRenderer(16));
         questionTable.getColumnModel().getColumn(COL_QUESTION).setCellRenderer(new TextCellRenderer(48));
         questionTable.getColumnModel().getColumn(COL_CLASSIFY).setCellRenderer(new TextCellRenderer(12));
         questionTable.getColumnModel().getColumn(COL_USER).setCellRenderer(new TextCellRenderer(20));
@@ -1969,21 +1974,22 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         gbc.anchor = GridBagConstraints.WEST;
         addFormRow(form, gbc, 0, new JLabel("环境："), new JLabel(nullToEmpty(question.getEnvName())));
         addFormRow(form, gbc, 1, new JLabel("ID："), new JLabel(question.getId() != null ? String.valueOf(question.getId()) : ""));
-        addFormRow(form, gbc, 2, new JLabel("问题："), readonlyArea(nullToEmpty(question.getQuestion()), 2));
-        addFormRow(form, gbc, 3, new JLabel("用户ID："), readonlyField(nullToEmpty(question.getUserId())));
-        addFormRow(form, gbc, 4, new JLabel("用户Session："), readonlyArea(nullToEmpty(question.getUserSession()), 2));
-        addFormRow(form, gbc, 5, new JLabel("分类："), readonlyField(nullToEmpty(question.getQuestionClassify())));
-        addFormRow(form, gbc, 6, new JLabel("训练参数："), readonlyArea(nullToEmpty(question.getTrainingParam()), 4));
-        addFormRow(form, gbc, 7, new JLabel("固定回复："), readonlyArea(nullToEmpty(question.getAnswer()), 10));
-        addFormRow(form, gbc, 8, new JLabel("回复ID："), new JLabel(question.getAnswerId() != null ? String.valueOf(question.getAnswerId()) : ""));
-        addFormRow(form, gbc, 9, new JLabel("开启训练："), new JLabel(question.isTrainingEnabled() ? "开启" : "不开启"));
-        addFormRow(form, gbc, 10, new JLabel("训练状态："), new JLabel(trainingStatusText(question.getTrainingStatus())));
-        addFormRow(form, gbc, 11, new JLabel("开始训练时间："), new JLabel(formatEpochMillis(question.getStartTrainingTime())));
-        addFormRow(form, gbc, 12, new JLabel("最近完成训练时间："), new JLabel(formatEpochMillis(question.getLastTrainingTime())));
+        addFormRow(form, gbc, 2, new JLabel("所属项目："), new JLabel(nullToEmpty(question.getProjectName())));
+        addFormRow(form, gbc, 3, new JLabel("问题："), readonlyArea(nullToEmpty(question.getQuestion()), 2));
+        addFormRow(form, gbc, 4, new JLabel("用户ID："), readonlyField(nullToEmpty(question.getUserId())));
+        addFormRow(form, gbc, 5, new JLabel("用户Session："), readonlyArea(nullToEmpty(question.getUserSession()), 2));
+        addFormRow(form, gbc, 6, new JLabel("分类："), readonlyField(nullToEmpty(question.getQuestionClassify())));
+        addFormRow(form, gbc, 7, new JLabel("训练参数："), readonlyArea(nullToEmpty(question.getTrainingParam()), 4));
+        addFormRow(form, gbc, 8, new JLabel("固定回复："), readonlyArea(nullToEmpty(question.getAnswer()), 10));
+        addFormRow(form, gbc, 9, new JLabel("回复ID："), new JLabel(question.getAnswerId() != null ? String.valueOf(question.getAnswerId()) : ""));
+        addFormRow(form, gbc, 10, new JLabel("开启训练："), new JLabel(question.isTrainingEnabled() ? "开启" : "不开启"));
+        addFormRow(form, gbc, 11, new JLabel("训练状态："), new JLabel(trainingStatusText(question.getTrainingStatus())));
+        addFormRow(form, gbc, 12, new JLabel("开始训练时间："), new JLabel(formatEpochMillis(question.getStartTrainingTime())));
+        addFormRow(form, gbc, 13, new JLabel("最近完成训练时间："), new JLabel(formatEpochMillis(question.getLastTrainingTime())));
         String trainingCost = trainingCostText(question);
-        addFormRow(form, gbc, 13, new JLabel("训练耗时："), new JLabel(trainingCost.isEmpty() ? "" : trainingCost + " 秒"));
-        addFormRow(form, gbc, 14, new JLabel("优先级别："), new JLabel(String.valueOf(question.getPriority() != null ? question.getPriority() : 0)));
-        addFormRow(form, gbc, 15, new JLabel("备注："), readonlyArea(nullToEmpty(question.getRemark()), 3));
+        addFormRow(form, gbc, 14, new JLabel("训练耗时："), new JLabel(trainingCost.isEmpty() ? "" : trainingCost + " 秒"));
+        addFormRow(form, gbc, 15, new JLabel("优先级别："), new JLabel(String.valueOf(question.getPriority() != null ? question.getPriority() : 0)));
+        addFormRow(form, gbc, 16, new JLabel("备注："), readonlyArea(nullToEmpty(question.getRemark()), 3));
         JOptionPane.showMessageDialog(this, form, "问题详情", JOptionPane.PLAIN_MESSAGE);
     }
     
@@ -2678,7 +2684,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         answerTable.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         answerTable.setRowHeight(28);
         answerTable.getTableHeader().setReorderingAllowed(false);
-        int[] columnWidths = {CHECK_COLUMN_WIDTH, 50, 240, 240, 90, 90, 90, 130, 130, ANSWER_ACTION_COLUMN_WIDTH};
+        int[] columnWidths = {CHECK_COLUMN_WIDTH, 50, 100, 240, 240, 90, 90, 90, 130, 130, ANSWER_ACTION_COLUMN_WIDTH};
         for (int i = 0; i < columnWidths.length; i++) {
             answerTable.getColumnModel().getColumn(i).setPreferredWidth(columnWidths[i]);
         }
@@ -2694,6 +2700,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         answerActionColumn.setMinWidth(ANSWER_ACTION_COLUMN_WIDTH);
         answerActionColumn.setMaxWidth(ANSWER_ACTION_COLUMN_WIDTH);
         answerTable.getColumnModel().getColumn(ACOL_ID).setCellRenderer(centeredRenderer());
+        answerTable.getColumnModel().getColumn(ACOL_PROJECT).setCellRenderer(new TextCellRenderer(16));
         answerTable.getColumnModel().getColumn(ACOL_QUERY).setCellRenderer(new TextCellRenderer(48));
         answerTable.getColumnModel().getColumn(ACOL_ANSWER).setCellRenderer(new TextCellRenderer(48));
         // 问题 / 回复内容列：双击进入只读选择复制模式（文字自动全选，可拖选部分文字复制，不修改数据）
@@ -3100,13 +3107,14 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         gbc.anchor = GridBagConstraints.WEST;
         addFormRow(form, gbc, 0, new JLabel("环境："), new JLabel(nullToEmpty(answer.getEnvName())));
         addFormRow(form, gbc, 1, new JLabel("ID："), new JLabel(answer.getId() != null ? String.valueOf(answer.getId()) : ""));
-        addFormRow(form, gbc, 2, new JLabel("问题："), readonlyArea(nullToEmpty(answer.getQuery()), 2));
-        addFormRow(form, gbc, 3, new JLabel("回复内容："), readonlyArea(nullToEmpty(answer.getAnswer()), 15));
-        addFormRow(form, gbc, 4, new JLabel("用户ID："), readonlyField(nullToEmpty(answer.getUserId())));
-        addFormRow(form, gbc, 5, new JLabel("是否允许修改："), new JLabel(answer.isModifyAllowed() ? ALLOW_MODIFY_YES : ALLOW_MODIFY_NO));
-        addFormRow(form, gbc, 6, new JLabel("是否来源训练："), new JLabel(answer.isFromTraining() ? SOURCE_TRAINING_YES : SOURCE_TRAINING_NO));
-        addFormRow(form, gbc, 7, new JLabel("创建时间："), new JLabel(nullToEmpty(answer.getCreateTime())));
-        addFormRow(form, gbc, 8, new JLabel("更新时间："), new JLabel(nullToEmpty(answer.getUpdateTime())));
+        addFormRow(form, gbc, 2, new JLabel("所属项目："), new JLabel(nullToEmpty(answer.getProjectName())));
+        addFormRow(form, gbc, 3, new JLabel("问题："), readonlyArea(nullToEmpty(answer.getQuery()), 2));
+        addFormRow(form, gbc, 4, new JLabel("回复内容："), readonlyArea(nullToEmpty(answer.getAnswer()), 15));
+        addFormRow(form, gbc, 5, new JLabel("用户ID："), readonlyField(nullToEmpty(answer.getUserId())));
+        addFormRow(form, gbc, 6, new JLabel("是否允许修改："), new JLabel(answer.isModifyAllowed() ? ALLOW_MODIFY_YES : ALLOW_MODIFY_NO));
+        addFormRow(form, gbc, 7, new JLabel("是否来源训练："), new JLabel(answer.isFromTraining() ? SOURCE_TRAINING_YES : SOURCE_TRAINING_NO));
+        addFormRow(form, gbc, 8, new JLabel("创建时间："), new JLabel(nullToEmpty(answer.getCreateTime())));
+        addFormRow(form, gbc, 9, new JLabel("更新时间："), new JLabel(nullToEmpty(answer.getUpdateTime())));
         JOptionPane.showMessageDialog(this, form, "回复详情", JOptionPane.PLAIN_MESSAGE);
     }
     
@@ -3498,33 +3506,31 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     }
     
     /**
-     * 训练状态值 → 展示文字（-1-待训练；0-成功；1-失败；2-成功(同步回复)；3-训练中；4-超时，空 / 越界值显示为空）
+     * 训练状态值 → 展示文字（-2-初始状态；-1-待训练；0-成功；1-失败；2-同步成功(给答案表)；3-训练中；4-超时；5-同步失败(给答案表)，空 / 越界值显示为空）
      */
     private static String trainingStatusText(Integer status) {
         if (status == null) {
             return "";
         }
-        if (status == AiQuestion.TRAINING_STATUS_PENDING) {
-            return TRAINING_STATUS_TEXTS[0];
-        }
-        int nonNegativeIndex = status + 1;
-        if (nonNegativeIndex <= 0 || nonNegativeIndex >= TRAINING_STATUS_TEXTS.length) {
+        int index = status + 2;
+        if (index < 0 || index >= TRAINING_STATUS_TEXTS.length) {
             return "";
         }
-        return TRAINING_STATUS_TEXTS[nonNegativeIndex];
+        return TRAINING_STATUS_TEXTS[index];
     }
     
     /**
-     * 训练状态值 → 展示颜色（待训练琥珀色、成功类绿色、失败 / 超时红色、训练中主色、无状态时灰色）
+     * 训练状态值 → 展示颜色（初始状态灰色、待训练琥珀色、成功类绿色、失败 / 超时 / 同步失败红色、训练中主色、无状态时灰色）
      */
     private static Color trainingStatusColor(Integer status) {
         if (status == null) {
             return Color.GRAY;
         }
         return switch (status) {
+            case AiQuestion.TRAINING_STATUS_INITIAL -> Color.GRAY;
             case AiQuestion.TRAINING_STATUS_PENDING -> UiConstants.COLOR_PENDING;
             case AiQuestion.TRAINING_STATUS_SUCCESS, AiQuestion.TRAINING_STATUS_SUCCESS_ANSWER -> UiConstants.COLOR_SUCCESS;
-            case AiQuestion.TRAINING_STATUS_FAILED, AiQuestion.TRAINING_STATUS_TIMEOUT -> UiConstants.COLOR_DANGER;
+            case AiQuestion.TRAINING_STATUS_FAILED, AiQuestion.TRAINING_STATUS_TIMEOUT, AiQuestion.TRAINING_STATUS_SYNC_FAILED -> UiConstants.COLOR_DANGER;
             case AiQuestion.TRAINING_STATUS_RUNNING -> UiConstants.COLOR_PRIMARY;
             default -> Color.GRAY;
         };
@@ -3724,7 +3730,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
      */
     private static class QuestionTableModel extends AbstractTableModel {
         
-        private final String[] columns = {"选择", "ID", "问题", "分类", "用户ID", "训练参数", "固定回复", "回复ID", "开启训练", "训练状态", "开始训练时间",
+        private final String[] columns = {"选择", "ID", "所属项目", "问题", "分类", "用户ID", "训练参数", "固定回复", "回复ID", "开启训练", "训练状态", "开始训练时间",
                 "最近完成训练时间", "训练耗时(秒)", "备注", "操作"};
         
         private final List<AiQuestion> questions = new ArrayList<>();
@@ -3879,6 +3885,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             return switch (column) {
                 case COL_CHECK -> question.getId() != null ? isChecked(question) : null;
                 case COL_ID -> question.getId();
+                case COL_PROJECT -> nullToEmpty(question.getProjectName());
                 case COL_QUESTION -> nullToEmpty(question.getQuestion());
                 case COL_CLASSIFY -> nullToEmpty(question.getQuestionClassify());
                 case COL_USER -> nullToEmpty(question.getUserId());
@@ -3901,7 +3908,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
      */
     private static class AnswerTableModel extends AbstractTableModel {
         
-        private final String[] columns = {"选择", "ID", "问题", "回复内容", "用户ID", "是否允许修改", "是否来源训练", "创建时间", "更新时间", "操作"};
+        private final String[] columns = {"选择", "ID", "所属项目", "问题", "回复内容", "用户ID", "是否允许修改", "是否来源训练", "创建时间", "更新时间", "操作"};
         
         private final List<AiAnswer> answers = new ArrayList<>();
         
@@ -4055,6 +4062,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             return switch (column) {
                 case ACOL_CHECK -> answer.getId() != null ? isChecked(answer) : null;
                 case ACOL_ID -> answer.getId();
+                case ACOL_PROJECT -> nullToEmpty(answer.getProjectName());
                 case ACOL_QUERY -> nullToEmpty(answer.getQuery());
                 case ACOL_ANSWER -> nullToEmpty(answer.getAnswer());
                 case ACOL_USER -> nullToEmpty(answer.getUserId());

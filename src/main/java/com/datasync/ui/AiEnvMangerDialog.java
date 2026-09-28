@@ -73,6 +73,10 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
     
     private JTextField answerDeleteApiField;
     
+    private JTextField userListApiField;
+    
+    private JTextField projectListApiField;
+    
     private JTextField remarkField;
     
     private JTable headerTable;
@@ -199,6 +203,8 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         answerListApiField = new JTextField(28);
         answerUpdateApiField = new JTextField(28);
         answerDeleteApiField = new JTextField(28);
+        userListApiField = new JTextField(28);
+        projectListApiField = new JTextField(28);
         remarkField = new JTextField(24);
         nameField.setFont(UiConstants.FONT_SANS_12);
         hostField.setFont(UiConstants.FONT_SANS_12);
@@ -212,6 +218,8 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         answerListApiField.setFont(UiConstants.FONT_SANS_12);
         answerUpdateApiField.setFont(UiConstants.FONT_SANS_12);
         answerDeleteApiField.setFont(UiConstants.FONT_SANS_12);
+        userListApiField.setFont(UiConstants.FONT_SANS_12);
+        projectListApiField.setFont(UiConstants.FONT_SANS_12);
         remarkField.setFont(UiConstants.FONT_SANS_12);
         
         addFormRow(formPanel, gbc, 0, new JLabel("环境名称："), nameField);
@@ -273,11 +281,14 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         addFormRow(formPanel, gbc, 9, new JLabel("触发训练："), trainApiField, exampleLink(TRAIN_EXAMPLE, trainApiField));
         addFormRow(formPanel, gbc, 10, new JLabel("批量更新接口："), updateUserApiField, exampleLink(UPDATE_USER_EXAMPLE, updateUserApiField));
         addFormRow(formPanel, gbc, 11, new JLabel("回复详情查询："), answerInfoApiField, exampleLink(ANSWER_INFO_EXAMPLE, answerInfoApiField));
-        addFormGroupTitle(formPanel, gbc, 12, "回复审计接口");
-        addFormRow(formPanel, gbc, 13, new JLabel("回复列表："), answerListApiField, exampleLink(ANSWER_LIST_EXAMPLE, answerListApiField));
-        addFormRow(formPanel, gbc, 14, new JLabel("回复更新："), answerUpdateApiField, exampleLink(ANSWER_UPDATE_EXAMPLE, answerUpdateApiField));
-        addFormRow(formPanel, gbc, 15, new JLabel("回复删除："), answerDeleteApiField, exampleLink(ANSWER_DELETE_EXAMPLE, answerDeleteApiField));
-        addFormRow(formPanel, gbc, 16, new JLabel("备注："), remarkField);
+        addFormGroupTitle(formPanel, gbc, 12, "公共接口");
+        addFormRow(formPanel, gbc, 13, new JLabel("获取用户列表："), userListApiField, exampleLink(USER_LIST_EXAMPLE, userListApiField));
+        addFormRow(formPanel, gbc, 14, new JLabel("获取项目列表："), projectListApiField, exampleLink(PROJECT_LIST_EXAMPLE, projectListApiField));
+        addFormGroupTitle(formPanel, gbc, 15, "回复审计接口");
+        addFormRow(formPanel, gbc, 16, new JLabel("回复列表："), answerListApiField, exampleLink(ANSWER_LIST_EXAMPLE, answerListApiField));
+        addFormRow(formPanel, gbc, 17, new JLabel("回复更新："), answerUpdateApiField, exampleLink(ANSWER_UPDATE_EXAMPLE, answerUpdateApiField));
+        addFormRow(formPanel, gbc, 18, new JLabel("回复删除："), answerDeleteApiField, exampleLink(ANSWER_DELETE_EXAMPLE, answerDeleteApiField));
+        addFormRow(formPanel, gbc, 19, new JLabel("备注："), remarkField);
         
         // 表单整体放入滚动面板：窗口高度不足时出现滚动条，内容与表格高度不被压缩
         JScrollPane formScrollPane = new JScrollPane(formPanel);
@@ -322,6 +333,8 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         answerListApiField.setText(valueOrDefault(env.getAnswerListApi()));
         answerUpdateApiField.setText(valueOrDefault(env.getAnswerUpdateApi()));
         answerDeleteApiField.setText(valueOrDefault(env.getAnswerDeleteApi()));
+        userListApiField.setText(valueOrDefault(env.getUserListApi()));
+        projectListApiField.setText(valueOrDefault(env.getProjectListApi()));
         remarkField.setText(nullToEmpty(env.getRemark()));
         headerModel.setRows(parseHeaderRows(env.getHeaders()));
         updateHeaderTableHeight();
@@ -349,6 +362,8 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         answerListApiField.setText(AiEnvConfig.DEFAULT_ANSWER_LIST_API);
         answerUpdateApiField.setText(AiEnvConfig.DEFAULT_ANSWER_UPDATE_API);
         answerDeleteApiField.setText(AiEnvConfig.DEFAULT_ANSWER_DELETE_API);
+        userListApiField.setText(AiEnvConfig.DEFAULT_USER_LIST_API);
+        projectListApiField.setText(AiEnvConfig.DEFAULT_PROJECT_LIST_API);
         remarkField.setText("");
         headerModel.setRows(new ArrayList<>());
         updateHeaderTableHeight();
@@ -424,6 +439,8 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         config.setAnswerListApi(answerListApiField.getText().trim());
         config.setAnswerUpdateApi(answerUpdateApiField.getText().trim());
         config.setAnswerDeleteApi(answerDeleteApiField.getText().trim());
+        config.setUserListApi(userListApiField.getText().trim());
+        config.setProjectListApi(projectListApiField.getText().trim());
         config.setHeaders(headersJson);
         config.setRemark(remarkField.getText().trim());
     }
@@ -872,7 +889,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
             """);
         
     /**
-     * 查询问题列表接口示例（trainingStatus 可选，不传返回全部：-1-待训练；0-成功；1-失败；2-成功同步回复；3-训练中；4-超时）
+     * 查询问题列表接口示例（trainingStatus 可选，不传返回全部：-2-初始状态；-1-待训练；0-成功；1-失败；2-成功同步回复；3-训练中；4-超时；5-同步失败(给答案表)）
      */
     private static final ApiExample LIST_EXAMPLE = new ApiExample("查询问题列表", AiEnvConfig.DEFAULT_LIST_API, """
             {
@@ -1016,6 +1033,34 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
               "message": "删除成功",
               "data": null
             }
+            """);
+    
+    /**
+     * 获取用户列表接口示例（公共接口，无请求参数，响应为用户数组）
+     */
+    private static final ApiExample USER_LIST_EXAMPLE = new ApiExample("获取用户列表", AiEnvConfig.DEFAULT_USER_LIST_API, """
+            {}
+            """, """
+            [
+              {
+                "userId": 12,
+                "userName": "王五"
+              }
+            ]
+            """);
+    
+    /**
+     * 获取项目列表接口示例（公共接口，无请求参数，响应为项目数组）
+     */
+    private static final ApiExample PROJECT_LIST_EXAMPLE = new ApiExample("获取项目列表", AiEnvConfig.DEFAULT_PROJECT_LIST_API, """
+            {}
+            """, """
+            [
+              {
+                "projectCode": "P00000001",
+                "projectName": "奋达科技园项目"
+              }
+            ]
             """);
         
     /**

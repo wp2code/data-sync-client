@@ -33,6 +33,11 @@ public class AiAnswer {
     private String envName;
     
     /**
+     * 所属项目名称（接口返回数据，客户端仅展示）
+     */
+    private String projectName;
+    
+    /**
      * 问题内容
      */
     private String query;

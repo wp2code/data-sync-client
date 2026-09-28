@@ -70,6 +70,16 @@ public class AiEnvConfig {
      */
     public static final String DEFAULT_ANSWER_DELETE_API = "/pilot/training/knowledge/answer/delete";
     
+    /**
+     * 获取用户列表接口默认路径（公共接口）
+     */
+    public static final String DEFAULT_USER_LIST_API = "/pilot/training/knowledge/user/list";
+    
+    /**
+     * 获取项目列表接口默认路径（公共接口）
+     */
+    public static final String DEFAULT_PROJECT_LIST_API = "/pilot/training/knowledge/project/list";
+    
     private Long id;
     
     /**
@@ -131,6 +141,16 @@ public class AiEnvConfig {
      * 问题回复删除接口路径（回复审计页删除问题回复）
      */
     private String answerDeleteApi = DEFAULT_ANSWER_DELETE_API;
+    
+    /**
+     * 获取用户列表接口路径（公共接口）
+     */
+    private String userListApi = DEFAULT_USER_LIST_API;
+    
+    /**
+     * 获取项目列表接口路径（公共接口）
+     */
+    private String projectListApi = DEFAULT_PROJECT_LIST_API;
     
     /**
      * 环境通用请求头参数 JSON（如 {"Authorization":"Bearer xxx"}），调用该环境所有接口时附加
