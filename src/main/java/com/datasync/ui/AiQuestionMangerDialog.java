@@ -126,6 +126,11 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     private static final String ALL_TRAINING_STATUS = "全部状态";
     
     /**
+     * 问题列表 / 回复列表项目筛选下拉的『全部项目』选项（选中时不过滤项目）
+     */
+    private static final String ALL_PROJECT = "全部项目";
+    
+    /**
      * 训练状态筛选项文字（下标对应训练状态值 +2：-2-初始状态；-1-待训练；0-成功；1-失败；2-同步成功(给答案表)；3-训练中；4-超时；5-同步失败(给答案表)）
      */
     private static final String[] TRAINING_STATUS_TEXTS = {"初始状态", "待训练", "成功", "失败", "同步成功(给答案表)", "训练中", "超时", "同步失败(给答案表)"};
@@ -304,7 +309,27 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     // ── 上屏：批量粘贴 ──
     private JTextArea pasteQuestionArea;
     
-    private CustomTextField pasteUserIdField;
+    private FilterComboBox<String> pasteUserIdField;
+    
+    /**
+     * 当前环境用户列表选项（从获取用户接口拉取，格式 "userId - userName"，供手动录入与批量粘贴用户ID下拉选中）
+     */
+    private List<String> userOptions = new ArrayList<>();
+    
+    /**
+     * 当前环境项目列表选项（从获取项目接口拉取，每项为 [projectCode, projectName]）
+     */
+    private List<String[]> projectOptions = new ArrayList<>();
+    
+    /**
+     * 批量粘贴已选项目编码列表
+     */
+    private List<String> pasteSelectedProjects = new ArrayList<>();
+    
+    /**
+     * 批量粘贴项目选择按钮
+     */
+    private JButton pasteProjectBtn;
     
     private CustomTextField pasteUserSessionField;
     
@@ -326,6 +351,16 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
      * 程序化重建分类筛选下拉时抑制选择事件（避免逐项触发列表重新过滤）
      */
     private boolean suppressClassifyEvents = false;
+    
+    /**
+     * 项目筛选下拉（选项从已加载问题列表的项目名称动态生成，选中后本地过滤列表）
+     */
+    private JComboBox<String> projectFilterCombo;
+    
+    /**
+     * 程序化重建项目筛选下拉时抑制选择事件（避免逐项触发列表重新过滤）
+     */
+    private boolean suppressProjectFilterEvents = false;
     
     /**
      * 训练状态筛选下拉（选项固定：全部状态 + 各训练状态，选中后本地过滤列表）
@@ -434,6 +469,11 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     private JComboBox<String> sourceTrainingFilterCombo;
     
     /**
+     * 回复列表项目筛选下拉（选项从已加载回复列表的项目名称动态生成，选中后本地过滤列表）
+     */
+    private JComboBox<String> answerProjectFilterCombo;
+    
+    /**
      * 重置回复审计筛选期间抑制联动刷新（避免中间状态触发条件不完整的接口加载，由重置统一触发一次查询）
      */
     private boolean suppressAnswerFilterEvents = false;
@@ -504,6 +544,8 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         SQLiteConfigUtil.getInstance().initialize();
         initUI();
         refreshEnvCombo();
+        refreshUserOptions();
+        refreshProjectOptions();
         refreshQuestionTable();
     }
     
@@ -685,11 +727,11 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     }
     
     /**
-     * 手动录入网格表头：问题、用户ID、分类、开启训练、优先级别、训练参数、固定回复、操作
+     * 手动录入网格表头：问题、用户ID、所属项目、分类、开启训练、训练参数、固定回复、操作
      */
     private void addManualGridHeader() {
-        String[] headers = {"问题", "用户ID", "分类", "开启训练", "优先级别", "训练参数", "固定回复", "操作"};
-        double[] weights = {3.0, 0.4, 0.35, 0, 0, 0.5, 0.5, 0};
+        String[] headers = {"问题", "用户ID", "所属项目", "分类", "开启训练", "训练参数", "固定回复", "操作"};
+        double[] weights = {3.0, 0.4, 0.35, 0.35, 0, 0.5, 0.5, 0};
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.gridy = 0;
         gbc.insets = new Insets(2, 3, 2, 3);
@@ -731,18 +773,26 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         manualGridPanel.add(row.questionField, gbc);
         gbc.gridx = 1;
         gbc.weightx = 0.4;
-        row.userIdField.setPreferredSize(new Dimension(140, 26));
+        row.userIdField.setPreferredSize(new Dimension(160, 26));
         manualGridPanel.add(row.userIdField, gbc);
         gbc.gridx = 2;
         gbc.weightx = 0.35;
-        manualGridPanel.add(row.classifyCombo, gbc);
+        if (row.projectSameAsAbove != null) {
+            JPanel projectPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 0));
+            projectPanel.setOpaque(false);
+            projectPanel.add(row.projectBtn);
+            projectPanel.add(row.projectSameAsAbove);
+            manualGridPanel.add(projectPanel, gbc);
+        } else {
+            manualGridPanel.add(row.projectBtn, gbc);
+        }
         gbc.gridx = 3;
+        gbc.weightx = 0.35;
+        manualGridPanel.add(row.classifyCombo, gbc);
+        gbc.gridx = 4;
         gbc.weightx = 0;
         row.enableTrainingCombo.setPreferredSize(new Dimension(92, 26));
         manualGridPanel.add(row.enableTrainingCombo, gbc);
-        gbc.gridx = 4;
-        gbc.weightx = 0;
-        manualGridPanel.add(row.priorityField, gbc);
         gbc.gridx = 5;
         gbc.weightx = 0.5;
         manualGridPanel.add(row.trainingParamArea, gbc);
@@ -792,17 +842,23 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         String resolvedClassify = null;
         String resolvedUserId = null;
         int resolvedEnable = AiQuestion.TRAINING_ENABLED;
-        int resolvedPriority = 0;
+        List<String> resolvedProjectCodes = null;
         for (int i = 0; i < entryRows.size(); i++) {
             QuestionEntryRow row = entryRows.get(i);
             String question = row.questionField.getText().trim();
             if (question.isEmpty()) {
                 continue;
             }
-            // 用户ID（非必填）：『同上』或留空时继承上一行的有效值，全部留空则不提交该字段
-            String userId = row.userIdField.getText().trim();
+            // 用户ID（非必填）：『同上』或留空时继承上一行的有效值，下拉选中时取 userId 部分，全部留空则不提交该字段
+            String userId = extractUserIdFromCombo(row.userIdField.getSelectedItem());
             if (!userId.isEmpty() && !SAME_AS_ABOVE.equals(userId)) {
                 resolvedUserId = userId;
+            }
+            // 所属项目：『同上』时继承上一行的有效值
+            if (row.projectSameAsAbove != null && row.projectSameAsAbove.isSelected()) {
+                // 继承上一行的 resolvedProjectCodes（不改变）
+            } else if (!row.selectedProjectCodes.isEmpty()) {
+                resolvedProjectCodes = new ArrayList<>(row.selectedProjectCodes);
             }
             // 分类：『同上』或留空时继承上一行的有效值
             String classify = editableComboText(row.classifyCombo).trim();
@@ -817,24 +873,16 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             } else if ("不开启".equals(enableText)) {
                 resolvedEnable = AiQuestion.TRAINING_DISABLED;
             }
-            // 优先级别：『同上』或留空时继承上一行的有效值
-            String priorityText = row.priorityField.getText().trim();
-            if (!priorityText.isEmpty() && !SAME_AS_ABOVE.equals(priorityText)) {
-                try {
-                    resolvedPriority = Integer.parseInt(priorityText);
-                } catch (NumberFormatException ex) {
-                    errors.add("第 " + (i + 1) + " 行：优先级别必须为整数（" + priorityText + "）");
-                }
-            }
             AiQuestion item = new AiQuestion();
             item.setEnvName(envName);
             item.setQuestion(question);
             item.setUserId(resolvedUserId);
+            item.setProjectCodeList(resolvedProjectCodes == null || resolvedProjectCodes.isEmpty() ? null : new ArrayList<>(resolvedProjectCodes));
             item.setQuestionClassify(resolvedClassify);
             item.setTrainingParam(row.trainingParamArea.getText().trim());
             item.setAnswer(row.answerArea.getText().trim());
             item.setEnableTraining(resolvedEnable);
-            item.setPriority(resolvedPriority);
+            item.setPriority(0);
             questions.add(item);
         }
         return questions;
@@ -997,17 +1045,35 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         entryRows.clear();
         manualGridPanel.removeAll();
         addManualGridHeader();
+        List<String> prevProjectCodes = null;
         for (AiQuestion question : questions) {
             addEntryRow();
             QuestionEntryRow row = entryRows.get(entryRows.size() - 1);
             row.questionField.setText(nullToEmpty(question.getQuestion()));
-            row.userIdField.setText(nullToEmpty(question.getUserId()));
+            row.userIdField.getEditor().setItem(nullToEmpty(question.getUserId()));
             // 分类：与 collectManualQuestions 的读取路径一致，直接写入编辑器内容
             row.classifyCombo.getEditor().setItem(nullToEmpty(question.getQuestionClassify()));
             row.enableTrainingCombo.setSelectedItem(question.isTrainingEnabled() ? "开启" : "不开启");
-            row.priorityField.setText(String.valueOf(question.getPriority() != null ? question.getPriority() : 0));
             row.trainingParamArea.setText(nullToEmpty(question.getTrainingParam()));
             row.answerArea.setText(nullToEmpty(question.getAnswer()));
+            // 所属项目：与上一行相同时保持『同上』，否则取消『同上』并设置具体项目
+            List<String> currentCodes = question.getProjectCodeList();
+            if (row.projectSameAsAbove != null && currentCodes != null && prevProjectCodes != null
+                    && currentCodes.equals(prevProjectCodes)) {
+                // 保持『同上』选中状态
+            } else if (row.projectSameAsAbove != null && currentCodes == null && prevProjectCodes == null) {
+                // 都为空，保持『同上』
+            } else {
+                if (row.projectSameAsAbove != null) {
+                    row.projectSameAsAbove.setSelected(false);
+                    row.projectBtn.setEnabled(true);
+                }
+                if (currentCodes != null && !currentCodes.isEmpty()) {
+                    row.selectedProjectCodes.addAll(currentCodes);
+                    row.projectBtn.setText(projectButtonLabel(currentCodes));
+                }
+            }
+            prevProjectCodes = currentCodes;
         }
         manualGridPanel.revalidate();
         manualGridPanel.repaint();
@@ -1098,7 +1164,10 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         gbc.anchor = GridBagConstraints.WEST;
         gbc.fill = GridBagConstraints.HORIZONTAL;
         
-        pasteUserIdField = new CustomTextField("归属用户ID（适用全部问题，可留空）");
+        pasteUserIdField = new FilterComboBox<>();
+        for (String userOption : userOptions) {
+            pasteUserIdField.addItem(userOption);
+        }
         gbc.gridx = 0;
         gbc.gridy = 0;
         gbc.weightx = 0;
@@ -1107,9 +1176,27 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         gbc.weightx = 1.0;
         panel.add(pasteUserIdField, gbc);
         
-        pasteUserSessionField = new CustomTextField("用户Session（适用全部问题，可留空）");
+        pasteProjectBtn = ButtonFactory.createSecondary(projectButtonLabel(pasteSelectedProjects));
+        pasteProjectBtn.setToolTipText("点击选择所属项目（可多选，适用全部问题）");
+        pasteProjectBtn.addActionListener(e -> {
+            List<String> result = showProjectMultiSelectDialog("选择所属项目", pasteSelectedProjects);
+            if (result != null) {
+                pasteSelectedProjects.clear();
+                pasteSelectedProjects.addAll(result);
+                pasteProjectBtn.setText(projectButtonLabel(pasteSelectedProjects));
+            }
+        });
         gbc.gridx = 0;
         gbc.gridy = 1;
+        gbc.weightx = 0;
+        panel.add(new JLabel("所属项目："), gbc);
+        gbc.gridx = 1;
+        gbc.weightx = 1.0;
+        panel.add(pasteProjectBtn, gbc);
+        
+        pasteUserSessionField = new CustomTextField("用户Session（适用全部问题，可留空）");
+        gbc.gridx = 0;
+        gbc.gridy = 2;
         gbc.weightx = 0;
         panel.add(new JLabel("用户Session："), gbc);
         gbc.gridx = 1;
@@ -1118,7 +1205,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         
         pasteClassifyField = new CustomTextField("问题的分类（适用全部问题，可留空）");
         gbc.gridx = 0;
-        gbc.gridy = 2;
+        gbc.gridy = 3;
         gbc.weightx = 0;
         panel.add(new JLabel("问题分类："), gbc);
         gbc.gridx = 1;
@@ -1129,7 +1216,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         pasteTrainingParamArea.setLineWrap(true);
         pasteTrainingParamArea.setWrapStyleWord(true);
         gbc.gridx = 0;
-        gbc.gridy = 3;
+        gbc.gridy = 4;
         gbc.weightx = 0;
         gbc.weighty = 1.0;
         gbc.anchor = GridBagConstraints.NORTHWEST;
@@ -1182,7 +1269,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             JOptionPane.showMessageDialog(this, "请先输入问题内容", "提示", JOptionPane.WARNING_MESSAGE);
             return;
         }
-        String userId = pasteUserIdField.getText().trim();
+        String userId = extractUserIdFromCombo(pasteUserIdField.getSelectedItem());
         String userSession = pasteUserSessionField.getText().trim();
         String classify = pasteClassifyField.getText().trim();
         String trainingParam = pasteTrainingParamArea.getText().trim();
@@ -1192,6 +1279,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             item.setEnvName(envConfig.getEnvName());
             item.setQuestion(question);
             item.setUserId(userId.isEmpty() ? null : userId);
+            item.setProjectCodeList(pasteSelectedProjects.isEmpty() ? null : new ArrayList<>(pasteSelectedProjects));
             item.setUserSession(userSession.isEmpty() ? null : userSession);
             item.setQuestionClassify(classify.isEmpty() ? null : classify);
             item.setTrainingParam(trainingParam);
@@ -1214,11 +1302,149 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     
     private void clearPasteInputs() {
         pasteQuestionArea.setText("");
-        pasteUserIdField.setText("");
+        pasteUserIdField.setSelectedItem(null);
+        pasteUserIdField.getEditor().setItem("");
+        pasteSelectedProjects.clear();
+        pasteProjectBtn.setText(projectButtonLabel(pasteSelectedProjects));
         pasteUserSessionField.setText("");
         pasteClassifyField.setText("");
         pasteTrainingParamArea.setText("");
         updateParsePreview();
+    }
+    
+    /**
+     * 从用户ID下拉选中项中提取 userId（下拉项格式 "userId - userName"，手动输入时直接作为 userId）
+     */
+    private static String extractUserIdFromCombo(Object selectedItem) {
+        if (selectedItem == null) {
+            return "";
+        }
+        String text = selectedItem.toString().trim();
+        if (text.isEmpty() || SAME_AS_ABOVE.equals(text)) {
+            return text;
+        }
+        int dashIndex = text.indexOf(" - ");
+        return dashIndex > 0 ? text.substring(0, dashIndex).trim() : text;
+    }
+    
+    /**
+     * 刷新用户列表下拉选项（从当前环境的获取用户接口拉取，失败时保留旧选项）
+     */
+    private void refreshUserOptions() {
+        // 静默获取当前选中环境（初始化期间不弹窗提示）
+        Object selected = envCombo.getSelectedItem();
+        if (!(selected instanceof AiEnvConfig envConfig)) {
+            return;
+        }
+        // 后台线程拉取用户列表，完成后在 EDT 更新下拉选项
+        new Thread(() -> {
+            List<String> fetched;
+            try {
+                fetched = AiQuestionApiClient.getInstance().listUsers(envConfig);
+            } catch (AiQuestionApiClient.AiApiException e) {
+                logger.warn("[AiApi] 获取用户列表失败: {}", e.getMessage());
+                fetched = new ArrayList<>();
+            }
+            final List<String> users = fetched;
+            SwingUtilities.invokeLater(() -> {
+                userOptions = users;
+                // 更新批量粘贴下拉
+                pasteUserIdField.removeAllItems();
+                for (String userOption : userOptions) {
+                    pasteUserIdField.addItem(userOption);
+                }
+                // 更新手动录入各行下拉（保留『同上』选项）
+                for (QuestionEntryRow row : entryRows) {
+                    boolean hadSameAsAbove = row.userIdField.getItemCount() > 0
+                            && SAME_AS_ABOVE.equals(String.valueOf(row.userIdField.getItemAt(0)));
+                    Object currentSelection = row.userIdField.getSelectedItem();
+                    row.userIdField.removeAllItems();
+                    if (hadSameAsAbove) {
+                        row.userIdField.addItem(SAME_AS_ABOVE);
+                    }
+                    for (String userOption : userOptions) {
+                        row.userIdField.addItem(userOption);
+                    }
+                    if (currentSelection != null) {
+                        row.userIdField.setSelectedItem(currentSelection);
+                    }
+                }
+            });
+        }, "refresh-user-options").start();
+    }
+    
+    /**
+     * 项目多选弹窗：勾选后返回选中的项目编码列表，取消返回 null
+     */
+    private List<String> showProjectMultiSelectDialog(String title, List<String> currentSelected) {
+        JPanel panel = new JPanel(new GridLayout(0, 1, 4, 4));
+        panel.setBorder(new EmptyBorder(8, 8, 8, 8));
+        List<JCheckBox> checkBoxes = new ArrayList<>();
+        for (String[] project : projectOptions) {
+            String code = project[0];
+            String name = project[1];
+            JCheckBox cb = new JCheckBox(code + (name.isEmpty() ? "" : " - " + name));
+            cb.setSelected(currentSelected.contains(code));
+            checkBoxes.add(cb);
+            panel.add(cb);
+        }
+        if (projectOptions.isEmpty()) {
+            panel.add(new JLabel("（暂无项目选项，请先确认环境已配置获取项目接口）"));
+        }
+        JScrollPane scroll = new JScrollPane(panel);
+        scroll.setPreferredSize(new Dimension(380, Math.min(60 + checkBoxes.size() * 28, 360)));
+        int result = JOptionPane.showConfirmDialog(this, scroll, title, JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        if (result != JOptionPane.OK_OPTION) {
+            return null;
+        }
+        List<String> selected = new ArrayList<>();
+        for (int i = 0; i < checkBoxes.size(); i++) {
+            if (checkBoxes.get(i).isSelected()) {
+                selected.add(projectOptions.get(i)[0]);
+            }
+        }
+        return selected;
+    }
+    
+    /**
+     * 项目选择按钮标签（按已选数量显示）
+     */
+    private static String projectButtonLabel(List<String> selectedCodes) {
+        if (selectedCodes == null || selectedCodes.isEmpty()) {
+            return "请选择项目";
+        }
+        return "已选 " + selectedCodes.size() + " 个项目";
+    }
+    
+    /**
+     * 刷新项目列表选项（从当前环境的获取项目接口拉取，失败时保留旧选项）
+     */
+    private void refreshProjectOptions() {
+        Object selected = envCombo.getSelectedItem();
+        if (!(selected instanceof AiEnvConfig envConfig)) {
+            return;
+        }
+        new Thread(() -> {
+            List<String[]> fetched;
+            try {
+                fetched = AiQuestionApiClient.getInstance().listProjects(envConfig);
+            } catch (AiQuestionApiClient.AiApiException e) {
+                logger.warn("[AiApi] 获取项目列表失败: {}", e.getMessage());
+                fetched = new ArrayList<>();
+            }
+            final List<String[]> projects = fetched;
+            SwingUtilities.invokeLater(() -> {
+                projectOptions = projects;
+                // 更新批量粘贴项目按钮（清空已选）
+                pasteSelectedProjects.clear();
+                pasteProjectBtn.setText(projectButtonLabel(pasteSelectedProjects));
+                // 更新手动录入各行项目按钮（清空已选）
+                for (QuestionEntryRow row : entryRows) {
+                    row.selectedProjectCodes.clear();
+                    row.projectBtn.setText(projectButtonLabel(row.selectedProjectCodes));
+                }
+            });
+        }, "refresh-project-options").start();
     }
     
     // ────────── 环境选择 ──────────
@@ -1229,6 +1455,8 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     private void openEnvManageDialog() {
         new AiEnvMangerDialog(ownerFrame).setVisible(true);
         refreshEnvCombo();
+        refreshUserOptions();
+        refreshProjectOptions();
         invalidateLoadedData();
         invalidateAnswers();
         refreshActiveBusinessTab();
@@ -1287,6 +1515,8 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         answerCurrentPage = 1;
         invalidateLoadedData();
         invalidateAnswers();
+        refreshUserOptions();
+        refreshProjectOptions();
         refreshActiveBusinessTab();
     }
     
@@ -1373,6 +1603,14 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         classifyFilterCombo.setToolTipText("按分类过滤问题列表，选项来自当前环境问题列表的分类");
         classifyFilterCombo.addActionListener(e -> onClassifyFilterChanged());
         filterPanel.add(classifyFilterCombo);
+        filterPanel.add(new JLabel("项目："));
+        // 项目筛选：选项由已加载问题列表的项目名称动态生成，选中后本地过滤列表
+        projectFilterCombo = new JComboBox<>();
+        projectFilterCombo.addItem(ALL_PROJECT);
+        projectFilterCombo.setPreferredSize(new Dimension(160, 26));
+        projectFilterCombo.setToolTipText("按项目过滤问题列表，选项来自当前环境问题列表的项目名称");
+        projectFilterCombo.addActionListener(e -> onProjectFilterChanged());
+        filterPanel.add(projectFilterCombo);
         filterPanel.add(new JLabel("训练状态："));
         // 训练状态筛选：选项固定（全部状态 + 各训练状态），选中后触发接口重新拉取（服务端筛选）
         statusFilterCombo = new JComboBox<>();
@@ -1394,7 +1632,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         filterPanel.add(refreshBtn);
         // 重置：清空关键字并恢复分类 / 训练状态筛选为全部，回到第一页重新查询
         JButton resetBtn = ButtonFactory.createPill("重置", UiConstants.COLOR_NEUTRAL, UiConstants.COLOR_NEUTRAL_LIGHT);
-        resetBtn.setToolTipText("清空关键字并恢复分类 / 训练状态为全部，回到第一页重新查询");
+        resetBtn.setToolTipText("清空关键字并恢复分类 / 项目 / 训练状态为全部，回到第一页重新查询");
         resetBtn.addActionListener(e -> resetQuestionFilters());
         filterPanel.add(resetBtn);
         
@@ -1443,7 +1681,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         questionTable.getColumnModel().getColumn(COL_PROJECT).setCellRenderer(new TextCellRenderer(16));
         questionTable.getColumnModel().getColumn(COL_QUESTION).setCellRenderer(new TextCellRenderer(48));
         questionTable.getColumnModel().getColumn(COL_CLASSIFY).setCellRenderer(new TextCellRenderer(12));
-        questionTable.getColumnModel().getColumn(COL_USER).setCellRenderer(new TextCellRenderer(20));
+        questionTable.getColumnModel().getColumn(COL_USER).setCellRenderer(new UserIdCellRenderer());
         questionTable.getColumnModel().getColumn(COL_TRAINING_PARAM).setCellRenderer(new TextCellRenderer(24));
         questionTable.getColumnModel().getColumn(COL_ANSWER).setCellRenderer(new TextCellRenderer(24));
         // 问题 / 固定回复列：双击进入只读选择复制模式（文字自动全选，可拖选部分文字复制，不修改数据）
@@ -1684,6 +1922,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             loadedStatusFilter = selectedTrainingStatusFilter();
             allQuestions.clear();
             refreshClassifyFilterOptions();
+            refreshProjectFilterOptions();
             tableModel.setData(new ArrayList<>());
             tableModel.clearChecked();
             updateCheckControls();
@@ -1719,6 +1958,8 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
                 classifySuggestions = extractClassifies(allQuestions);
                 // 按最新列表分类重建分类筛选项（选中分类仍存在则保持，否则回到『全部分类』）
                 refreshClassifyFilterOptions();
+                // 按最新列表重建项目筛选项（选中项目仍存在则保持，否则回到『全部项目』）
+                refreshProjectFilterOptions();
                 if (loadError != null) {
                     setStatus(loadError, false);
                 } else {
@@ -1743,10 +1984,11 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     private void applyLocalFilterAndPaging() {
         String keyword = searchField.getText().trim().toLowerCase();
         String classifyFilter = selectedClassifyFilter();
+        String projectFilter = selectedProjectFilter();
         Integer statusFilter = selectedTrainingStatusFilter();
         List<AiQuestion> filtered = new ArrayList<>();
         for (AiQuestion item : allQuestions) {
-            if (matchesKeyword(item, keyword) && matchesClassify(item, classifyFilter) && matchesTrainingStatus(item, statusFilter)) {
+            if (matchesKeyword(item, keyword) && matchesClassify(item, classifyFilter) && matchesProject(item, projectFilter) && matchesTrainingStatus(item, statusFilter)) {
                 filtered.add(item);
             }
         }
@@ -1846,6 +2088,73 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     }
     
     /**
+     * 从已加载的问题中提取去重项目名称（用于项目筛选下拉）
+     */
+    private List<String> extractProjects(List<AiQuestion> questions) {
+        LinkedHashSet<String> projects = new LinkedHashSet<>();
+        for (AiQuestion item : questions) {
+            String projectName = item.getProjectName();
+            if (projectName != null && !projectName.isBlank()) {
+                projects.add(projectName.trim());
+            }
+        }
+        return new ArrayList<>(projects);
+    }
+    
+    /**
+     * 按最新问题列表重建项目筛选下拉项（选中项目仍存在则保持，否则回到『全部项目』）
+     */
+    private void refreshProjectFilterOptions() {
+        List<String> projects = extractProjects(allQuestions);
+        Object previous = projectFilterCombo.getSelectedItem();
+        suppressProjectFilterEvents = true;
+        try {
+            projectFilterCombo.removeAllItems();
+            projectFilterCombo.addItem(ALL_PROJECT);
+            for (String project : projects) {
+                projectFilterCombo.addItem(project);
+            }
+            if (previous != null && projects.contains(previous.toString())) {
+                projectFilterCombo.setSelectedItem(previous);
+            } else {
+                projectFilterCombo.setSelectedItem(ALL_PROJECT);
+            }
+        } finally {
+            suppressProjectFilterEvents = false;
+        }
+    }
+    
+    /**
+     * 项目筛选下拉选中项变化：回到第一页并重新过滤列表
+     */
+    private void onProjectFilterChanged() {
+        if (suppressProjectFilterEvents) {
+            return;
+        }
+        currentPage = 1;
+        refreshQuestionTable();
+    }
+    
+    /**
+     * 当前选中的项目筛选值（null 表示『全部项目』，不参与过滤）
+     */
+    private String selectedProjectFilter() {
+        Object selected = projectFilterCombo.getSelectedItem();
+        String text = selected != null ? selected.toString() : null;
+        return text == null || ALL_PROJECT.equals(text) ? null : text;
+    }
+    
+    /**
+     * 项目筛选精确匹配（下拉项为去重后的项目名称，问题项目按 trim 后比较）
+     */
+    private boolean matchesProject(AiQuestion question, String projectFilter) {
+        if (projectFilter == null) {
+            return true;
+        }
+        return projectFilter.equals(nullToEmpty(question.getProjectName()).trim());
+    }
+    
+    /**
      * 搜索关键字变化：回到第一页并刷新列表（缓存未失效时为本地过滤，无需重新拉取接口）
      */
     private void onSearchFieldChanged() {
@@ -1868,18 +2177,21 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     }
     
     /**
-     * 重置问题列表筛选条件：清空关键字并恢复分类 / 训练状态为全部，回到第一页重新从接口查询
+     * 重置问题列表筛选条件：清空关键字并恢复分类 / 项目 / 训练状态为全部，回到第一页重新从接口查询
      */
     private void resetQuestionFilters() {
         // 抑制各筛选组件的联动刷新，避免中间状态触发条件不完整的接口加载，由下方统一触发一次查询
         suppressQuestionFilterEvents = true;
         suppressClassifyEvents = true;
+        suppressProjectFilterEvents = true;
         try {
             searchField.setText("");
             statusFilterCombo.setSelectedIndex(0);
             classifyFilterCombo.setSelectedItem(ALL_CLASSIFY);
+            projectFilterCombo.setSelectedItem(ALL_PROJECT);
         } finally {
             suppressClassifyEvents = false;
+            suppressProjectFilterEvents = false;
             suppressQuestionFilterEvents = false;
         }
         currentPage = 1;
@@ -2093,7 +2405,26 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         JTextArea questionArea = new JTextArea(nullToEmpty(question.getQuestion()), 2, 30);
         questionArea.setLineWrap(true);
         questionArea.setWrapStyleWord(true);
-        JTextField userIdField = new JTextField(nullToEmpty(question.getUserId()), 20);
+        FilterComboBox<String> userIdCombo = new FilterComboBox<>();
+        for (String userOption : userOptions) {
+            userIdCombo.addItem(userOption);
+        }
+        String currentUserId = nullToEmpty(question.getUserId());
+        if (!currentUserId.isEmpty()) {
+            // 尝试匹配已有的用户选项，匹配不到则手动输入
+            boolean matched = false;
+            for (int i = 0; i < userIdCombo.getItemCount(); i++) {
+                String item = userIdCombo.getItemAt(i);
+                if (item != null && extractUserIdFromCombo(item).equals(currentUserId)) {
+                    userIdCombo.setSelectedItem(item);
+                    matched = true;
+                    break;
+                }
+            }
+            if (!matched) {
+                userIdCombo.getEditor().setItem(currentUserId);
+            }
+        }
         JTextField userSessionField = new JTextField(nullToEmpty(question.getUserSession()), 20);
         JTextField classifyField = new JTextField(nullToEmpty(question.getQuestionClassify()), 20);
         JTextArea trainingParamArea = new JTextArea(nullToEmpty(question.getTrainingParam()), 5, 30);
@@ -2112,7 +2443,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         gbc.anchor = GridBagConstraints.WEST;
         addFormRow(form, gbc, 0, new JLabel("环境："), new JLabel(nullToEmpty(question.getEnvName())));
         addFormRow(form, gbc, 1, new JLabel("问题："), dialogScroll(questionArea, 2));
-        addFormRow(form, gbc, 2, new JLabel("用户ID："), userIdField);
+        addFormRow(form, gbc, 2, new JLabel("用户ID："), userIdCombo);
         addFormRow(form, gbc, 3, new JLabel("用户Session："), userSessionField);
         addFormRow(form, gbc, 4, new JLabel("分类："), classifyField);
         addFormRow(form, gbc, 5, new JLabel("训练参数："), dialogScroll(trainingParamArea, 5));
@@ -2136,7 +2467,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             return;
         }
         String newClassify = classifyField.getText().trim();
-        String newUserId = userIdField.getText().trim();
+        String newUserId = extractUserIdFromCombo(userIdCombo.getSelectedItem()).trim();
         String newUserSession = userSessionField.getText().trim();
         question.setQuestion(newQuestion);
         question.setUserId(newUserId.isEmpty() ? null : newUserId);
@@ -2425,7 +2756,10 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         }
         // 确认弹窗：勾选摘要 + 用户ID / 用户Session / 训练参数 输入（留空表示不更新对应字段）
         // 输入区复用 addFormRow 两列 GridBagLayout：标签右对齐（冒号对齐）、输入框同列起始与等宽对齐
-        JTextField userIdField = new JTextField(24);
+        FilterComboBox<String> userIdCombo = new FilterComboBox<>();
+        for (String userOption : userOptions) {
+            userIdCombo.addItem(userOption);
+        }
         JTextField userSessionField = new JTextField(24);
         JTextArea trainingParamArea = new JTextArea(3, 24);
         trainingParamArea.setLineWrap(true);
@@ -2434,7 +2768,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         GridBagConstraints inputGbc = new GridBagConstraints();
         inputGbc.insets = new Insets(4, 4, 4, 4);
         inputGbc.anchor = GridBagConstraints.WEST;
-        addFormRow(inputForm, inputGbc, 0, new JLabel("用户ID："), userIdField);
+        addFormRow(inputForm, inputGbc, 0, new JLabel("用户ID："), userIdCombo);
         addFormRow(inputForm, inputGbc, 1, new JLabel("用户Session："), userSessionField);
         addFormRow(inputForm, inputGbc, 2, new JLabel("训练参数："), new JScrollPane(trainingParamArea));
         inputForm.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -2465,7 +2799,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             if (confirm != JOptionPane.YES_OPTION) {
                 return;
             }
-            userId = userIdField.getText().trim();
+            userId = extractUserIdFromCombo(userIdCombo.getSelectedItem()).trim();
             userSession = userSessionField.getText().trim();
             trainingParam = trainingParamArea.getText().trim();
             if (!userId.isEmpty() || !userSession.isEmpty() || !trainingParam.isEmpty()) {
@@ -2652,12 +2986,25 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             }
         });
         filterPanel.add(sourceTrainingFilterCombo);
+        filterPanel.add(new JLabel("项目："));
+        // 项目筛选：选项由已加载回复列表的项目名称动态生成，选中后本地过滤列表
+        answerProjectFilterCombo = new JComboBox<>();
+        answerProjectFilterCombo.addItem(ALL_PROJECT);
+        answerProjectFilterCombo.setPreferredSize(new Dimension(160, 26));
+        answerProjectFilterCombo.setToolTipText("按项目过滤回复列表，选项来自当前环境回复列表的项目名称");
+        answerProjectFilterCombo.addActionListener(e -> {
+            if (!suppressAnswerFilterEvents) {
+                answerCurrentPage = 1;
+                applyAnswerPaging();
+            }
+        });
+        filterPanel.add(answerProjectFilterCombo);
         JButton answerSearchBtn = ButtonFactory.createPill("查询", UiConstants.COLOR_SUCCESS, UiConstants.COLOR_SUCCESS_LIGHT);
         answerSearchBtn.addActionListener(e -> triggerAnswerSearch());
         filterPanel.add(answerSearchBtn);
         // 重置：清空问题 / 回复关键字并恢复允许修改 / 来源训练筛选为全部，回到第一页重新查询
         JButton answerResetBtn = ButtonFactory.createPill("重置", UiConstants.COLOR_NEUTRAL, UiConstants.COLOR_NEUTRAL_LIGHT);
-        answerResetBtn.setToolTipText("清空问题 / 回复关键字并恢复允许修改 / 来源训练为全部，回到第一页重新查询");
+        answerResetBtn.setToolTipText("清空问题 / 回复关键字并恢复允许修改 / 来源训练 / 项目为全部，回到第一页重新查询");
         answerResetBtn.addActionListener(e -> resetAnswerFilters());
         filterPanel.add(answerResetBtn);
         
@@ -2707,7 +3054,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         SelectableTextEditor answerTextEditor = new SelectableTextEditor();
         answerTable.getColumnModel().getColumn(ACOL_QUERY).setCellEditor(answerTextEditor);
         answerTable.getColumnModel().getColumn(ACOL_ANSWER).setCellEditor(answerTextEditor);
-        answerTable.getColumnModel().getColumn(ACOL_USER).setCellRenderer(new TextCellRenderer(20));
+        answerTable.getColumnModel().getColumn(ACOL_USER).setCellRenderer(new UserIdCellRenderer());
         answerTable.getColumnModel().getColumn(ACOL_MODIFY).setCellRenderer((table, value, isSelected, hasFocus, row, column) -> {
             JLabel label = new JLabel(value.toString());
             label.setHorizontalAlignment(SwingConstants.CENTER);
@@ -2812,16 +3159,17 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     }
     
     /**
-     * 重置回复审计筛选条件：清空问题 / 回复关键字并恢复允许修改 / 来源训练为全部，回到第一页重新查询
+     * 重置回复审计筛选条件：清空问题 / 回复关键字并恢复允许修改 / 来源训练 / 项目为全部，回到第一页重新查询
      */
     private void resetAnswerFilters() {
-        // 抑制允许修改 / 来源训练筛选的联动刷新，避免中间状态触发条件不完整的接口加载，由下方统一触发一次查询
+        // 抑制允许修改 / 来源训练 / 项目筛选的联动刷新，避免中间状态触发条件不完整的接口加载，由下方统一触发一次查询
         suppressAnswerFilterEvents = true;
         try {
             answerQueryField.setText("");
             answerTextField.setText("");
             allowModifyFilterCombo.setSelectedIndex(0);
             sourceTrainingFilterCombo.setSelectedIndex(0);
+            answerProjectFilterCombo.setSelectedItem(ALL_PROJECT);
         } finally {
             suppressAnswerFilterEvents = false;
         }
@@ -2853,6 +3201,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         if (envConfig == null) {
             answersLoaded = true;
             loadedAnswers.clear();
+            refreshAnswerProjectFilterOptions();
             answerTableModel.setData(new ArrayList<>());
             answerTableModel.clearChecked();
             updateAnswerCheckControls();
@@ -2887,6 +3236,8 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
                 loadedAnswers.addAll(loaded);
                 // 清理已勾选但已不存在的回复（保留跨页勾选）
                 answerTableModel.retainChecked(loadedAnswers);
+                // 按最新回复列表重建项目筛选项（选中项目仍存在则保持，否则回到『全部项目』）
+                refreshAnswerProjectFilterOptions();
                 if (loadError != null) {
                     setStatus(loadError, false);
                 } else {
@@ -2904,10 +3255,16 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     }
     
     /**
-     * 在缓存的回复数据上执行排序与分页展示（筛选已由接口完成）
+     * 在缓存的回复数据上执行项目筛选、排序与分页展示（接口筛选 + 本地项目过滤）
      */
     private void applyAnswerPaging() {
-        List<AiAnswer> sorted = new ArrayList<>(loadedAnswers);
+        String answerProjectFilter = selectedAnswerProjectFilter();
+        List<AiAnswer> sorted = new ArrayList<>();
+        for (AiAnswer item : loadedAnswers) {
+            if (matchesAnswerProject(item, answerProjectFilter)) {
+                sorted.add(item);
+            }
+        }
         sorted.sort(ANSWER_COMPARATOR);
         answerTotalCount = sorted.size();
         answerTotalPages = (int) Math.max(1, (answerTotalCount + answerPageSize - 1) / answerPageSize);
@@ -3018,6 +3375,65 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             return Boolean.FALSE;
         }
         return null;
+    }
+    
+    /**
+     * 从已加载的回复中提取去重项目名称（用于回复列表项目筛选下拉）
+     */
+    private List<String> extractAnswerProjects(List<AiAnswer> answers) {
+        LinkedHashSet<String> projects = new LinkedHashSet<>();
+        for (AiAnswer item : answers) {
+            String projectName = item.getProjectName();
+            if (projectName != null && !projectName.isBlank()) {
+                projects.add(projectName.trim());
+            }
+        }
+        return new ArrayList<>(projects);
+    }
+    
+    /**
+     * 按最新回复列表重建项目筛选下拉项（选中项目仍存在则保持，否则回到『全部项目』）
+     */
+    private void refreshAnswerProjectFilterOptions() {
+        List<String> projects = extractAnswerProjects(loadedAnswers);
+        Object previous = answerProjectFilterCombo.getSelectedItem();
+        suppressAnswerFilterEvents = true;
+        try {
+            answerProjectFilterCombo.removeAllItems();
+            answerProjectFilterCombo.addItem(ALL_PROJECT);
+            for (String project : projects) {
+                answerProjectFilterCombo.addItem(project);
+            }
+            if (previous != null && projects.contains(previous.toString())) {
+                answerProjectFilterCombo.setSelectedItem(previous);
+            } else {
+                answerProjectFilterCombo.setSelectedItem(ALL_PROJECT);
+            }
+        } finally {
+            suppressAnswerFilterEvents = false;
+        }
+    }
+    
+    /**
+     * 当前选中的回复列表项目筛选值（null 表示『全部项目』，不参与过滤）
+     */
+    private String selectedAnswerProjectFilter() {
+        if (answerProjectFilterCombo == null) {
+            return null;
+        }
+        Object selected = answerProjectFilterCombo.getSelectedItem();
+        String text = selected != null ? selected.toString() : null;
+        return text == null || ALL_PROJECT.equals(text) ? null : text;
+    }
+    
+    /**
+     * 回复列表项目筛选精确匹配（下拉项为去重后的项目名称，回复项目按 trim 后比较）
+     */
+    private boolean matchesAnswerProject(AiAnswer answer, String projectFilter) {
+        if (projectFilter == null) {
+            return true;
+        }
+        return projectFilter.equals(nullToEmpty(answer.getProjectName()).trim());
     }
     
     /**
@@ -3649,19 +4065,32 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     // ────────── 手动录入单行组件 ──────────
     
     /**
-     * 手动录入一行录入组件集合：问题、用户ID、分类、开启训练、优先级别、训练参数、固定回复、删除按钮
+     * 手动录入一行录入组件集合：问题、用户ID、所属项目、分类、开启训练、训练参数、固定回复、删除按钮
      */
     private class QuestionEntryRow {
         
         private final CustomTextField questionField;
         
-        private final CustomTextField userIdField;
+        private final FilterComboBox<String> userIdField;
+        
+        /**
+         * 已选项目编码列表
+         */
+        private final List<String> selectedProjectCodes = new ArrayList<>();
+        
+        /**
+         * 项目多选按钮（点击弹窗勾选项目）
+         */
+        private final JButton projectBtn;
+        
+        /**
+         * 所属项目『同上』复选框（第 2 行起可用，选中时继承上一行的项目选择）
+         */
+        private final JCheckBox projectSameAsAbove;
         
         private final FilterComboBox<String> classifyCombo;
         
         private final JComboBox<String> enableTrainingCombo;
-        
-        private final CustomTextField priorityField;
         
         private final JTextArea trainingParamArea;
         
@@ -3673,8 +4102,50 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             questionField = new CustomTextField("输入问题");
             questionField.setMinWidth(QUESTION_FIELD_MIN_WIDTH);
             
-            // 用户ID（非必填）：第 2 行起支持『同上』，留空则不提交该字段
-            userIdField = new CustomTextField(rowIndex == 0 ? "用户ID（可留空）" : SAME_AS_ABOVE);
+            // 用户ID（非必填）：第 2 行起支持『同上』，下拉选中用户（从获取用户接口获取），留空则不提交该字段
+            userIdField = new FilterComboBox<>();
+            if (rowIndex > 0) {
+                userIdField.addItem(SAME_AS_ABOVE);
+                userIdField.setSelectedItem(SAME_AS_ABOVE);
+            }
+            for (String userOption : userOptions) {
+                userIdField.addItem(userOption);
+            }
+            
+            // 所属项目：点击按钮弹窗多选项目；第 2 行起支持『同上』
+            projectSameAsAbove = rowIndex > 0 ? new JCheckBox("同上") : null;
+            if (projectSameAsAbove != null) {
+                projectSameAsAbove.setSelected(true);
+                projectSameAsAbove.setFont(UiConstants.FONT_SANS_11);
+            }
+            projectBtn = ButtonFactory.createSecondary(rowIndex > 0 ? SAME_AS_ABOVE : projectButtonLabel(selectedProjectCodes));
+            projectBtn.setToolTipText("点击选择所属项目（可多选）");
+            if (projectSameAsAbove != null) {
+                projectBtn.setEnabled(false);
+            }
+            projectBtn.addActionListener(e -> {
+                List<String> result = showProjectMultiSelectDialog("选择所属项目", selectedProjectCodes);
+                if (result != null) {
+                    selectedProjectCodes.clear();
+                    selectedProjectCodes.addAll(result);
+                    projectBtn.setText(projectButtonLabel(selectedProjectCodes));
+                    if (projectSameAsAbove != null && projectSameAsAbove.isSelected()) {
+                        projectSameAsAbove.setSelected(false);
+                    }
+                }
+            });
+            if (projectSameAsAbove != null) {
+                projectSameAsAbove.addActionListener(e -> {
+                    boolean same = projectSameAsAbove.isSelected();
+                    projectBtn.setEnabled(!same);
+                    if (same) {
+                        projectBtn.setText(SAME_AS_ABOVE);
+                    } else {
+                        selectedProjectCodes.clear();
+                        projectBtn.setText(projectButtonLabel(selectedProjectCodes));
+                    }
+                });
+            }
             
             // 分类：第 2 行起支持『同上』，同时提供历史分类建议
             classifyCombo = new FilterComboBox<>();
@@ -3700,9 +4171,6 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             } else {
                 enableTrainingCombo.setSelectedItem("开启");
             }
-            
-            // 优先级别：第 2 行起支持『同上』，默认 0
-            priorityField = new CustomTextField(rowIndex == 0 ? "0" : SAME_AS_ABOVE);
             
             // 训练参数：多行文本
             trainingParamArea = new JTextArea(2, 10);
@@ -4073,6 +4541,48 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
                 default -> "";
             };
         }
+    }
+    
+    /**
+     * 用户ID单元格渲染器：显示格式“用户名称（用户ID）”，userOptions 中无匹配时仅显示用户ID
+     */
+    private class UserIdCellRenderer extends DefaultTableCellRenderer {
+        
+        @Override
+        public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
+            Component component = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+            String userId = value == null ? "" : value.toString().trim();
+            if (userId.isEmpty()) {
+                setText("");
+                setToolTipText(null);
+            } else {
+                String userName = lookupUserName(userId);
+                String display = userName.isEmpty() ? userId : userName + "（" + userId + "）";
+                setText(display);
+                setToolTipText(display);
+            }
+            return component;
+        }
+    }
+    
+    /**
+     * 根据 userId 从 userOptions 中查找 userName（userOptions 格式“userId - userName”）
+     */
+    private String lookupUserName(String userId) {
+        if (userId == null || userId.isEmpty()) {
+            return "";
+        }
+        for (String option : userOptions) {
+            if (option == null) {
+                continue;
+            }
+            String extracted = extractUserIdFromCombo(option);
+            if (userId.equals(extracted)) {
+                int dashIndex = option.indexOf(" - ");
+                return dashIndex > 0 ? option.substring(dashIndex + 3).trim() : "";
+            }
+        }
+        return "";
     }
     
     /**

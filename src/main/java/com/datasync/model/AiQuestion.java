@@ -3,6 +3,7 @@ package com.datasync.model;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.time.LocalDateTime;
+import java.util.List;
 import lombok.Data;
 
 /**
@@ -77,6 +78,11 @@ public class AiQuestion {
      * 所属项目名称（接口返回数据，客户端仅展示）
      */
     private String projectName;
+    
+    /**
+     * 所属项目编码列表（保存时传递，参数名 projectCodeList）
+     */
+    private List<String> projectCodeList;
     
     /**
      * 问题内容

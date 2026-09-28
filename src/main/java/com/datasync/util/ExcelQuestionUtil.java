@@ -35,7 +35,7 @@ import org.slf4j.LoggerFactory;
  * 提供「界面手动录入」的 Excel 支持能力：<br>
  * 1. {@link #generateTemplate(File)}：运行时生成示例模板（表头 + 示例数据 + 填写说明页），无需预置二进制资源；<br>
  * 2. {@link #parseQuestions(File)}：解析 .xlsx / .xls 文件（WorkbookFactory 自动识别格式），<br>
- * 表头行自动跳过，问题为空的行忽略，开启训练 / 优先级别做格式校验，错误信息带 Excel 行号。
+ * 表头行自动跳过，问题为空的行忽略，开启训练做格式校验，错误信息带 Excel 行号。
  *
  * @author liuweiping
  * @date 2026-09-17
@@ -45,9 +45,9 @@ public final class ExcelQuestionUtil {
     private static final Logger logger = LoggerFactory.getLogger(ExcelQuestionUtil.class);
 
     /**
-     * 模板 / 导入文件的表头（列顺序固定，与手动录入网格一致；用户ID列新增于分类之前，固定答案列位于末尾，兼容旧模板文件）
+     * 模板 / 导入文件的表头（列顺序固定，与手动录入网格一致；项目编码列追加末尾）
      */
-    static final String[] TEMPLATE_HEADERS = {"问题", "用户ID", "分类", "开启训练", "优先级别", "训练参数", "固定答案"};
+    static final String[] TEMPLATE_HEADERS = {"问题", "用户ID", "分类", "开启训练", "训练参数", "固定答案", "项目编码"};
 
     /**
      * 模板问题数据 Sheet 名称
@@ -99,9 +99,9 @@ public final class ExcelQuestionUtil {
             }
 
             String[][] samples = {
-                    {"如何新增数据源？", "10000", "数据源管理", "开启", "0", "datasource", "在数据源管理页面点击『新增』，填写连接信息后保存。"},
-                    {"数据同步失败如何排查？", "10000", "数据同步", "开启", "1", "sync", "查看日志中的错误提示，检查网络与账号权限。"},
-                    {"支持哪些数据库类型？", "10000", "常见问题", "不开启", "", "", "支持 MySQL、PostgreSQL 等常见数据库。"}
+                    {"如何新增数据源？", "10000", "数据源管理", "开启", "datasource", "在数据源管理页面点击『新增』，填写连接信息后保存。", "P00000001"},
+                    {"数据同步失败如何排查？", "10000", "数据同步", "开启", "sync", "查看日志中的错误提示，检查网络与账号权限。", "P00000001,P00000002"},
+                    {"支持哪些数据库类型？", "10000", "常见问题", "不开启", "", "支持 MySQL、PostgreSQL 等常见数据库。", ""}
             };
             for (int r = 0; r < samples.length; r++) {
                 Row row = sheet.createRow(r + 1);
@@ -118,9 +118,9 @@ public final class ExcelQuestionUtil {
                     {"3. 用户ID：选填，标识问题归属用户，会随请求提交到远端接口"},
                     {"4. 分类：选填，可留空"},
                     {"5. 开启训练：仅支持『" + ENABLE_TEXT_ON + "』或『" + ENABLE_TEXT_OFF + "』，留空默认" + ENABLE_TEXT_ON},
-                    {"6. 优先级别：整数（越大越优先），留空默认 0"},
-                    {"7. 训练参数：选填，可留空"},
-                    {"8. 固定答案：选填，可留空；问题命中时优先返回该固定答案"},
+                    {"6. 训练参数：选填，可留空"},
+                    {"7. 固定答案：选填，可留空；问题命中时优先返回该固定答案"},
+                    {"8. 项目编码：选填，多个项目编码用英文逗号分割（如 P00000001,P00000002），可留空"},
                     {"9. 填写完成后保存文件，在客户端「界面手动录入」页点击『导入 Excel』选择该文件"}
             };
             for (int i = 0; i < guideLines.length; i++) {
@@ -182,9 +182,9 @@ public final class ExcelQuestionUtil {
                 String userId = cellText(row, 1, formatter);
                 String classify = cellText(row, 2, formatter);
                 String enableText = cellText(row, 3, formatter);
-                String priorityText = cellText(row, 4, formatter);
-                String trainingParam = cellText(row, 5, formatter);
-                String answer = cellText(row, 6, formatter);
+                String trainingParam = cellText(row, 4, formatter);
+                String answer = cellText(row, 5, formatter);
+                String projectCodes = cellText(row, 6, formatter);
 
                 AiQuestion item = new AiQuestion();
                 item.setQuestion(question);
@@ -192,6 +192,18 @@ public final class ExcelQuestionUtil {
                 item.setQuestionClassify(classify.isEmpty() ? null : classify);
                 item.setTrainingParam(trainingParam);
                 item.setAnswer(answer);
+                item.setPriority(0);
+                // 项目编码：英文逗号分割，去空去重，保持顺序
+                if (!projectCodes.isEmpty()) {
+                    List<String> codeList = new ArrayList<>();
+                    for (String code : projectCodes.split(",")) {
+                        String trimmed = code.strip();
+                        if (!trimmed.isEmpty() && !codeList.contains(trimmed)) {
+                            codeList.add(trimmed);
+                        }
+                    }
+                    item.setProjectCodeList(codeList.isEmpty() ? null : codeList);
+                }
 
                 Integer enable = parseEnableTraining(enableText);
                 if (enable == null) {
@@ -201,16 +213,6 @@ public final class ExcelQuestionUtil {
                 }
                 item.setEnableTraining(enable);
 
-                if (!priorityText.isEmpty()) {
-                    try {
-                        item.setPriority(Integer.parseInt(priorityText));
-                    } catch (NumberFormatException ex) {
-                        result.errors.add("第 " + (i + 1) + " 行：优先级别必须为整数，当前值：" + priorityText);
-                        continue;
-                    }
-                } else {
-                    item.setPriority(0);
-                }
                 result.questions.add(item);
             }
         }

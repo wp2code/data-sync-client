@@ -134,6 +134,48 @@ public final class AiQuestionApiClient {
     }
     
     /**
+     * 获取用户列表（公共接口，返回展示文本列表，格式 "userId - userName"）
+     */
+    public List<String> listUsers(AiEnvConfig env) throws AiApiException {
+        String url = buildUrl(env, env.getUserListApi());
+        String responseText = executePost(env, url, null);
+        JsonNode root = parseResponse(url, responseText);
+        JsonNode data = root.get("data");
+        List<String> users = new ArrayList<>();
+        if (data != null && data.isArray()) {
+            for (JsonNode item : data) {
+                long userId = item.path("userId").asLong(0);
+                String userName = item.path("userName").asText("");
+                if (userId > 0) {
+                    users.add(userId + (userName.isEmpty() ? "" : " - " + userName));
+                }
+            }
+        }
+        return users;
+    }
+    
+    /**
+     * 获取项目列表（公共接口，返回项目选项数组，每项为 [projectCode, displayLabel]）
+     */
+    public List<String[]> listProjects(AiEnvConfig env) throws AiApiException {
+        String url = buildUrl(env, env.getProjectListApi());
+        String responseText = executePost(env, url, null);
+        JsonNode root = parseResponse(url, responseText);
+        JsonNode data = root.get("data");
+        List<String[]> projects = new ArrayList<>();
+        if (data != null && data.isArray()) {
+            for (JsonNode item : data) {
+                String projectCode = item.path("projectCode").asText("");
+                String projectName = item.path("projectName").asText("");
+                if (!projectCode.isEmpty()) {
+                    projects.add(new String[] {projectCode, projectName});
+                }
+            }
+        }
+        return projects;
+    }
+    
+    /**
      * 触发训练选中的问题（按问题 ID 列表批量提交，agentType 指定训练的智能体类型）
      *
      * @param agentType 智能体类型（safety / system / ops / auto）
