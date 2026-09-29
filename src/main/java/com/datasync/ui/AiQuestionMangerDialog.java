@@ -17,6 +17,7 @@ import com.datasync.model.AiAnswer;
 import com.datasync.model.AiEnvConfig;
 import com.datasync.model.AiQuestion;
 import com.datasync.util.ConfigUtil;
+import com.datasync.util.ExcelExportUtil;
 import com.datasync.util.ExcelQuestionUtil;
 import com.datasync.util.LogUtil;
 import com.datasync.util.SQLiteConfigUtil;
@@ -1112,6 +1113,146 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         }
     }
     
+    // ────────── 问题列表 / 回复列表导出 ──────────
+    
+    /**
+     * 构建 userId → 展示名称（「用户名称（用户ID）」格式）的映射（供导出时使用）
+     */
+    private Map<String, String> buildUserIdDisplayMap() {
+        Map<String, String> map = new LinkedHashMap<>();
+        for (String userOption : userOptions) {
+            // userOptions 格式："userId - userName"
+            int dashIndex = userOption.indexOf(" - ");
+            if (dashIndex > 0) {
+                String userId = userOption.substring(0, dashIndex).trim();
+                String userName = userOption.substring(dashIndex + 3).trim();
+                map.put(userId, userName + "（" + userId + "）");
+            }
+        }
+        return map;
+    }
+    
+    /**
+     * 将当前筛选后的全部问题导出为 Excel 文件（含全部页，非仅当前页）
+     */
+    private void exportQuestionsToExcel() {
+        if (allQuestions.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "当前没有可导出的问题数据", "提示", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        // 按当前筛选条件过滤（与 applyLocalFilterAndPaging 逻辑一致，但导出全部而非分页）
+        String keyword = searchField.getText().trim().toLowerCase();
+        String classifyFilter = selectedClassifyFilter();
+        String projectFilter = selectedProjectFilter();
+        String userFilter = selectedUserFilter();
+        Integer statusFilter = selectedTrainingStatusFilter();
+        List<AiQuestion> filtered = new ArrayList<>();
+        for (AiQuestion item : allQuestions) {
+            if (matchesKeyword(item, keyword) && matchesClassify(item, classifyFilter)
+                    && matchesProject(item, projectFilter) && matchesUserFilter(item, userFilter)
+                    && matchesTrainingStatus(item, statusFilter)) {
+                filtered.add(item);
+            }
+        }
+        if (filtered.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "当前筛选条件下没有可导出的问题", "提示", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        filtered.sort(QUESTION_COMPARATOR);
+        
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("导出问题列表");
+        chooser.setSelectedFile(new File("问题列表_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")) + ".xlsx"));
+        chooser.setFileFilter(new FileNameExtensionFilter("Excel 文件 (*.xlsx)", "xlsx"));
+        if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+        File outputFile = chooser.getSelectedFile();
+        if (!outputFile.getName().toLowerCase().endsWith(".xlsx")) {
+            outputFile = new File(outputFile.getParentFile(), outputFile.getName() + ".xlsx");
+        }
+        if (outputFile.exists()) {
+            int overwrite = JOptionPane.showConfirmDialog(this, "文件已存在，是否覆盖？\n" + outputFile.getAbsolutePath(), "确认覆盖",
+                    JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+            if (overwrite != JOptionPane.YES_OPTION) {
+                return;
+            }
+        }
+        try {
+            Map<String, String> userIdDisplay = buildUserIdDisplayMap();
+            ExcelExportUtil.exportQuestions(outputFile, filtered, userIdDisplay);
+        } catch (Exception ex) {
+            logger.error("导出问题列表失败", ex);
+            setStatus("导出失败：" + ex.getMessage(), false);
+            JOptionPane.showMessageDialog(this, "导出失败：" + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        setStatus("问题列表已导出：" + outputFile.getAbsolutePath() + "（共 " + filtered.size() + " 条）", true);
+        int open = JOptionPane.showConfirmDialog(this, "导出成功！\n" + outputFile.getAbsolutePath() + "\n\n是否立即打开查看？", "导出完成",
+                JOptionPane.YES_NO_OPTION, JOptionPane.INFORMATION_MESSAGE);
+        if (open == JOptionPane.YES_OPTION) {
+            openOutputFile(outputFile);
+        }
+    }
+    
+    /**
+     * 将当前筛选后的全部回复导出为 Excel 文件（含全部页，非仅当前页）
+     */
+    private void exportAnswersToExcel() {
+        if (loadedAnswers.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "当前没有可导出的回复数据", "提示", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        // 按当前筛选条件过滤（与 applyAnswerPaging 逻辑一致，但导出全部而非分页）
+        String answerProjectFilter = selectedAnswerProjectFilter();
+        String answerUserFilter = selectedAnswerUserFilter();
+        List<AiAnswer> filtered = new ArrayList<>();
+        for (AiAnswer item : loadedAnswers) {
+            if (matchesAnswerProject(item, answerProjectFilter) && matchesAnswerUserFilter(item, answerUserFilter)) {
+                filtered.add(item);
+            }
+        }
+        if (filtered.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "当前筛选条件下没有可导出的回复", "提示", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        filtered.sort(ANSWER_COMPARATOR);
+        
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("导出问题回复列表");
+        chooser.setSelectedFile(new File("问题回复列表_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")) + ".xlsx"));
+        chooser.setFileFilter(new FileNameExtensionFilter("Excel 文件 (*.xlsx)", "xlsx"));
+        if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+        File outputFile = chooser.getSelectedFile();
+        if (!outputFile.getName().toLowerCase().endsWith(".xlsx")) {
+            outputFile = new File(outputFile.getParentFile(), outputFile.getName() + ".xlsx");
+        }
+        if (outputFile.exists()) {
+            int overwrite = JOptionPane.showConfirmDialog(this, "文件已存在，是否覆盖？\n" + outputFile.getAbsolutePath(), "确认覆盖",
+                    JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+            if (overwrite != JOptionPane.YES_OPTION) {
+                return;
+            }
+        }
+        try {
+            Map<String, String> userIdDisplay = buildUserIdDisplayMap();
+            ExcelExportUtil.exportAnswers(outputFile, filtered, userIdDisplay);
+        } catch (Exception ex) {
+            logger.error("导出问题回复列表失败", ex);
+            setStatus("导出失败：" + ex.getMessage(), false);
+            JOptionPane.showMessageDialog(this, "导出失败：" + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        setStatus("问题回复列表已导出：" + outputFile.getAbsolutePath() + "（共 " + filtered.size() + " 条）", true);
+        int open = JOptionPane.showConfirmDialog(this, "导出成功！\n" + outputFile.getAbsolutePath() + "\n\n是否立即打开查看？", "导出完成",
+                JOptionPane.YES_NO_OPTION, JOptionPane.INFORMATION_MESSAGE);
+        if (open == JOptionPane.YES_OPTION) {
+            openOutputFile(outputFile);
+        }
+    }
+    
     // ────────── 上屏：批量粘贴录入 ──────────
     
     /**
@@ -1714,6 +1855,10 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         checkedCountLabel.setForeground(Color.GRAY);
         checkedCountLabel.setFont(UiConstants.FONT_SANS_11);
         filterRight.add(checkedCountLabel);
+        JButton exportQuestionBtn = ButtonFactory.createToolbar("导出");
+        exportQuestionBtn.setToolTipText("将当前筛选后的全部问题导出为 Excel 文件");
+        exportQuestionBtn.addActionListener(e -> exportQuestionsToExcel());
+        filterRight.add(exportQuestionBtn);
         // 批量操作按钮
         JButton trainBtn = ButtonFactory.createPill("批量训练", UiConstants.COLOR_PRIMARY, UiConstants.COLOR_PRIMARY_LIGHT);
         trainBtn.setToolTipText("触发勾选问题的训练（点击表头复选框可全选当前页）");
@@ -3198,6 +3343,10 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         answerCheckedCountLabel.setForeground(Color.GRAY);
         answerCheckedCountLabel.setFont(UiConstants.FONT_SANS_11);
         answerFilterRight.add(answerCheckedCountLabel);
+        JButton exportAnswerBtn = ButtonFactory.createToolbar("导出");
+        exportAnswerBtn.setToolTipText("将当前筛选后的全部回复导出为 Excel 文件");
+        exportAnswerBtn.addActionListener(e -> exportAnswersToExcel());
+        answerFilterRight.add(exportAnswerBtn);
         // 批量操作按钮
         JButton answerBatchUpdateBtn = ButtonFactory.createPill("批量更新", UiConstants.COLOR_PRIMARY, UiConstants.COLOR_PRIMARY_LIGHT);
         answerBatchUpdateBtn.setToolTipText("批量更新勾选回复的是否允许修改状态（点击表头复选框可全选当前页）");
