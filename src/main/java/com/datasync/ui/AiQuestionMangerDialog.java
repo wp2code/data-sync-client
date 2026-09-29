@@ -94,7 +94,12 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     /**
      * 默认分页大小
      */
-    private static final int DEFAULT_PAGE_SIZE = 100;
+    private static final int DEFAULT_PAGE_SIZE = 300;
+    
+    /**
+     * 分页范围
+     */
+    private static final String[] DEFAULT_PAGE_SCOPE = new String[] {"500", "300", "100", "50", "20", "10"};
     
     /**
      * 每页条数手动输入下限
@@ -139,7 +144,8 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     /**
      * 训练状态筛选项文字（下标对应训练状态值 +2：-2-初始状态；-1-待训练；0-成功；1-失败；2-同步成功(给答案表)；3-训练中；4-超时；5-同步失败(给答案表)）
      */
-    private static final String[] TRAINING_STATUS_TEXTS = {"初始状态", "待训练", "成功", "失败", "同步成功(给答案表)", "训练中", "超时", "同步失败(给答案表)"};
+    private static final String[] TRAINING_STATUS_TEXTS = {"初始状态", "待训练", "成功", "失败", "同步成功(给答案表)", "训练中", "超时",
+            "同步失败(给答案表)"};
     
     /**
      * 训练状态筛选下拉选项对应的训练状态值（顺序与 TRAINING_STATUS_TEXTS 一致）
@@ -330,7 +336,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     /**
      * 批量粘贴已选项目编码列表
      */
-    private List<String> pasteSelectedProjects = new ArrayList<>();
+    private final List<String> pasteSelectedProjects = new ArrayList<>();
     
     /**
      * 批量粘贴项目选择按钮
@@ -719,8 +725,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         panel.add(scrollPane, BorderLayout.CENTER);
         
         JPanel bottomPanel = new JPanel(new BorderLayout(8, 0));
-        JLabel hintLabel = new JLabel(
-                "提示：用户ID选填，问题为空的行自动忽略；支持 Excel 导入（先『下载模板』）");
+        JLabel hintLabel = new JLabel("提示：用户ID选填，问题为空的行自动忽略；支持 Excel 导入（先『下载模板』）");
         hintLabel.setForeground(Color.GRAY);
         hintLabel.setFont(UiConstants.FONT_SANS_10);
         bottomPanel.add(hintLabel, BorderLayout.WEST);
@@ -1079,8 +1084,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             row.answerArea.setText(nullToEmpty(question.getAnswer()));
             // 所属项目：与上一行相同时保持『同上』，否则取消『同上』并设置具体项目
             List<String> currentCodes = question.getProjectCodeList();
-            if (row.projectSameAsAbove != null && currentCodes != null && prevProjectCodes != null
-                    && currentCodes.equals(prevProjectCodes)) {
+            if (row.projectSameAsAbove != null && currentCodes != null && prevProjectCodes != null && currentCodes.equals(prevProjectCodes)) {
                 // 保持『同上』选中状态
             } else if (row.projectSameAsAbove != null && currentCodes == null && prevProjectCodes == null) {
                 // 都为空，保持『同上』
@@ -1148,9 +1152,8 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         Integer statusFilter = selectedTrainingStatusFilter();
         List<AiQuestion> filtered = new ArrayList<>();
         for (AiQuestion item : allQuestions) {
-            if (matchesKeyword(item, keyword) && matchesClassify(item, classifyFilter)
-                    && matchesProject(item, projectFilter) && matchesUserFilter(item, userFilter)
-                    && matchesTrainingStatus(item, statusFilter)) {
+            if (matchesKeyword(item, keyword) && matchesClassify(item, classifyFilter) && matchesProject(item, projectFilter) && matchesUserFilter(
+                    item, userFilter) && matchesTrainingStatus(item, statusFilter)) {
                 filtered.add(item);
             }
         }
@@ -1164,12 +1167,8 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         int checkedCount = tableModel.getCheckedCount();
         if (checkedCount > 0) {
             String[] options = {"仅导出勾选（" + checkedCount + " 条）", "导出全部筛选（" + filtered.size() + " 条）", "取消"};
-            int choice = JOptionPane.showOptionDialog(this,
-                    "已勾选 " + checkedCount + " 条数据，请选择导出范围：",
-                    "导出范围",
-                    JOptionPane.YES_NO_CANCEL_OPTION,
-                    JOptionPane.QUESTION_MESSAGE,
-                    null, options, options[0]);
+            int choice = JOptionPane.showOptionDialog(this, "已勾选 " + checkedCount + " 条数据，请选择导出范围：", "导出范围",
+                    JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE, null, options, options[0]);
             if (choice == JOptionPane.CANCEL_OPTION || choice < 0) {
                 return;
             }
@@ -1252,12 +1251,8 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         int checkedCount = answerTableModel.getCheckedCount();
         if (checkedCount > 0) {
             String[] options = {"仅导出勾选（" + checkedCount + " 条）", "导出全部筛选（" + filtered.size() + " 条）", "取消"};
-            int choice = JOptionPane.showOptionDialog(this,
-                    "已勾选 " + checkedCount + " 条数据，请选择导出范围：",
-                    "导出范围",
-                    JOptionPane.YES_NO_CANCEL_OPTION,
-                    JOptionPane.QUESTION_MESSAGE,
-                    null, options, options[0]);
+            int choice = JOptionPane.showOptionDialog(this, "已勾选 " + checkedCount + " 条数据，请选择导出范围：", "导出范围",
+                    JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE, null, options, options[0]);
             if (choice == JOptionPane.CANCEL_OPTION || choice < 0) {
                 return;
             }
@@ -1512,7 +1507,9 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         runApiTask("批量保存", () -> {
             String message = AiQuestionApiClient.getInstance().saveQuestions(envConfig, items);
             return () -> {
-                clearPasteInputs();
+                // 仅清空问题内容，保留问题归属与训练参数（方便连续批量保存）
+                pasteQuestionArea.setText("");
+                updateParsePreview();
                 currentPage = 1;
                 invalidateLoadedData();
                 refreshQuestionTable();
@@ -1576,8 +1573,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
                 }
                 // 更新手动录入各行下拉（保留『同上』选项）
                 for (QuestionEntryRow row : entryRows) {
-                    boolean hadSameAsAbove = row.userIdField.getItemCount() > 0
-                            && SAME_AS_ABOVE.equals(String.valueOf(row.userIdField.getItemAt(0)));
+                    boolean hadSameAsAbove = row.userIdField.getItemCount() > 0 && SAME_AS_ABOVE.equals(String.valueOf(row.userIdField.getItemAt(0)));
                     Object currentSelection = row.userIdField.getSelectedItem();
                     row.userIdField.removeAllItems();
                     if (hadSameAsAbove) {
@@ -1869,7 +1865,8 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             statusFilterCombo.addItem(statusText);
         }
         statusFilterCombo.setPreferredSize(new Dimension(126, 26));
-        statusFilterCombo.setToolTipText("按训练状态过滤问题列表（-2-初始状态；-1-待训练；0-成功；1-失败；2-同步成功(给答案表)；3-训练中；4-超时；5-同步失败(给答案表)）");
+        statusFilterCombo.setToolTipText(
+                "按训练状态过滤问题列表（-2-初始状态；-1-待训练；0-成功；1-失败；2-同步成功(给答案表)；3-训练中；4-超时；5-同步失败(给答案表)）");
         statusFilterCombo.addActionListener(e -> onTrainingStatusFilterChanged());
         filterLeft.add(statusFilterCombo);
         JButton refreshBtn = ButtonFactory.createPill("查询", UiConstants.COLOR_SUCCESS, UiConstants.COLOR_SUCCESS_LIGHT);
@@ -1899,10 +1896,12 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
                 toolbar.revalidate();
                 toolbar.repaint();
             }
+            
             @Override
             public void mouseEntered(MouseEvent e) {
                 moreConditionLink.setForeground(new Color(59, 72, 221));
             }
+            
             @Override
             public void mouseExited(MouseEvent e) {
                 moreConditionLink.setForeground(new Color(0x1A, 0x73, 0xE8));
@@ -2070,7 +2069,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         pagePanel.add(pageButtonsPanel, BorderLayout.CENTER);
         // 可编辑下拉：既可选快捷值，也可手动输入每页条数（回车或失去焦点生效）
         JPanel sizePanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 2));
-        pageSizeCombo = new JComboBox<>(new String[] {"100", "10", "20", "50"});
+        pageSizeCombo = new JComboBox<>(DEFAULT_PAGE_SCOPE);
         pageSizeCombo.setEditable(true);
         pageSizeCombo.setPreferredSize(new Dimension(76, 26));
         pageSizeCombo.setToolTipText("选择或输入每页条数（" + MIN_PAGE_SIZE + " ~ " + MAX_PAGE_SIZE + "），回车或失去焦点生效");
@@ -2296,7 +2295,8 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         Integer statusFilter = selectedTrainingStatusFilter();
         List<AiQuestion> filtered = new ArrayList<>();
         for (AiQuestion item : allQuestions) {
-            if (matchesKeyword(item, keyword) && matchesClassify(item, classifyFilter) && matchesProject(item, projectFilter) && matchesUserFilter(item, userFilter) && matchesTrainingStatus(item, statusFilter)) {
+            if (matchesKeyword(item, keyword) && matchesClassify(item, classifyFilter) && matchesProject(item, projectFilter) && matchesUserFilter(
+                    item, userFilter) && matchesTrainingStatus(item, statusFilter)) {
                 filtered.add(item);
             }
         }
@@ -2909,7 +2909,8 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     /**
      * 触发单个问题的训练（操作列『训练』按钮）
      * <p>
-     * 与批量触发训练一致：触发前校验问题必须有归属用户ID，缺少时提示补充后再触发；<br> 确认弹窗中完整展示问题全文（不截断）并选择智能体类型（safety / system / ops / auto，默认 auto）随请求 agentType 字段提交；<br> 调用训练接口提交单条 ID，成功后刷新列表。
+     * 与批量触发训练一致：触发前校验问题必须有归属用户ID，缺少时提示补充后再触发；<br> 确认弹窗中完整展示问题全文（不截断）并选择智能体类型（safety / system / ops / auto，默认 auto）随请求 agentType 字段提交；<br> 调用训练接口提交单条
+     * ID，成功后刷新列表。
      */
     private void trainSingleQuestion(AiQuestion question) {
         if (apiBusy) {
@@ -2946,7 +2947,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         JLabel envLabel = new JLabel("环境 [" + envConfig.getEnvName() + "]　问题ID " + question.getId());
         envLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         confirmPanel.add(envLabel);
-        JLabel questionCaptionLabel = new JLabel("问题："+nullToEmpty(question.getQuestion()));
+        JLabel questionCaptionLabel = new JLabel("问题：" + nullToEmpty(question.getQuestion()));
         questionCaptionLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         confirmPanel.add(questionCaptionLabel);
         JPanel agentPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
@@ -3387,10 +3388,12 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
                 toolbar.revalidate();
                 toolbar.repaint();
             }
+            
             @Override
             public void mouseEntered(MouseEvent e) {
                 answerMoreConditionLink.setForeground(new Color(59, 72, 221));
             }
+            
             @Override
             public void mouseExited(MouseEvent e) {
                 answerMoreConditionLink.setForeground(new Color(0x1A, 0x73, 0xE8));
@@ -3498,8 +3501,9 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         });
         answerTable.getColumnModel().getColumn(ACOL_CREATE_TIME).setCellRenderer(new TextCellRenderer(20));
         answerTable.getColumnModel().getColumn(ACOL_UPDATE_TIME).setCellRenderer(new TextCellRenderer(20));
-        answerTable.getColumnModel().getColumn(ACOL_ACTION)
-                .setCellRenderer(new ActionCellRenderer(() -> answerHoverActionRow, () -> answerHoverActionZone, "查看回复详情（全部字段）", false, ANSWER_ACTION_DELETE));
+        answerTable.getColumnModel().getColumn(ACOL_ACTION).setCellRenderer(
+                new ActionCellRenderer(() -> answerHoverActionRow, () -> answerHoverActionZone, "查看回复详情（全部字段）", false,
+                        ANSWER_ACTION_DELETE));
         answerTable.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -3554,7 +3558,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         pagePanel.add(pageButtonsPanel, BorderLayout.CENTER);
         // 可编辑下拉：既可选快捷值，也可手动输入每页条数（回车或失去焦点生效）
         JPanel sizePanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 2));
-        answerPageSizeCombo = new JComboBox<>(new String[] {"100", "10", "20", "50"});
+        answerPageSizeCombo = new JComboBox<>(DEFAULT_PAGE_SCOPE);
         answerPageSizeCombo.setEditable(true);
         answerPageSizeCombo.setPreferredSize(new Dimension(76, 26));
         answerPageSizeCombo.setToolTipText("选择或输入每页条数（" + MIN_PAGE_SIZE + " ~ " + MAX_PAGE_SIZE + "），回车或失去焦点生效");
@@ -3648,7 +3652,8 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             List<AiAnswer> loaded = new ArrayList<>();
             String error = null;
             try {
-                for (AiAnswer item : AiQuestionApiClient.getInstance().listAnswers(                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          envConfig, queryKeyword, answerKeyword, allowModifyFilter, sourceTrainingFilter)) {
+                for (AiAnswer item : AiQuestionApiClient.getInstance()
+                        .listAnswers(envConfig, queryKeyword, answerKeyword, allowModifyFilter, sourceTrainingFilter)) {
                     item.setEnvName(envConfig.getEnvName());
                     loaded.add(item);
                 }
@@ -4393,7 +4398,8 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             case AiQuestion.TRAINING_STATUS_INITIAL -> Color.GRAY;
             case AiQuestion.TRAINING_STATUS_PENDING -> UiConstants.COLOR_PENDING;
             case AiQuestion.TRAINING_STATUS_SUCCESS, AiQuestion.TRAINING_STATUS_SUCCESS_ANSWER -> UiConstants.COLOR_SUCCESS;
-            case AiQuestion.TRAINING_STATUS_FAILED, AiQuestion.TRAINING_STATUS_TIMEOUT, AiQuestion.TRAINING_STATUS_SYNC_FAILED -> UiConstants.COLOR_DANGER;
+            case AiQuestion.TRAINING_STATUS_FAILED, AiQuestion.TRAINING_STATUS_TIMEOUT, AiQuestion.TRAINING_STATUS_SYNC_FAILED ->
+                    UiConstants.COLOR_DANGER;
             case AiQuestion.TRAINING_STATUS_RUNNING -> UiConstants.COLOR_PRIMARY;
             default -> Color.GRAY;
         };
@@ -4645,8 +4651,8 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
      */
     private static class QuestionTableModel extends AbstractTableModel {
         
-        private final String[] columns = {"选择", "ID", "问题", "分类", "所属用户", "所属项目", "训练参数", "固定回复", "回复ID", "开启训练", "训练状态", "开始训练时间",
-                "最近完成训练时间", "训练耗时(秒)", "备注", "操作"};
+        private final String[] columns = {"选择", "ID", "问题", "分类", "所属用户", "所属项目", "训练参数", "固定回复", "回复ID", "开启训练",
+                "训练状态", "开始训练时间", "最近完成训练时间", "训练耗时(秒)", "备注", "操作"};
         
         private final List<AiQuestion> questions = new ArrayList<>();
         
@@ -4823,7 +4829,8 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
      */
     private static class AnswerTableModel extends AbstractTableModel {
         
-        private final String[] columns = {"选择", "ID", "问题", "回复内容", "所属用户", "所属项目", "是否允许修改", "是否来源训练", "创建时间", "更新时间", "操作"};
+        private final String[] columns = {"选择", "ID", "问题", "回复内容", "所属用户", "所属项目", "是否允许修改", "是否来源训练", "创建时间",
+                "更新时间", "操作"};
         
         private final List<AiAnswer> answers = new ArrayList<>();
         
@@ -5193,7 +5200,8 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
          */
         private final boolean withTrainAction;
         
-        private ActionCellRenderer(IntSupplier hoverRowSupplier, IntSupplier hoverZoneSupplier, String viewTooltip, boolean withTrainAction, int deleteZone) {
+        private ActionCellRenderer(IntSupplier hoverRowSupplier, IntSupplier hoverZoneSupplier, String viewTooltip, boolean withTrainAction,
+                int deleteZone) {
             this.hoverRowSupplier = hoverRowSupplier;
             this.hoverZoneSupplier = hoverZoneSupplier;
             this.withTrainAction = withTrainAction;
