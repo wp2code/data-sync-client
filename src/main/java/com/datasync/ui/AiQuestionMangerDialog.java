@@ -1133,7 +1133,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     }
     
     /**
-     * 将当前筛选后的全部问题导出为 Excel 文件（含全部页，非仅当前页）
+     * 将当前筛选后的问题导出为 Excel 文件（支持导出勾选数据或全部筛选数据）
      */
     private void exportQuestionsToExcel() {
         if (allQuestions.isEmpty()) {
@@ -1158,7 +1158,37 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             JOptionPane.showMessageDialog(this, "当前筛选条件下没有可导出的问题", "提示", JOptionPane.WARNING_MESSAGE);
             return;
         }
-        filtered.sort(QUESTION_COMPARATOR);
+        
+        // 判断是否有勾选数据，有勾选时询问导出范围
+        List<AiQuestion> exportData;
+        int checkedCount = tableModel.getCheckedCount();
+        if (checkedCount > 0) {
+            String[] options = {"仅导出勾选（" + checkedCount + " 条）", "导出全部筛选（" + filtered.size() + " 条）", "取消"};
+            int choice = JOptionPane.showOptionDialog(this,
+                    "已勾选 " + checkedCount + " 条数据，请选择导出范围：",
+                    "导出范围",
+                    JOptionPane.YES_NO_CANCEL_OPTION,
+                    JOptionPane.QUESTION_MESSAGE,
+                    null, options, options[0]);
+            if (choice == JOptionPane.CANCEL_OPTION || choice < 0) {
+                return;
+            }
+            if (choice == JOptionPane.YES_OPTION) {
+                // 导出勾选数据
+                exportData = tableModel.collectChecked(filtered);
+            } else {
+                // 导出全部筛选数据
+                exportData = filtered;
+            }
+        } else {
+            exportData = filtered;
+        }
+        
+        if (exportData.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "没有可导出的数据", "提示", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        exportData.sort(QUESTION_COMPARATOR);
         
         JFileChooser chooser = new JFileChooser();
         chooser.setDialogTitle("导出问题列表");
@@ -1180,14 +1210,14 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         }
         try {
             Map<String, String> userIdDisplay = buildUserIdDisplayMap();
-            ExcelExportUtil.exportQuestions(outputFile, filtered, userIdDisplay);
+            ExcelExportUtil.exportQuestions(outputFile, exportData, userIdDisplay);
         } catch (Exception ex) {
             logger.error("导出问题列表失败", ex);
             setStatus("导出失败：" + ex.getMessage(), false);
             JOptionPane.showMessageDialog(this, "导出失败：" + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
             return;
         }
-        setStatus("问题列表已导出：" + outputFile.getAbsolutePath() + "（共 " + filtered.size() + " 条）", true);
+        setStatus("问题列表已导出：" + outputFile.getAbsolutePath() + "（共 " + exportData.size() + " 条）", true);
         int open = JOptionPane.showConfirmDialog(this, "导出成功！\n" + outputFile.getAbsolutePath() + "\n\n是否立即打开查看？", "导出完成",
                 JOptionPane.YES_NO_OPTION, JOptionPane.INFORMATION_MESSAGE);
         if (open == JOptionPane.YES_OPTION) {
@@ -1196,7 +1226,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     }
     
     /**
-     * 将当前筛选后的全部回复导出为 Excel 文件（含全部页，非仅当前页）
+     * 将当前筛选后的回复导出为 Excel 文件（支持导出勾选数据或全部筛选数据）
      */
     private void exportAnswersToExcel() {
         if (loadedAnswers.isEmpty()) {
@@ -1216,7 +1246,37 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             JOptionPane.showMessageDialog(this, "当前筛选条件下没有可导出的回复", "提示", JOptionPane.WARNING_MESSAGE);
             return;
         }
-        filtered.sort(ANSWER_COMPARATOR);
+        
+        // 判断是否有勾选数据，有勾选时询问导出范围
+        List<AiAnswer> exportData;
+        int checkedCount = answerTableModel.getCheckedCount();
+        if (checkedCount > 0) {
+            String[] options = {"仅导出勾选（" + checkedCount + " 条）", "导出全部筛选（" + filtered.size() + " 条）", "取消"};
+            int choice = JOptionPane.showOptionDialog(this,
+                    "已勾选 " + checkedCount + " 条数据，请选择导出范围：",
+                    "导出范围",
+                    JOptionPane.YES_NO_CANCEL_OPTION,
+                    JOptionPane.QUESTION_MESSAGE,
+                    null, options, options[0]);
+            if (choice == JOptionPane.CANCEL_OPTION || choice < 0) {
+                return;
+            }
+            if (choice == JOptionPane.YES_OPTION) {
+                // 导出勾选数据
+                exportData = answerTableModel.collectChecked(filtered);
+            } else {
+                // 导出全部筛选数据
+                exportData = filtered;
+            }
+        } else {
+            exportData = filtered;
+        }
+        
+        if (exportData.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "没有可导出的数据", "提示", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        exportData.sort(ANSWER_COMPARATOR);
         
         JFileChooser chooser = new JFileChooser();
         chooser.setDialogTitle("导出问题回复列表");
@@ -1238,14 +1298,14 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         }
         try {
             Map<String, String> userIdDisplay = buildUserIdDisplayMap();
-            ExcelExportUtil.exportAnswers(outputFile, filtered, userIdDisplay);
+            ExcelExportUtil.exportAnswers(outputFile, exportData, userIdDisplay);
         } catch (Exception ex) {
             logger.error("导出问题回复列表失败", ex);
             setStatus("导出失败：" + ex.getMessage(), false);
             JOptionPane.showMessageDialog(this, "导出失败：" + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
             return;
         }
-        setStatus("问题回复列表已导出：" + outputFile.getAbsolutePath() + "（共 " + filtered.size() + " 条）", true);
+        setStatus("问题回复列表已导出：" + outputFile.getAbsolutePath() + "（共 " + exportData.size() + " 条）", true);
         int open = JOptionPane.showConfirmDialog(this, "导出成功！\n" + outputFile.getAbsolutePath() + "\n\n是否立即打开查看？", "导出完成",
                 JOptionPane.YES_NO_OPTION, JOptionPane.INFORMATION_MESSAGE);
         if (open == JOptionPane.YES_OPTION) {
