@@ -71,6 +71,11 @@ public class AiEnvConfig {
     public static final String DEFAULT_ANSWER_DELETE_API = "/pilot/training/knowledge/answer/delete";
     
     /**
+     * 回复问题来源查询接口默认路径（回复审计页点击问题来源ID查询问题信息）
+     */
+    public static final String DEFAULT_ANSWER_SOURCE_INFO_API = "/pilot/training/knowledge/info";
+    
+    /**
      * 获取用户列表接口默认路径（公共接口）
      */
     public static final String DEFAULT_USER_LIST_API = "/pilot/training/knowledge/user/list";
@@ -141,6 +146,11 @@ public class AiEnvConfig {
      * 问题回复删除接口路径（回复审计页删除问题回复）
      */
     private String answerDeleteApi = DEFAULT_ANSWER_DELETE_API;
+    
+    /**
+     * 回复问题来源查询接口路径（回复审计页点击问题来源ID查询问题信息）
+     */
+    private String answerSourceInfoApi = DEFAULT_ANSWER_SOURCE_INFO_API;
     
     /**
      * 获取用户列表接口路径（公共接口）

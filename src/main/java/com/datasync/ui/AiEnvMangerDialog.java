@@ -73,6 +73,8 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
     
     private JTextField answerDeleteApiField;
     
+    private JTextField answerSourceInfoApiField;
+    
     private JTextField userListApiField;
     
     private JTextField projectListApiField;
@@ -203,6 +205,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         answerListApiField = new JTextField(28);
         answerUpdateApiField = new JTextField(28);
         answerDeleteApiField = new JTextField(28);
+        answerSourceInfoApiField = new JTextField(28);
         userListApiField = new JTextField(28);
         projectListApiField = new JTextField(28);
         remarkField = new JTextField(24);
@@ -218,6 +221,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         answerListApiField.setFont(UiConstants.FONT_SANS_12);
         answerUpdateApiField.setFont(UiConstants.FONT_SANS_12);
         answerDeleteApiField.setFont(UiConstants.FONT_SANS_12);
+        answerSourceInfoApiField.setFont(UiConstants.FONT_SANS_12);
         userListApiField.setFont(UiConstants.FONT_SANS_12);
         projectListApiField.setFont(UiConstants.FONT_SANS_12);
         remarkField.setFont(UiConstants.FONT_SANS_12);
@@ -288,7 +292,8 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         addFormRow(formPanel, gbc, 16, new JLabel("回复列表："), answerListApiField, exampleLink(ANSWER_LIST_EXAMPLE, answerListApiField));
         addFormRow(formPanel, gbc, 17, new JLabel("回复更新："), answerUpdateApiField, exampleLink(ANSWER_UPDATE_EXAMPLE, answerUpdateApiField));
         addFormRow(formPanel, gbc, 18, new JLabel("回复删除："), answerDeleteApiField, exampleLink(ANSWER_DELETE_EXAMPLE, answerDeleteApiField));
-        addFormRow(formPanel, gbc, 19, new JLabel("备注："), remarkField);
+        addFormRow(formPanel, gbc, 19, new JLabel("问题来源查询："), answerSourceInfoApiField, exampleLink(ANSWER_SOURCE_INFO_EXAMPLE, answerSourceInfoApiField));
+        addFormRow(formPanel, gbc, 20, new JLabel("备注："), remarkField);
         
         // 表单整体放入滚动面板：窗口高度不足时出现滚动条，内容与表格高度不被压缩
         JScrollPane formScrollPane = new JScrollPane(formPanel);
@@ -333,6 +338,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         answerListApiField.setText(valueOrDefault(env.getAnswerListApi()));
         answerUpdateApiField.setText(valueOrDefault(env.getAnswerUpdateApi()));
         answerDeleteApiField.setText(valueOrDefault(env.getAnswerDeleteApi()));
+        answerSourceInfoApiField.setText(valueOrDefault(env.getAnswerSourceInfoApi()));
         userListApiField.setText(valueOrDefault(env.getUserListApi()));
         projectListApiField.setText(valueOrDefault(env.getProjectListApi()));
         remarkField.setText(nullToEmpty(env.getRemark()));
@@ -362,6 +368,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         answerListApiField.setText(AiEnvConfig.DEFAULT_ANSWER_LIST_API);
         answerUpdateApiField.setText(AiEnvConfig.DEFAULT_ANSWER_UPDATE_API);
         answerDeleteApiField.setText(AiEnvConfig.DEFAULT_ANSWER_DELETE_API);
+        answerSourceInfoApiField.setText(AiEnvConfig.DEFAULT_ANSWER_SOURCE_INFO_API);
         userListApiField.setText(AiEnvConfig.DEFAULT_USER_LIST_API);
         projectListApiField.setText(AiEnvConfig.DEFAULT_PROJECT_LIST_API);
         remarkField.setText("");
@@ -439,6 +446,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         config.setAnswerListApi(answerListApiField.getText().trim());
         config.setAnswerUpdateApi(answerUpdateApiField.getText().trim());
         config.setAnswerDeleteApi(answerDeleteApiField.getText().trim());
+        config.setAnswerSourceInfoApi(answerSourceInfoApiField.getText().trim());
         config.setUserListApi(userListApiField.getText().trim());
         config.setProjectListApi(projectListApiField.getText().trim());
         config.setHeaders(headersJson);
@@ -1034,6 +1042,24 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
               "data": null
             }
             """);
+    
+    /**
+     * 回复问题来源查询接口示例（id 以 URL 查询参数提交，响应 data 为问题来源信息对象）
+     */
+    private static final ApiExample ANSWER_SOURCE_INFO_EXAMPLE = new ApiExample("回复问题来源查询", AiEnvConfig.DEFAULT_ANSWER_SOURCE_INFO_API, """
+            {}
+            """, """
+            {
+              "code": "0",
+              "message": "查询成功",
+              "data": {
+                "id": 1001,
+                "question": "如何配置数据源",
+                "trainingParam": "{\\"topK\\":3}",
+                "answer": "进入数据源管理页面新增配置"
+              }
+            }
+            """, "?id=1001");
     
     /**
      * 获取用户列表接口示例（公共接口，无请求参数，响应为用户数组）

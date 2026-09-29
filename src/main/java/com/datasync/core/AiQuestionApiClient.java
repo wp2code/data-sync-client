@@ -235,6 +235,27 @@ public final class AiQuestionApiClient {
     }
     
     /**
+     * 按问题来源 ID 查询问题来源信息（回复审计页点击问题来源 ID 触发）
+     * <p>
+     * sourceId 以 URL 查询参数提交，响应 data 为问题来源信息对象；返回原始键值对（字段名 → 文本值）供界面展示。
+     *
+     * @param sourceId 问题来源 ID
+     */
+    public LinkedHashMap<String, String> getSourceInfo(AiEnvConfig env, String sourceId) throws AiApiException {
+        String url = buildUrl(env, env.getAnswerSourceInfoApi());
+        url += "?id=" + sourceId;
+        String responseText = executePost(env, url, null);
+        JsonNode root = parseResponse(url, responseText);
+        LinkedHashMap<String, String> fields = new LinkedHashMap<>();
+        JsonNode data = root.get("data");
+        if (data != null && data.isObject()) {
+            data.fields().forEachRemaining(entry -> fields.put(entry.getKey(),
+                    entry.getValue() instanceof com.fasterxml.jackson.databind.node.NullNode nullNode ? "" : entry.getValue().asText("")));
+        }
+        return fields;
+    }
+    
+    /**
      * 查询问题回复列表（回复审计，本地再做分页）
      * <p>
      * 问题 / 回复内容模糊查询与是否允许修改、是否来源训练筛选随请求提交，参数为空时不提交对应字段（不参与筛选）。

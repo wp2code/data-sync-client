@@ -63,6 +63,11 @@ public class AiAnswer {
     private Boolean sourceTraining;
     
     /**
+     * 问题来源ID（关联的问题ID，接口返回数据，客户端点击后查询问题来源信息）
+     */
+    private String sourceId;
+    
+    /**
      * 创建时间（接口返回字符串，客户端仅展示）
      */
     private String createTime;

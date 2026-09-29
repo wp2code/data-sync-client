@@ -120,6 +120,7 @@ public class SQLiteConfigUtil {
                 answer_list_api VARCHAR(256) DEFAULT '/pilot/training/knowledge/answer/list',
                 answer_update_api VARCHAR(256) DEFAULT '/pilot/training/knowledge/answer/update',
                 answer_delete_api VARCHAR(256) DEFAULT '/pilot/training/knowledge/answer/delete',
+                answer_source_info_api VARCHAR(256) DEFAULT '/pilot/training/knowledge/info',
                 headers     TEXT         DEFAULT NULL,
                 selected    INTEGER      DEFAULT 0,
                 remark      TEXT         DEFAULT NULL,
@@ -529,7 +530,7 @@ public class SQLiteConfigUtil {
      * 新增 AI 问题保存环境配置（env_name 唯一）
      */
     public boolean saveAiEnvConfig(AiEnvConfig config) {
-        String sql = "INSERT INTO ai_env_config (env_name, host, save_api, update_api, delete_api, list_api, train_api, update_user_api, answer_info_api, answer_list_api, answer_update_api, answer_delete_api, user_list_api, project_list_api, headers, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO ai_env_config (env_name, host, save_api, update_api, delete_api, list_api, train_api, update_user_api, answer_info_api, answer_list_api, answer_update_api, answer_delete_api, answer_source_info_api, user_list_api, project_list_api, headers, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (Connection conn = getConnection();
                 PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, config.getEnvName());
@@ -544,10 +545,11 @@ public class SQLiteConfigUtil {
             ps.setString(10, valueOrDefault(config.getAnswerListApi(), AiEnvConfig.DEFAULT_ANSWER_LIST_API));
             ps.setString(11, valueOrDefault(config.getAnswerUpdateApi(), AiEnvConfig.DEFAULT_ANSWER_UPDATE_API));
             ps.setString(12, valueOrDefault(config.getAnswerDeleteApi(), AiEnvConfig.DEFAULT_ANSWER_DELETE_API));
-            ps.setString(13, valueOrDefault(config.getUserListApi(), AiEnvConfig.DEFAULT_USER_LIST_API));
-            ps.setString(14, valueOrDefault(config.getProjectListApi(), AiEnvConfig.DEFAULT_PROJECT_LIST_API));
-            ps.setString(15, config.getHeaders());
-            ps.setString(16, config.getRemark());
+            ps.setString(13, valueOrDefault(config.getAnswerSourceInfoApi(), AiEnvConfig.DEFAULT_ANSWER_SOURCE_INFO_API));
+            ps.setString(14, valueOrDefault(config.getUserListApi(), AiEnvConfig.DEFAULT_USER_LIST_API));
+            ps.setString(15, valueOrDefault(config.getProjectListApi(), AiEnvConfig.DEFAULT_PROJECT_LIST_API));
+            ps.setString(16, config.getHeaders());
+            ps.setString(17, config.getRemark());
             return ps.executeUpdate() > 0;
         } catch (SQLException e) {
             logger.error("[SQLite] 保存 AI 问题环境失败", e);
@@ -560,7 +562,7 @@ public class SQLiteConfigUtil {
      */
     public boolean updateAiEnvConfig(AiEnvConfig config) {
         String sql = "UPDATE ai_env_config SET env_name = ?, host = ?, save_api = ?, update_api = ?, delete_api = ?, list_api = ?, train_api = ?, update_user_api = ?, "
-                + "answer_info_api = ?, answer_list_api = ?, answer_update_api = ?, answer_delete_api = ?, user_list_api = ?, project_list_api = ?, headers = ?, remark = ?, update_time = CURRENT_TIMESTAMP WHERE id = ?";
+                + "answer_info_api = ?, answer_list_api = ?, answer_update_api = ?, answer_delete_api = ?, answer_source_info_api = ?, user_list_api = ?, project_list_api = ?, headers = ?, remark = ?, update_time = CURRENT_TIMESTAMP WHERE id = ?";
         try (Connection conn = getConnection();
                 PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, config.getEnvName());
@@ -575,11 +577,12 @@ public class SQLiteConfigUtil {
             ps.setString(10, valueOrDefault(config.getAnswerListApi(), AiEnvConfig.DEFAULT_ANSWER_LIST_API));
             ps.setString(11, valueOrDefault(config.getAnswerUpdateApi(), AiEnvConfig.DEFAULT_ANSWER_UPDATE_API));
             ps.setString(12, valueOrDefault(config.getAnswerDeleteApi(), AiEnvConfig.DEFAULT_ANSWER_DELETE_API));
-            ps.setString(13, valueOrDefault(config.getUserListApi(), AiEnvConfig.DEFAULT_USER_LIST_API));
-            ps.setString(14, valueOrDefault(config.getProjectListApi(), AiEnvConfig.DEFAULT_PROJECT_LIST_API));
-            ps.setString(15, config.getHeaders());
-            ps.setString(16, config.getRemark());
-            ps.setLong(17, config.getId());
+            ps.setString(13, valueOrDefault(config.getAnswerSourceInfoApi(), AiEnvConfig.DEFAULT_ANSWER_SOURCE_INFO_API));
+            ps.setString(14, valueOrDefault(config.getUserListApi(), AiEnvConfig.DEFAULT_USER_LIST_API));
+            ps.setString(15, valueOrDefault(config.getProjectListApi(), AiEnvConfig.DEFAULT_PROJECT_LIST_API));
+            ps.setString(16, config.getHeaders());
+            ps.setString(17, config.getRemark());
+            ps.setLong(18, config.getId());
             return ps.executeUpdate() > 0;
         } catch (SQLException e) {
             logger.error("[SQLite] 更新 AI 问题环境失败", e);
@@ -622,6 +625,7 @@ public class SQLiteConfigUtil {
         addColumnIfAbsent(stmt, "ai_env_config", "answer_list_api", "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_ANSWER_LIST_API + "'");
         addColumnIfAbsent(stmt, "ai_env_config", "answer_update_api", "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_ANSWER_UPDATE_API + "'");
         addColumnIfAbsent(stmt, "ai_env_config", "answer_delete_api", "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_ANSWER_DELETE_API + "'");
+        addColumnIfAbsent(stmt, "ai_env_config", "answer_source_info_api", "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_ANSWER_SOURCE_INFO_API + "'");
         addColumnIfAbsent(stmt, "ai_env_config", "user_list_api", "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_USER_LIST_API + "'");
         addColumnIfAbsent(stmt, "ai_env_config", "project_list_api", "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_PROJECT_LIST_API + "'");
         addColumnIfAbsent(stmt, "ai_env_config", "headers", "TEXT DEFAULT NULL");
@@ -753,6 +757,7 @@ public class SQLiteConfigUtil {
         config.setAnswerListApi(valueOrDefault(rs.getString("answer_list_api"), AiEnvConfig.DEFAULT_ANSWER_LIST_API));
         config.setAnswerUpdateApi(valueOrDefault(rs.getString("answer_update_api"), AiEnvConfig.DEFAULT_ANSWER_UPDATE_API));
         config.setAnswerDeleteApi(valueOrDefault(rs.getString("answer_delete_api"), AiEnvConfig.DEFAULT_ANSWER_DELETE_API));
+        config.setAnswerSourceInfoApi(valueOrDefault(rs.getString("answer_source_info_api"), AiEnvConfig.DEFAULT_ANSWER_SOURCE_INFO_API));
         config.setUserListApi(valueOrDefault(rs.getString("user_list_api"), AiEnvConfig.DEFAULT_USER_LIST_API));
         config.setProjectListApi(valueOrDefault(rs.getString("project_list_api"), AiEnvConfig.DEFAULT_PROJECT_LIST_API));
         config.setHeaders(rs.getString("headers"));

@@ -258,11 +258,16 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     
     private static final int ACOL_SOURCE_TRAINING = 7;
     
-    private static final int ACOL_CREATE_TIME = 8;
+    /**
+     * 问题来源 ID 列索引
+     */
+    private static final int ACOL_SOURCE_ID = 8;
     
-    private static final int ACOL_UPDATE_TIME = 9;
+    private static final int ACOL_CREATE_TIME = 9;
     
-    private static final int ACOL_ACTION = 10;
+    private static final int ACOL_UPDATE_TIME = 10;
+    
+    private static final int ACOL_ACTION = 11;
     
     /**
      * 回复审计允许修改筛选下拉的『全部』选项（选中时不过滤该状态）
@@ -3462,7 +3467,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         answerTable.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         answerTable.setRowHeight(28);
         answerTable.getTableHeader().setReorderingAllowed(false);
-        int[] columnWidths = {CHECK_COLUMN_WIDTH, 50, 240, 240, 90, 100, 90, 90, 130, 130, ANSWER_ACTION_COLUMN_WIDTH};
+        int[] columnWidths = {CHECK_COLUMN_WIDTH, 50, 240, 240, 90, 100, 90, 90, 70, 130, 130, ANSWER_ACTION_COLUMN_WIDTH};
         for (int i = 0; i < columnWidths.length; i++) {
             answerTable.getColumnModel().getColumn(i).setPreferredWidth(columnWidths[i]);
         }
@@ -3497,6 +3502,20 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             JLabel label = new JLabel(value.toString());
             label.setHorizontalAlignment(SwingConstants.CENTER);
             label.setForeground(SOURCE_TRAINING_YES.equals(value.toString()) ? UiConstants.COLOR_SUCCESS : Color.GRAY);
+            return label;
+        });
+        // 问题来源 ID 列：有值时蓝色链接样式，无值时灰色
+        answerTable.getColumnModel().getColumn(ACOL_SOURCE_ID).setCellRenderer((table, value, isSelected, hasFocus, row, column) -> {
+            String text = value != null ? value.toString() : "";
+            JLabel label = new JLabel(text);
+            label.setHorizontalAlignment(SwingConstants.CENTER);
+            if (!text.isEmpty()) {
+                label.setForeground(isSelected ? table.getSelectionForeground() : UiConstants.COLOR_LINK);
+                label.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+                label.setToolTipText("点击查看问题来源信息");
+            } else {
+                label.setForeground(isSelected ? table.getSelectionForeground() : Color.GRAY);
+            }
             return label;
         });
         answerTable.getColumnModel().getColumn(ACOL_CREATE_TIME).setCellRenderer(new TextCellRenderer(20));
@@ -3905,6 +3924,13 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
                 answerTableModel.toggleChecked(row);
                 updateAnswerCheckControls();
             }
+        } else if (column == ACOL_SOURCE_ID) {
+            if (e.getClickCount() >= 1) {
+                AiAnswer clicked = answerTableModel.getAnswerAt(row);
+                if (clicked.getSourceId() != null || answer.getSourceId().isEmpty()) {
+                    showSourceQuestionInfo(clicked);
+                }
+            }
         } else if (column == ACOL_ACTION) {
             Rectangle cellRect = answerTable.getCellRect(row, column, false);
             int zone = actionZoneAt(e.getX(), cellRect, 3);
@@ -3982,6 +4008,76 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         addFormRow(form, gbc, 8, new JLabel("创建时间："), new JLabel(nullToEmpty(answer.getCreateTime())));
         addFormRow(form, gbc, 9, new JLabel("更新时间："), new JLabel(nullToEmpty(answer.getUpdateTime())));
         JOptionPane.showMessageDialog(this, form, "回复详情", JOptionPane.PLAIN_MESSAGE);
+    }
+    
+    /**
+     * 查看问题来源信息（点击回复审计表格的问题来源 ID 列触发）
+     * <p>
+     * 上方纵向展示问题来源基本信息（问题ID、问题、训练参数），下方固定回复与当前回复左右布局对比展示。
+     */
+    private void showSourceQuestionInfo(AiAnswer answer) {
+        AiEnvConfig envConfig = findEnvByName(answer.getEnvName());
+        if (envConfig == null) {
+            JOptionPane.showMessageDialog(this, "未找到回复所属环境配置 [" + nullToEmpty(answer.getEnvName()) + "]", "错误",
+                    JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        if (answer.getSourceId() == null || answer.getSourceId().isEmpty()) {
+            JOptionPane.showMessageDialog(this, "该回复未关联问题来源 ID", "提示", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        runApiTask("查询问题来源信息", () -> {
+            LinkedHashMap<String, String> fields = AiQuestionApiClient.getInstance().getSourceInfo(envConfig, answer.getSourceId());
+            return () -> {
+                JPanel content = new JPanel();
+                content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+                content.setBorder(new EmptyBorder(8, 8, 8, 8));
+                
+                // 上方：问题来源基本信息（纵向布局）
+                JPanel topPanel = new JPanel(new GridBagLayout());
+                topPanel.setBorder(BorderFactory.createTitledBorder("问题来源信息"));
+                topPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 200));
+                GridBagConstraints gbc = new GridBagConstraints();
+                gbc.insets = new Insets(4, 6, 4, 6);
+                gbc.anchor = GridBagConstraints.WEST;
+                addFormRow(topPanel, gbc, 0, new JLabel("问题："), readonlyArea(fields.getOrDefault("question", ""), 1));
+                addFormRow(topPanel, gbc, 1, new JLabel("训练参数："), readonlyArea(fields.getOrDefault("trainingParam", ""), 3));
+                content.add(topPanel);
+                content.add(Box.createRigidArea(new Dimension(0, 8)));
+                
+                // 下方：固定回复（左）与当前回复（右）左右布局
+                JPanel comparePanel = new JPanel(new GridLayout(1, 2, 8, 0));
+                comparePanel.setBorder(BorderFactory.createEmptyBorder());
+                
+                JPanel leftPanel = new JPanel(new BorderLayout());
+                leftPanel.setBorder(BorderFactory.createTitledBorder("固定回复（问题训练）"));
+                JTextArea sourceAnswerArea = new JTextArea(fields.getOrDefault("answer", ""));
+                sourceAnswerArea.setEditable(false);
+                sourceAnswerArea.setLineWrap(true);
+                sourceAnswerArea.setWrapStyleWord(true);
+                sourceAnswerArea.setCaretPosition(0);
+                leftPanel.add(new JScrollPane(sourceAnswerArea), BorderLayout.CENTER);
+                
+                JPanel rightPanel = new JPanel(new BorderLayout());
+                rightPanel.setBorder(BorderFactory.createTitledBorder("回复内容（回复审计）"));
+                JTextArea currentAnswerArea = new JTextArea(nullToEmpty(answer.getAnswer()));
+                currentAnswerArea.setEditable(false);
+                currentAnswerArea.setLineWrap(true);
+                currentAnswerArea.setWrapStyleWord(true);
+                currentAnswerArea.setCaretPosition(0);
+                rightPanel.add(new JScrollPane(currentAnswerArea), BorderLayout.CENTER);
+                
+                comparePanel.add(leftPanel);
+                comparePanel.add(rightPanel);
+                comparePanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
+                content.add(comparePanel);
+                
+                JScrollPane scroll = new JScrollPane(content);
+                scroll.setBorder(BorderFactory.createEmptyBorder());
+                scroll.setPreferredSize(new Dimension(1000, 600));
+                JOptionPane.showMessageDialog(this, scroll, "问题来源信息 - 来源ID: " + answer.getSourceId(), JOptionPane.PLAIN_MESSAGE);
+            };
+        });
     }
     
     /**
@@ -4829,8 +4925,8 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
      */
     private static class AnswerTableModel extends AbstractTableModel {
         
-        private final String[] columns = {"选择", "ID", "问题", "回复内容", "所属用户", "所属项目", "是否允许修改", "是否来源训练", "创建时间",
-                "更新时间", "操作"};
+        private final String[] columns = {"选择", "ID", "问题", "回复内容", "所属用户", "所属项目", "是否允许修改", "是否来源训练", "问题来源ID",
+                "创建时间", "更新时间", "操作"};
         
         private final List<AiAnswer> answers = new ArrayList<>();
         
@@ -4990,6 +5086,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
                 case ACOL_USER -> nullToEmpty(answer.getUserId());
                 case ACOL_MODIFY -> answer.isModifyAllowed() ? ALLOW_MODIFY_YES : ALLOW_MODIFY_NO;
                 case ACOL_SOURCE_TRAINING -> answer.isFromTraining() ? SOURCE_TRAINING_YES : SOURCE_TRAINING_NO;
+                case ACOL_SOURCE_ID -> answer.getSourceId() != null ? String.valueOf(answer.getSourceId()) : "";
                 case ACOL_CREATE_TIME -> nullToEmpty(answer.getCreateTime());
                 case ACOL_UPDATE_TIME -> nullToEmpty(answer.getUpdateTime());
                 default -> "";
