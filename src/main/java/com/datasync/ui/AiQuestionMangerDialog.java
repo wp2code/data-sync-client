@@ -367,7 +367,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     
     private JLabel parsePreviewLabel;
     
-    private CustomTextField pasteClassifyField;
+    private FilterComboBox<String> pasteClassifyCombo;
     
     private JComboBox<String> pasteAutoTrainingCombo;
     
@@ -1433,14 +1433,17 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         gbc.weightx = 1.0;
         panel.add(pasteProjectBtn, gbc);
         
-        pasteClassifyField = new CustomTextField("问题的分类（适用全部问题，可留空）");
+        pasteClassifyCombo = new FilterComboBox<>();
+        for (String classify : classifySuggestions) {
+            pasteClassifyCombo.addItem(classify);
+        }
         gbc.gridx = 0;
         gbc.gridy = 2;
         gbc.weightx = 0;
         panel.add(new JLabel("      分类："), gbc);
         gbc.gridx = 1;
         gbc.weightx = 1.0;
-        panel.add(pasteClassifyField, gbc);
+        panel.add(pasteClassifyCombo, gbc);
         
         pasteAutoTrainingCombo = new JComboBox<>(new String[] {"允许", "不允许"});
         pasteAutoTrainingCombo.setSelectedItem("允许");
@@ -1510,7 +1513,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             return;
         }
         String userId = extractUserIdFromCombo(pasteUserIdField.getSelectedItem());
-        String classify = pasteClassifyField.getText().trim();
+        String classify = editableComboText(pasteClassifyCombo).trim();
         String trainingParam = pasteTrainingParamArea.getText().trim();
         int autoTraining = "允许".equals(pasteAutoTrainingCombo.getSelectedItem()) ? AiQuestion.AUTO_TRAINING_ALLOWED : AiQuestion.AUTO_TRAINING_NOT_ALLOWED;
         List<AiQuestion> items = new ArrayList<>();
@@ -1548,7 +1551,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         pasteUserIdField.getEditor().setItem("");
         pasteSelectedProjects.clear();
         pasteProjectBtn.setText(projectButtonLabel(pasteSelectedProjects));
-        pasteClassifyField.setText("");
+        pasteClassifyCombo.getEditor().setItem("");
         pasteAutoTrainingCombo.setSelectedItem("允许");
         pasteTrainingParamArea.setText("");
         updateParsePreview();
@@ -2304,6 +2307,32 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
                 // 清理已勾选但已不存在的问题（保留跨页勾选）
                 tableModel.retainChecked(allQuestions);
                 classifySuggestions = extractClassifies(allQuestions);
+                // 同步更新批量粘贴分类下拉建议
+                if (pasteClassifyCombo != null) {
+                    Object currentPasteClassify = pasteClassifyCombo.getEditor().getItem();
+                    pasteClassifyCombo.removeAllItems();
+                    for (String classify : classifySuggestions) {
+                        pasteClassifyCombo.addItem(classify);
+                    }
+                    if (currentPasteClassify != null) {
+                        pasteClassifyCombo.getEditor().setItem(currentPasteClassify);
+                    }
+                }
+                // 同步更新手动录入各行分类下拉建议
+                for (QuestionEntryRow row : entryRows) {
+                    Object currentClassify = row.classifyCombo.getEditor().getItem();
+                    boolean hasSameAsAbove = row.classifyCombo.getItemCount() > 0 && SAME_AS_ABOVE.equals(String.valueOf(row.classifyCombo.getItemAt(0)));
+                    row.classifyCombo.removeAllItems();
+                    if (hasSameAsAbove) {
+                        row.classifyCombo.addItem(SAME_AS_ABOVE);
+                    }
+                    for (String classify : classifySuggestions) {
+                        row.classifyCombo.addItem(classify);
+                    }
+                    if (currentClassify != null) {
+                        row.classifyCombo.getEditor().setItem(currentClassify);
+                    }
+                }
                 // 按最新列表分类重建分类筛选项（选中分类仍存在则保持，否则回到『全部分类』）
                 refreshClassifyFilterOptions();
                 // 按最新列表重建项目筛选项（选中项目仍存在则保持，否则回到『全部项目』）
