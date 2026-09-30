@@ -26,6 +26,11 @@ public class CustomTextField extends JTextField {
      */
     private final Dimension preferredSize;
     
+    /**
+     * 最小宽度（0 表示不限制），用于保证输入框在 GridBag 等布局中的可见宽度
+     */
+    private int minWidth = 0;
+    
     public CustomTextField(String placeholder) {
         setFont(UiConstants.FONT_SANS_11);
         this.placeholder = placeholder != null ? placeholder : "请输入内容";
@@ -85,9 +90,20 @@ public class CustomTextField extends JTextField {
         }
     }
     
+    /**
+     * 设置最小宽度：首选尺寸小于该宽度时按该宽度计算
+     */
+    public void setMinWidth(int minWidth) {
+        this.minWidth = minWidth;
+    }
+    
     @Override
     public Dimension getPreferredSize() {
-        return preferredSize != null ? preferredSize : super.getPreferredSize();
+        Dimension size = preferredSize != null ? new Dimension(preferredSize) : super.getPreferredSize();
+        if (minWidth > 0 && size.width < minWidth) {
+            size.width = minWidth;
+        }
+        return size;
     }
     
     @Override

@@ -16,8 +16,8 @@ public class IconListRenderer extends DefaultListCellRenderer {
         
         if (value instanceof IconItem) {
             IconItem item = (IconItem) value;
-            setIcon(item.getIcon());
-            setText(item.getText());
+            setIcon(item.icon());
+            setText(item.text());
         } else {
             setIcon(null);
             setText(value == null ? "" : value.toString());

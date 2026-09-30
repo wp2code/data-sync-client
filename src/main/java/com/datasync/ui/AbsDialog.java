@@ -13,6 +13,6 @@ public abstract class AbsDialog extends JDialog {
         super(owner, title, modal);
         setSize(width, height);
         setLocationRelativeTo(owner);
-  
+        
     }
 }

@@ -27,6 +27,7 @@ public class OptionJPanel extends JPanel {
     private final Color selectedColor = new Color(62, 78, 220);
     
     private boolean selected = false;
+    
     @Getter
     @Setter
     private Object data;
@@ -121,6 +122,13 @@ public class OptionJPanel extends JPanel {
         this.borderColor = selected ? selectedColor : null;
         setBackground(selected ? selectedColor : UIManager.getColor("Panel.background"));
         repaint();
+    }
+    
+    /**
+     * 更新主文本（用于列表项状态标记动态刷新）
+     */
+    public void updateText(String text) {
+        label.setText(text);
     }
     
     

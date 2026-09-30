@@ -1,5 +1,6 @@
 package com.datasync.util;
 
+import com.datasync.model.AiEnvConfig;
 import com.datasync.model.DataSource;
 import com.datasync.model.DbType;
 import com.datasync.model.GitLabAuthConfig;
@@ -104,6 +105,30 @@ public class SQLiteConfigUtil {
             );
             """;
     
+    private static final String CREATE_AI_ENV_CONFIG_TABLE_SQL = """
+            CREATE TABLE IF NOT EXISTS ai_env_config (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                env_name    VARCHAR(64)  NOT NULL UNIQUE,
+                host        VARCHAR(256) NOT NULL,
+                save_api    VARCHAR(256) DEFAULT '/pilot/training/knowledge/batch-save',
+                update_api  VARCHAR(256) DEFAULT '/pilot/training/knowledge/update',
+                delete_api  VARCHAR(256) DEFAULT '/pilot/training/knowledge/delete',
+                list_api    VARCHAR(256) DEFAULT '/pilot/training/knowledge/all-list',
+                train_api   VARCHAR(256) DEFAULT '/pilot/training/knowledge/runBatchTraining',
+                update_user_api VARCHAR(256) DEFAULT '/pilot/training/knowledge/batch-update',
+                answer_info_api VARCHAR(256) DEFAULT '/pilot/training/knowledge/answer/info',
+                answer_list_api VARCHAR(256) DEFAULT '/pilot/training/knowledge/answer/list',
+                answer_update_api VARCHAR(256) DEFAULT '/pilot/training/knowledge/answer/update',
+                answer_delete_api VARCHAR(256) DEFAULT '/pilot/training/knowledge/answer/delete',
+                answer_source_info_api VARCHAR(256) DEFAULT '/pilot/training/knowledge/info',
+                headers     TEXT         DEFAULT NULL,
+                selected    INTEGER      DEFAULT 0,
+                remark      TEXT         DEFAULT NULL,
+                create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            """;
+    
     // ────────── 单例 ──────────
     private static final SQLiteConfigUtil INSTANCE = new SQLiteConfigUtil();
     
@@ -115,6 +140,7 @@ public class SQLiteConfigUtil {
     }
     
     // ────────── 初始化 ──────────
+    
     /**
      * 检测并创建本地 SQLite 数据库与数据表（工具启动时调用一次）
      */
@@ -126,6 +152,9 @@ public class SQLiteConfigUtil {
                 stmt.execute(CREATE_TABLE_SQL);
                 stmt.execute(CREATE_SCRIPT_TABLE_SQL);
                 stmt.execute(CREATE_GITLAB_CONFIG_TABLE_SQL);
+                stmt.execute(CREATE_AI_ENV_CONFIG_TABLE_SQL);
+                ensureAiEnvConfigColumns(stmt);
+                seedDefaultAiEnv(stmt);
             }
         } catch (Exception e) {
             logger.error("[SQLite] 初始化失败", e);
@@ -461,10 +490,197 @@ public class SQLiteConfigUtil {
         return null;
     }
     
+    // ────────── AI 问题环境 CRUD ──────────
+    
+    /**
+     * 加载全部 AI 问题保存环境配置（保证全局选中环境有效）
+     */
+    public List<AiEnvConfig> loadAiEnvConfigs() {
+        List<AiEnvConfig> configs = new ArrayList<>();
+        String sql = "SELECT * FROM ai_env_config ORDER BY id ASC";
+        try (Connection conn = getConnection()) {
+            ensureSelectedAiEnv(conn);
+            try (Statement stmt = conn.createStatement();
+                    ResultSet rs = stmt.executeQuery(sql)) {
+                while (rs.next()) {
+                    configs.add(mapRowToAiEnvConfig(rs));
+                }
+            }
+        } catch (SQLException e) {
+            logger.error("[SQLite] 加载 AI 问题环境列表失败", e);
+        }
+        return configs;
+    }
+    
+    /**
+     * 切换全局选中的环境（其余环境取消选中）
+     */
+    public boolean updateSelectedAiEnv(Long id) {
+        String sql = "UPDATE ai_env_config SET selected = CASE WHEN id = ? THEN 1 ELSE 0 END";
+        try (Connection conn = getConnection();
+                PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setLong(1, id);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            logger.error("[SQLite] 切换全局选中环境失败", e);
+            return false;
+        }
+    }
+    
+    /**
+     * 新增 AI 问题保存环境配置（env_name 唯一）
+     */
+    public boolean saveAiEnvConfig(AiEnvConfig config) {
+        String sql = "INSERT INTO ai_env_config (env_name, host, save_api, update_api, delete_api, list_api, train_api, update_user_api, answer_info_api, answer_list_api, answer_update_api, answer_delete_api, answer_source_info_api, user_list_api, project_list_api, headers, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        try (Connection conn = getConnection();
+                PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, config.getEnvName());
+            ps.setString(2, config.getHost());
+            ps.setString(3, valueOrDefault(config.getSaveApi(), AiEnvConfig.DEFAULT_SAVE_API));
+            ps.setString(4, valueOrDefault(config.getUpdateApi(), AiEnvConfig.DEFAULT_UPDATE_API));
+            ps.setString(5, valueOrDefault(config.getDeleteApi(), AiEnvConfig.DEFAULT_DELETE_API));
+            ps.setString(6, valueOrDefault(config.getListApi(), AiEnvConfig.DEFAULT_LIST_API));
+            ps.setString(7, valueOrDefault(config.getTrainApi(), AiEnvConfig.DEFAULT_TRAIN_API));
+            ps.setString(8, valueOrDefault(config.getUpdateUserApi(), AiEnvConfig.DEFAULT_UPDATE_USER_API));
+            ps.setString(9, valueOrDefault(config.getAnswerInfoApi(), AiEnvConfig.DEFAULT_ANSWER_INFO_API));
+            ps.setString(10, valueOrDefault(config.getAnswerListApi(), AiEnvConfig.DEFAULT_ANSWER_LIST_API));
+            ps.setString(11, valueOrDefault(config.getAnswerUpdateApi(), AiEnvConfig.DEFAULT_ANSWER_UPDATE_API));
+            ps.setString(12, valueOrDefault(config.getAnswerDeleteApi(), AiEnvConfig.DEFAULT_ANSWER_DELETE_API));
+            ps.setString(13, valueOrDefault(config.getAnswerSourceInfoApi(), AiEnvConfig.DEFAULT_ANSWER_SOURCE_INFO_API));
+            ps.setString(14, valueOrDefault(config.getUserListApi(), AiEnvConfig.DEFAULT_USER_LIST_API));
+            ps.setString(15, valueOrDefault(config.getProjectListApi(), AiEnvConfig.DEFAULT_PROJECT_LIST_API));
+            ps.setString(16, config.getHeaders());
+            ps.setString(17, config.getRemark());
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            logger.error("[SQLite] 保存 AI 问题环境失败", e);
+            return false;
+        }
+    }
+    
+    /**
+     * 更新 AI 问题保存环境配置
+     */
+    public boolean updateAiEnvConfig(AiEnvConfig config) {
+        String sql =
+                "UPDATE ai_env_config SET env_name = ?, host = ?, save_api = ?, update_api = ?, delete_api = ?, list_api = ?, train_api = ?, update_user_api = ?, "
+                        + "answer_info_api = ?, answer_list_api = ?, answer_update_api = ?, answer_delete_api = ?, answer_source_info_api = ?, user_list_api = ?, project_list_api = ?, headers = ?, remark = ?, update_time = CURRENT_TIMESTAMP WHERE id = ?";
+        try (Connection conn = getConnection();
+                PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, config.getEnvName());
+            ps.setString(2, config.getHost());
+            ps.setString(3, valueOrDefault(config.getSaveApi(), AiEnvConfig.DEFAULT_SAVE_API));
+            ps.setString(4, valueOrDefault(config.getUpdateApi(), AiEnvConfig.DEFAULT_UPDATE_API));
+            ps.setString(5, valueOrDefault(config.getDeleteApi(), AiEnvConfig.DEFAULT_DELETE_API));
+            ps.setString(6, valueOrDefault(config.getListApi(), AiEnvConfig.DEFAULT_LIST_API));
+            ps.setString(7, valueOrDefault(config.getTrainApi(), AiEnvConfig.DEFAULT_TRAIN_API));
+            ps.setString(8, valueOrDefault(config.getUpdateUserApi(), AiEnvConfig.DEFAULT_UPDATE_USER_API));
+            ps.setString(9, valueOrDefault(config.getAnswerInfoApi(), AiEnvConfig.DEFAULT_ANSWER_INFO_API));
+            ps.setString(10, valueOrDefault(config.getAnswerListApi(), AiEnvConfig.DEFAULT_ANSWER_LIST_API));
+            ps.setString(11, valueOrDefault(config.getAnswerUpdateApi(), AiEnvConfig.DEFAULT_ANSWER_UPDATE_API));
+            ps.setString(12, valueOrDefault(config.getAnswerDeleteApi(), AiEnvConfig.DEFAULT_ANSWER_DELETE_API));
+            ps.setString(13, valueOrDefault(config.getAnswerSourceInfoApi(), AiEnvConfig.DEFAULT_ANSWER_SOURCE_INFO_API));
+            ps.setString(14, valueOrDefault(config.getUserListApi(), AiEnvConfig.DEFAULT_USER_LIST_API));
+            ps.setString(15, valueOrDefault(config.getProjectListApi(), AiEnvConfig.DEFAULT_PROJECT_LIST_API));
+            ps.setString(16, config.getHeaders());
+            ps.setString(17, config.getRemark());
+            ps.setLong(18, config.getId());
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            logger.error("[SQLite] 更新 AI 问题环境失败", e);
+            return false;
+        }
+    }
+    
+    /**
+     * 删除 AI 问题保存环境配置
+     */
+    public boolean deleteAiEnvConfig(Long id) {
+        String sql = "DELETE FROM ai_env_config WHERE id = ?";
+        try (Connection conn = getConnection();
+                PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setLong(1, id);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            logger.error("[SQLite] 删除 AI 问题环境失败", e);
+            return false;
+        }
+    }
+    
     // ────────── 私有方法 ──────────
     
     private Connection getConnection() throws SQLException {
         return DriverManager.getConnection(DB_URL);
+    }
+    
+    /**
+     * 兼容旧库：ai_env_config 缺少接口路径 / 请求头列时自动补齐（SQLite ALTER TABLE ADD COLUMN）
+     */
+    private void ensureAiEnvConfigColumns(Statement stmt) throws SQLException {
+        addColumnIfAbsent(stmt, "ai_env_config", "save_api", "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_SAVE_API + "'");
+        addColumnIfAbsent(stmt, "ai_env_config", "update_api", "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_UPDATE_API + "'");
+        addColumnIfAbsent(stmt, "ai_env_config", "delete_api", "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_DELETE_API + "'");
+        addColumnIfAbsent(stmt, "ai_env_config", "list_api", "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_LIST_API + "'");
+        addColumnIfAbsent(stmt, "ai_env_config", "train_api", "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_TRAIN_API + "'");
+        addColumnIfAbsent(stmt, "ai_env_config", "update_user_api", "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_UPDATE_USER_API + "'");
+        addColumnIfAbsent(stmt, "ai_env_config", "answer_info_api", "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_ANSWER_INFO_API + "'");
+        addColumnIfAbsent(stmt, "ai_env_config", "answer_list_api", "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_ANSWER_LIST_API + "'");
+        addColumnIfAbsent(stmt, "ai_env_config", "answer_update_api", "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_ANSWER_UPDATE_API + "'");
+        addColumnIfAbsent(stmt, "ai_env_config", "answer_delete_api", "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_ANSWER_DELETE_API + "'");
+        addColumnIfAbsent(stmt, "ai_env_config", "answer_source_info_api",
+                "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_ANSWER_SOURCE_INFO_API + "'");
+        addColumnIfAbsent(stmt, "ai_env_config", "user_list_api", "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_USER_LIST_API + "'");
+        addColumnIfAbsent(stmt, "ai_env_config", "project_list_api", "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_PROJECT_LIST_API + "'");
+        addColumnIfAbsent(stmt, "ai_env_config", "headers", "TEXT DEFAULT NULL");
+        addColumnIfAbsent(stmt, "ai_env_config", "selected", "INTEGER DEFAULT 0");
+    }
+    
+    /**
+     * 列不存在时执行 ALTER TABLE ADD COLUMN
+     */
+    private void addColumnIfAbsent(Statement stmt, String table, String column, String definition) throws SQLException {
+        try (ResultSet rs = stmt.executeQuery("PRAGMA table_info(" + table + ")")) {
+            while (rs.next()) {
+                if (column.equalsIgnoreCase(rs.getString("name"))) {
+                    return;
+                }
+            }
+        }
+        stmt.executeUpdate("ALTER TABLE " + table + " ADD COLUMN " + column + " " + definition);
+        logger.info("[SQLite] 表 {} 自动补充列 {} {}", table, column, definition);
+    }
+    
+    /**
+     * 环境表为空时播种默认环境，保证问题录入始终有可选保存环境
+     */
+    private void seedDefaultAiEnv(Statement stmt) throws SQLException {
+        try (ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM ai_env_config")) {
+            if (rs.next() && rs.getInt(1) == 0) {
+                stmt.executeUpdate("INSERT INTO ai_env_config (env_name, host, remark, selected) "
+                        + "VALUES ('默认环境', 'http://localhost', '系统自动创建', 1)");
+            }
+        }
+    }
+    
+    /**
+     * 保证全局选中环境有效：无选中环境时自动选中第一个（旧库迁移 / 选中环境被删除后兜底）
+     */
+    private void ensureSelectedAiEnv(Connection conn) throws SQLException {
+        try (Statement stmt = conn.createStatement()) {
+            try (ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM ai_env_config WHERE selected = 1")) {
+                if (rs.next() && rs.getInt(1) == 0) {
+                    stmt.executeUpdate(
+                            "UPDATE ai_env_config SET selected = 1 " + "WHERE id = (SELECT id FROM ai_env_config ORDER BY id ASC LIMIT 1)");
+                }
+            }
+        }
+    }
+    
+    /**
+     * 空值兜底：为空时返回默认值
+     */
+    private static String valueOrDefault(String value, String defaultValue) {
+        return value == null || value.isBlank() ? defaultValue : value;
     }
     
     /**
@@ -524,5 +740,43 @@ public class SQLiteConfigUtil {
         }
         
         return script;
+    }
+    
+    /**
+     * 将 ResultSet 当前行映射为 AiEnvConfig 实体
+     */
+    private AiEnvConfig mapRowToAiEnvConfig(ResultSet rs) throws SQLException {
+        AiEnvConfig config = new AiEnvConfig();
+        config.setId(rs.getLong("id"));
+        config.setEnvName(rs.getString("env_name"));
+        config.setHost(rs.getString("host"));
+        config.setSaveApi(valueOrDefault(rs.getString("save_api"), AiEnvConfig.DEFAULT_SAVE_API));
+        config.setUpdateApi(valueOrDefault(rs.getString("update_api"), AiEnvConfig.DEFAULT_UPDATE_API));
+        config.setDeleteApi(valueOrDefault(rs.getString("delete_api"), AiEnvConfig.DEFAULT_DELETE_API));
+        config.setListApi(valueOrDefault(rs.getString("list_api"), AiEnvConfig.DEFAULT_LIST_API));
+        config.setTrainApi(valueOrDefault(rs.getString("train_api"), AiEnvConfig.DEFAULT_TRAIN_API));
+        config.setUpdateUserApi(valueOrDefault(rs.getString("update_user_api"), AiEnvConfig.DEFAULT_UPDATE_USER_API));
+        config.setAnswerInfoApi(valueOrDefault(rs.getString("answer_info_api"), AiEnvConfig.DEFAULT_ANSWER_INFO_API));
+        config.setAnswerListApi(valueOrDefault(rs.getString("answer_list_api"), AiEnvConfig.DEFAULT_ANSWER_LIST_API));
+        config.setAnswerUpdateApi(valueOrDefault(rs.getString("answer_update_api"), AiEnvConfig.DEFAULT_ANSWER_UPDATE_API));
+        config.setAnswerDeleteApi(valueOrDefault(rs.getString("answer_delete_api"), AiEnvConfig.DEFAULT_ANSWER_DELETE_API));
+        config.setAnswerSourceInfoApi(valueOrDefault(rs.getString("answer_source_info_api"), AiEnvConfig.DEFAULT_ANSWER_SOURCE_INFO_API));
+        config.setUserListApi(valueOrDefault(rs.getString("user_list_api"), AiEnvConfig.DEFAULT_USER_LIST_API));
+        config.setProjectListApi(valueOrDefault(rs.getString("project_list_api"), AiEnvConfig.DEFAULT_PROJECT_LIST_API));
+        config.setHeaders(rs.getString("headers"));
+        config.setSelected(rs.getInt("selected") == 1);
+        config.setRemark(rs.getString("remark"));
+        
+        Timestamp ct = rs.getTimestamp("create_time");
+        if (ct != null) {
+            config.setCreateTime(ct.toLocalDateTime());
+        }
+        
+        Timestamp ut = rs.getTimestamp("update_time");
+        if (ut != null) {
+            config.setUpdateTime(ut.toLocalDateTime());
+        }
+        
+        return config;
     }
 }

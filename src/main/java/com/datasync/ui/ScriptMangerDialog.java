@@ -145,7 +145,7 @@ public class ScriptMangerDialog extends FullscreenJDialog {
         listScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
         leftPanel.add(listScrollPane, BorderLayout.CENTER);
         
-        JButton addBtn = new JButton("新建脚本");
+        JButton addBtn = ButtonFactory.createPrimary("新建脚本");
         addBtn.addActionListener(e -> createNewScript());
         JPanel leftBtnPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
         leftBtnPanel.add(addBtn);
@@ -200,12 +200,12 @@ public class ScriptMangerDialog extends FullscreenJDialog {
         
         // 按钮
         JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
-        runBtn = new JButton("运行");
+        runBtn = ButtonFactory.createPrimary("运行");
         runBtn.addActionListener(e -> runSelectedScript());
         btnPanel.add(runBtn);
         
         // 更多操作下拉
-        JButton moreBtn = new JButton("更多操作 ▼");
+        JButton moreBtn = ButtonFactory.createToolbar("更多操作 ▼");
         JPopupMenu moreMenu = new JPopupMenu();
         saveMenuItem = new JMenuItem("保存脚本(Ctrl+S)");
         saveMenuItem.addActionListener(e -> saveSelectedScript());
@@ -478,7 +478,7 @@ public class ScriptMangerDialog extends FullscreenJDialog {
     
     private void refreshDataSourceCombo() {
         DbType selectedDbType = selectedScript != null ? selectedScript.getDbType() : null;
-        String previousSelection = dataSourceCombo.getSelectedItem() != null ? dataSourceCombo.getSelectedItem().getText() : null;
+        String previousSelection = dataSourceCombo.getSelectedItem() != null ? dataSourceCombo.getSelectedItem().text() : null;
         resetTargetSelectionState();
         dataSourceCombo.removeAllItems();
         dataSourceCombo.addItem(new IconItem(null, "（请选择数据源）"));
@@ -499,7 +499,7 @@ public class ScriptMangerDialog extends FullscreenJDialog {
         // 尝试恢复之前的选择
         if (previousSelection != null && !previousSelection.startsWith("（")) {
             for (int i = 0; i < dataSourceCombo.getItemCount(); i++) {
-                if (previousSelection.equals(dataSourceCombo.getItemAt(i).getText())) {
+                if (previousSelection.equals(dataSourceCombo.getItemAt(i).text())) {
                     dataSourceCombo.setSelectedIndex(i);
                     return;
                 }
@@ -521,10 +521,10 @@ public class ScriptMangerDialog extends FullscreenJDialog {
     private void onDataSourceSelected() {
         resetTargetSelectionState();
         IconItem item = dataSourceCombo.getSelectedItem();
-        if (item == null || item.getText().startsWith("（")) {
+        if (item == null || item.text().startsWith("（")) {
             return;
         }
-        DataSource ds = ConfigUtil.loadDataSourceByName(item.getText());
+        DataSource ds = ConfigUtil.loadDataSourceByName(item.text());
         if (ds == null || !ds.isValid()) {
             return;
         }
@@ -574,12 +574,12 @@ public class ScriptMangerDialog extends FullscreenJDialog {
         }
         
         IconItem dsItem = dataSourceCombo.getSelectedItem();
-        if (dsItem == null || dsItem.getText().startsWith("（")) {
+        if (dsItem == null || dsItem.text().startsWith("（")) {
             schemaPanel.setVisible(false);
             updateRunButtonState();
             return;
         }
-        DataSource ds = ConfigUtil.loadDataSourceByName(dsItem.getText());
+        DataSource ds = ConfigUtil.loadDataSourceByName(dsItem.text());
         if (ds == null || !ds.isValid()) {
             schemaPanel.setVisible(false);
             updateRunButtonState();
@@ -714,7 +714,7 @@ public class ScriptMangerDialog extends FullscreenJDialog {
         String selectedBranch = (String) branchCombo.getSelectedItem();
         script.setScriptName(newName);
         script.setGitLabConfigId(selectedProject != null ? selectedProject.getConfigId() : null);
-        script.setDbType(selectedDbType != null ? DbType.fromString(selectedDbType.getText()) : DbType.MYSQL);
+        script.setDbType(selectedDbType != null ? DbType.fromString(selectedDbType.text()) : DbType.MYSQL);
         script.setProjectOrId(selectedProject != null && selectedProject.getId() != null ? selectedProject.getProjectOrId() : null);
         script.setBranch(selectedBranch != null && !selectedBranch.startsWith("（") ? selectedBranch : null);
         final String filePath = filePathField.getText().trim();
@@ -1057,12 +1057,12 @@ public class ScriptMangerDialog extends FullscreenJDialog {
         }
         
         IconItem dsItem = dataSourceCombo.getSelectedItem();
-        if (dsItem == null || dsItem.getText().startsWith("（")) {
+        if (dsItem == null || dsItem.text().startsWith("（")) {
             JOptionPane.showMessageDialog(this, "请先选择运行数据源", "提示", JOptionPane.WARNING_MESSAGE);
             return;
         }
         
-        DataSource dataSource = ConfigUtil.loadDataSourceByName(dsItem.getText());
+        DataSource dataSource = ConfigUtil.loadDataSourceByName(dsItem.text());
         if (dataSource == null || !dataSource.isValid()) {
             JOptionPane.showMessageDialog(this, "所选数据源无效", "提示", JOptionPane.WARNING_MESSAGE);
             return;
@@ -1191,7 +1191,7 @@ public class ScriptMangerDialog extends FullscreenJDialog {
     private void updateRunButtonState() {
         boolean hasScript = selectedScript != null;
         IconItem dsItem = dataSourceCombo.getSelectedItem();
-        boolean hasDataSource = dsItem != null && !dsItem.getText().startsWith("（");
+        boolean hasDataSource = dsItem != null && !dsItem.text().startsWith("（");
         if (!hasDataSource) {
             runBtn.setEnabled(false);
             return;

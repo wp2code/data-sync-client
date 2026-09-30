@@ -9,10 +9,10 @@ import java.io.InputStream;
 import javax.imageio.ImageIO;
 import javax.swing.*;
 import org.apache.batik.transcoder.TranscoderInput;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.apache.batik.transcoder.TranscoderOutput;
 import org.apache.batik.transcoder.image.PNGTranscoder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * 为 MySQL / PostgreSQL 生成小尺寸程序化图标，供 ComboBox、JTable、JLabel 等组件使用。

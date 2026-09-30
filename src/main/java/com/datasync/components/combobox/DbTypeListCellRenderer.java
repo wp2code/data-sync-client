@@ -16,6 +16,7 @@ import javax.swing.*;
  * @date 2026-07-02
  **/
 public class DbTypeListCellRenderer extends DefaultListCellRenderer {
+    
     @Override
     public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
         // 先调 super：拿到选中态背景、边框等默认行为
@@ -23,8 +24,8 @@ public class DbTypeListCellRenderer extends DefaultListCellRenderer {
         
         if (value instanceof IconItem) {
             IconItem item = (IconItem) value;
-            setIcon(item.getIcon());
-            setText(item.getText());
+            setIcon(item.icon());
+            setText(item.text());
         } else {
             setIcon(null);
             setText(value == null ? "" : value.toString());

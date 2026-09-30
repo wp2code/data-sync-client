@@ -100,8 +100,8 @@ public class DataSourceManagerDialog extends FullscreenJDialog {
         topDataPanel.add(tableScroll, BorderLayout.CENTER);
         // 表格右侧按钮
         ChildLayoutPanel tableBtnPanel = new ChildLayoutPanel(new Insets(5, 5, 5, 0), ChildLayoutPanel.LayoutType.RIGHT);
-        final JButton newBtn = new JButton("新增");
-        final JButton deleteBtn = new JButton("删除");
+        final JButton newBtn = ButtonFactory.createPrimary("新增");
+        final JButton deleteBtn = ButtonFactory.createDestructive("删除");
         tableBtnPanel.add(newBtn);
         tableBtnPanel.add(deleteBtn);
         topDataPanel.add(tableBtnPanel, BorderLayout.SOUTH);
@@ -130,7 +130,7 @@ public class DataSourceManagerDialog extends FullscreenJDialog {
         editDbTypeCombo.addActionListener(e -> {
             IconItem item = editDbTypeCombo.getSelectedItem();
             if (item != null) {
-                final String type = item.getText();
+                final String type = item.text();
                 DbType dbType = DbType.fromString(type);
                 editPortField.setText(String.valueOf(dbType.getDefaultPort()));
                 // 仅在选中 PostgreSQL 时显示 Schema 行
@@ -180,11 +180,10 @@ public class DataSourceManagerDialog extends FullscreenJDialog {
         statusAreaScrollPane.setBorder(BorderFactory.createCompoundBorder(new TitledBorder("日志"), new EmptyBorder(0, 1, 0, 1)));
         bottomPanel.add(statusAreaScrollPane, BorderLayout.CENTER);
         ChildLayoutPanel btnPanel = new ChildLayoutPanel();
-        testBtn = new JButton("测试连接");
-        final JButton saveBtn = new JButton("保存");
-        saveBtn.setFont(UiConstants.FONT_SANS_12);
-        final JButton cancelBtn = new JButton("取消");
-        final JButton clearBtn = new JButton("清空日志");
+        testBtn = ButtonFactory.createSecondary("测试连接");
+        final JButton saveBtn = ButtonFactory.createPrimary("保存");
+        final JButton cancelBtn = ButtonFactory.createSecondary("取消");
+        final JButton clearBtn = ButtonFactory.createDestructive("清空日志");
         btnPanel.add(clearBtn);
         btnPanel.add(testBtn);
         btnPanel.add(saveBtn);
@@ -301,7 +300,7 @@ public class DataSourceManagerDialog extends FullscreenJDialog {
         DataSource ds = new DataSource();
         final IconItem selectedItem = editDbTypeCombo.getSelectedItem();
         if (selectedItem != null) {
-            ds.setDbTypeEnum(DbType.fromString(selectedItem.getText().trim()));
+            ds.setDbTypeEnum(DbType.fromString(selectedItem.text().trim()));
         }
         ds.setHost(editHostField.getText().trim());
         ds.setPort(editPortField.getText().trim());
