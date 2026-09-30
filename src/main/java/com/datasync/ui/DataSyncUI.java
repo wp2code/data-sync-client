@@ -359,7 +359,7 @@ public class DataSyncUI extends JFrame {
             }
             Object sel = configCombo.getSelectedItem();
             // 获取显示文本（可能是 IconItem 或普通字符串）
-            String selText = sel instanceof IconItem item ? item.getText() : null;
+            String selText = sel instanceof IconItem item ? item.text() : null;
             if (selText != null && !UiConstants.PLACEHOLDER_SELECT_SOURCE.equals(selText) && !UiConstants.PLACEHOLDER_NONE.equals(selText)
                     && !UiConstants.PLACEHOLDER_NO_MATCHING.equals(selText)) {
                 DataSource ds = ConfigUtil.loadDataSourceByName(selText);
@@ -590,7 +590,7 @@ public class DataSyncUI extends JFrame {
     }
     
     private void refreshSingleCombo(IconJComboBox combo, String filterDbType, String excludeName) {
-        String selected = combo.getSelectedItem() != null ? combo.getSelectedItem().getText() : null;
+        String selected = combo.getSelectedItem() != null ? combo.getSelectedItem().text() : null;
         combo.removeAllItems();
         // 始终在第一项添加提示（不带图标）
         combo.addItem(new IconItem(null, UiConstants.PLACEHOLDER_SELECT_SOURCE));
@@ -633,7 +633,7 @@ public class DataSyncUI extends JFrame {
     private DataSource getSelectedSource(Side side) {
         IconJComboBox combo = side == Side.SOURCE ? srcConfigCombo : tgtConfigCombo;
         Object sel = combo.getSelectedItem();
-        String selText = sel instanceof IconItem item ? item.getText() : null;
+        String selText = sel instanceof IconItem item ? item.text() : null;
         if (sel == null || UiConstants.PLACEHOLDER_SELECT_SOURCE.equals(sel.toString()) || UiConstants.PLACEHOLDER_NONE.equals(sel.toString())
                 || UiConstants.PLACEHOLDER_NO_MATCHING.equals(selText)) {
             return null;

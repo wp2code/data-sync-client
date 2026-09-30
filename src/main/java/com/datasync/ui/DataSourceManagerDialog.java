@@ -130,7 +130,7 @@ public class DataSourceManagerDialog extends FullscreenJDialog {
         editDbTypeCombo.addActionListener(e -> {
             IconItem item = editDbTypeCombo.getSelectedItem();
             if (item != null) {
-                final String type = item.getText();
+                final String type = item.text();
                 DbType dbType = DbType.fromString(type);
                 editPortField.setText(String.valueOf(dbType.getDefaultPort()));
                 // 仅在选中 PostgreSQL 时显示 Schema 行
@@ -300,7 +300,7 @@ public class DataSourceManagerDialog extends FullscreenJDialog {
         DataSource ds = new DataSource();
         final IconItem selectedItem = editDbTypeCombo.getSelectedItem();
         if (selectedItem != null) {
-            ds.setDbTypeEnum(DbType.fromString(selectedItem.getText().trim()));
+            ds.setDbTypeEnum(DbType.fromString(selectedItem.text().trim()));
         }
         ds.setHost(editHostField.getText().trim());
         ds.setPort(editPortField.getText().trim());

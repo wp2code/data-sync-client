@@ -31,7 +31,7 @@ public class GitLabMangerDialog extends AbsDialog {
     
     
     public GitLabMangerDialog(Frame owner) {
-        super( owner, "GitLab 配置", true, 520, 440);
+        super(owner, "GitLab 配置", true, 520, 440);
         initUI();
         loadSavedConfig();
     }

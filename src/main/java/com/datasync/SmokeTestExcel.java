@@ -3,7 +3,6 @@ package com.datasync;
 import com.datasync.model.AiQuestion;
 import com.datasync.util.ExcelQuestionUtil;
 import java.io.File;
-import java.util.List;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
@@ -13,16 +12,18 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
  * 临时冒烟测试（验证后删除）：模板生成 -> 解析回环 / 非法数据校验
  */
 public class SmokeTestExcel {
-
+    
     public static void main(String[] args) throws Exception {
         File template = File.createTempFile("ai-template", ".xlsx");
         ExcelQuestionUtil.generateTemplate(template);
         System.out.println("== 1. 模板生成成功: " + template.length() + " bytes");
-
+        
         ExcelQuestionUtil.ParseResult result = ExcelQuestionUtil.parseQuestions(template);
         System.out.println("== 2. 模板回环解析: questions=" + result.getQuestions().size() + ", errors=" + result.getErrors().size());
         for (AiQuestion q : result.getQuestions()) {
-            System.out.println("   " + q.getQuestion() + " | " + q.getQuestionClassify() + " | " + q.getEnableTraining() + " | " + q.getPriority() + " | " + q.getTrainingParam() + " | " + q.getAnswer());
+            System.out.println(
+                    "   " + q.getQuestion() + " | " + q.getQuestionClassify() + " | " + q.getEnableTraining() + " | " + q.getPriority() + " | "
+                            + q.getTrainingParam() + " | " + q.getAnswer());
         }
         if (result.getQuestions().size() != 3 || !result.getErrors().isEmpty()) {
             throw new AssertionError("模板回环解析结果不符合预期");
@@ -30,7 +31,7 @@ public class SmokeTestExcel {
         if (!"在数据源管理页面点击『新增』，填写连接信息后保存。".equals(result.getQuestions().get(0).getAnswer())) {
             throw new AssertionError("固定答案列回环解析失败");
         }
-
+        
         // 非法数据：开启训练非法、优先级别非法、空行、表头
         File bad = File.createTempFile("ai-bad", ".xlsx");
         try (Workbook wb = new XSSFWorkbook()) {
@@ -65,7 +66,8 @@ public class SmokeTestExcel {
             throw new AssertionError("非法数据校验结果不符合预期");
         }
         AiQuestion okQuestion = badResult.getQuestions().get(0);
-        if (!"正常问题？".equals(okQuestion.getQuestion()) || okQuestion.getEnableTraining() != AiQuestion.TRAINING_ENABLED || okQuestion.getPriority() != 3) {
+        if (!"正常问题？".equals(okQuestion.getQuestion()) || okQuestion.getEnableTraining() != AiQuestion.TRAINING_ENABLED
+                || okQuestion.getPriority() != 3) {
             throw new AssertionError("正常行解析值不符合预期");
         }
         if (!okQuestion.getAnswer().isEmpty()) {

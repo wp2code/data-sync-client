@@ -37,7 +37,7 @@ public class AiQuestion {
     public static final int AUTO_TRAINING_NOT_ALLOWED = 1;
     
     /**
-     * 训练状态：初始状态
+     * 训练状态：默认
      */
     public static final int TRAINING_STATUS_INITIAL = -2;
     
@@ -72,9 +72,14 @@ public class AiQuestion {
     public static final int TRAINING_STATUS_TIMEOUT = 4;
     
     /**
-     * 训练状态：同步失败(给答案表)
+     * 训练状态：同步回复失败
      */
     public static final int TRAINING_STATUS_SYNC_FAILED = 5;
+    
+    /**
+     * 训练状态：训练已提交
+     */
+    public static final int TRAINING_STATUS_SUBMITTED = 6;
     
     private Long id;
     
@@ -130,7 +135,7 @@ public class AiQuestion {
     private String trainingParam;
     
     /**
-     * 训练状态：-2-初始状态；-1-待训练；0-成功；1-失败；2-成功(同步回复)；3-训练中；4-超时；5-同步失败(给答案表)（接口返回数据，客户端仅展示）
+     * 训练状态：-2-默认；-1-待训练；0-成功；1-失败；2-成功(同步回复)；3-训练中；4-超时；5-同步回复失败；6-训练已提交（接口返回数据，客户端仅展示）
      */
     private Integer trainingStatus;
     
@@ -138,6 +143,16 @@ public class AiQuestion {
      * 开始训练时间（毫秒时间戳，接口返回数据，客户端展示时格式化为 yyyy-MM-dd HH:mm:ss）
      */
     private Long startTrainingTime;
+    
+    /**
+     * 问题提交训练时间（毫秒时间戳，接口返回数据，客户端展示时格式化为 yyyy-MM-dd HH:mm:ss）
+     */
+    private Long submitTrainingTime;
+    
+    /**
+     * 训练触发时间（毫秒时间戳，接口返回数据，客户端展示时格式化为 yyyy-MM-dd HH:mm:ss）
+     */
+    private Long initTrainingTime;
     
     /**
      * 最近完成训练时间（毫秒时间戳，接口返回数据，客户端展示时格式化为 yyyy-MM-dd HH:mm:ss）

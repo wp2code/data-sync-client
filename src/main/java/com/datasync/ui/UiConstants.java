@@ -114,10 +114,10 @@ public final class UiConstants {
     public static final Color COLOR_LINK = new Color(0x0D9488);
     
     // ─── 字体 ───
+    
     /**
-     * 界面无衬线字体族：Windows 上优先「微软雅黑 UI」，中文小字号为轮廓渲染清晰；
-     * 逻辑字体 SansSerif 在 Windows 会回退到点阵宋体，小字号发虚有锯齿。
-     * 非Windows平台或字体缺失时回退 SansSerif（macOS / Linux 的逻辑字体映射本身清晰）
+     * 界面无衬线字体族：Windows 上优先「微软雅黑 UI」，中文小字号为轮廓渲染清晰； 逻辑字体 SansSerif 在 Windows 会回退到点阵宋体，小字号发虚有锯齿。 非Windows平台或字体缺失时回退 SansSerif（macOS / Linux
+     * 的逻辑字体映射本身清晰）
      */
     private static final String SANS_FONT_FAMILY = resolveSansFontFamily();
     

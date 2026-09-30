@@ -140,6 +140,7 @@ public class SQLiteConfigUtil {
     }
     
     // ────────── 初始化 ──────────
+    
     /**
      * 检测并创建本地 SQLite 数据库与数据表（工具启动时调用一次）
      */
@@ -510,7 +511,7 @@ public class SQLiteConfigUtil {
         }
         return configs;
     }
-
+    
     /**
      * 切换全局选中的环境（其余环境取消选中）
      */
@@ -556,13 +557,14 @@ public class SQLiteConfigUtil {
             return false;
         }
     }
-
+    
     /**
      * 更新 AI 问题保存环境配置
      */
     public boolean updateAiEnvConfig(AiEnvConfig config) {
-        String sql = "UPDATE ai_env_config SET env_name = ?, host = ?, save_api = ?, update_api = ?, delete_api = ?, list_api = ?, train_api = ?, update_user_api = ?, "
-                + "answer_info_api = ?, answer_list_api = ?, answer_update_api = ?, answer_delete_api = ?, answer_source_info_api = ?, user_list_api = ?, project_list_api = ?, headers = ?, remark = ?, update_time = CURRENT_TIMESTAMP WHERE id = ?";
+        String sql =
+                "UPDATE ai_env_config SET env_name = ?, host = ?, save_api = ?, update_api = ?, delete_api = ?, list_api = ?, train_api = ?, update_user_api = ?, "
+                        + "answer_info_api = ?, answer_list_api = ?, answer_update_api = ?, answer_delete_api = ?, answer_source_info_api = ?, user_list_api = ?, project_list_api = ?, headers = ?, remark = ?, update_time = CURRENT_TIMESTAMP WHERE id = ?";
         try (Connection conn = getConnection();
                 PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, config.getEnvName());
@@ -625,7 +627,8 @@ public class SQLiteConfigUtil {
         addColumnIfAbsent(stmt, "ai_env_config", "answer_list_api", "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_ANSWER_LIST_API + "'");
         addColumnIfAbsent(stmt, "ai_env_config", "answer_update_api", "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_ANSWER_UPDATE_API + "'");
         addColumnIfAbsent(stmt, "ai_env_config", "answer_delete_api", "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_ANSWER_DELETE_API + "'");
-        addColumnIfAbsent(stmt, "ai_env_config", "answer_source_info_api", "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_ANSWER_SOURCE_INFO_API + "'");
+        addColumnIfAbsent(stmt, "ai_env_config", "answer_source_info_api",
+                "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_ANSWER_SOURCE_INFO_API + "'");
         addColumnIfAbsent(stmt, "ai_env_config", "user_list_api", "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_USER_LIST_API + "'");
         addColumnIfAbsent(stmt, "ai_env_config", "project_list_api", "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_PROJECT_LIST_API + "'");
         addColumnIfAbsent(stmt, "ai_env_config", "headers", "TEXT DEFAULT NULL");
@@ -658,7 +661,7 @@ public class SQLiteConfigUtil {
             }
         }
     }
-
+    
     /**
      * 保证全局选中环境有效：无选中环境时自动选中第一个（旧库迁移 / 选中环境被删除后兜底）
      */
@@ -666,8 +669,8 @@ public class SQLiteConfigUtil {
         try (Statement stmt = conn.createStatement()) {
             try (ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM ai_env_config WHERE selected = 1")) {
                 if (rs.next() && rs.getInt(1) == 0) {
-                    stmt.executeUpdate("UPDATE ai_env_config SET selected = 1 "
-                            + "WHERE id = (SELECT id FROM ai_env_config ORDER BY id ASC LIMIT 1)");
+                    stmt.executeUpdate(
+                            "UPDATE ai_env_config SET selected = 1 " + "WHERE id = (SELECT id FROM ai_env_config ORDER BY id ASC LIMIT 1)");
                 }
             }
         }

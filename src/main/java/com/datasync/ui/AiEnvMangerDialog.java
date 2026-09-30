@@ -89,12 +89,12 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
      * 请求头表格滚动容器（高度随行数自适应，不被容器压缩）
      */
     private JScrollPane headerScrollPane;
-
+    
     /**
      * 请求头配置内容区（手风琴容器：提示 + 表格 + 按钮，默认收起）
      */
     private JPanel headerContentPanel;
-
+    
     /**
      * 请求头配置展开 / 收起开关（手风琴"配置"链接）
      */
@@ -246,7 +246,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         });
         headerTitleRow.add(headerToggleLabel);
         addFormFullRow(formPanel, gbc, 2, headerTitleRow);
-
+        
         // 手风琴内容区（提示 + 表格 + 按钮栏）：默认收起
         headerContentPanel = new JPanel(new BorderLayout(0, 4));
         JLabel headerHint = new JLabel("请求头以 JSON 保存并附加到该环境全部接口调用（Content-Type 由系统维护，无需配置）");
@@ -292,7 +292,8 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         addFormRow(formPanel, gbc, 16, new JLabel("回复列表："), answerListApiField, exampleLink(ANSWER_LIST_EXAMPLE, answerListApiField));
         addFormRow(formPanel, gbc, 17, new JLabel("回复更新："), answerUpdateApiField, exampleLink(ANSWER_UPDATE_EXAMPLE, answerUpdateApiField));
         addFormRow(formPanel, gbc, 18, new JLabel("回复删除："), answerDeleteApiField, exampleLink(ANSWER_DELETE_EXAMPLE, answerDeleteApiField));
-        addFormRow(formPanel, gbc, 19, new JLabel("问题来源查询："), answerSourceInfoApiField, exampleLink(ANSWER_SOURCE_INFO_EXAMPLE, answerSourceInfoApiField));
+        addFormRow(formPanel, gbc, 19, new JLabel("问题来源查询："), answerSourceInfoApiField,
+                exampleLink(ANSWER_SOURCE_INFO_EXAMPLE, answerSourceInfoApiField));
         addFormRow(formPanel, gbc, 20, new JLabel("备注："), remarkField);
         
         // 表单整体放入滚动面板：窗口高度不足时出现滚动条，内容与表格高度不被压缩
@@ -547,7 +548,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
                 node.put(key, value);
             }
         }
-        return node.size() == 0 ? null : node.toString();
+        return node.isEmpty() ? null : node.toString();
     }
     
     /**
@@ -812,9 +813,9 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
     private static String valueOrDefault(String apiPath) {
         return apiPath == null || apiPath.isBlank() ? "" : apiPath;
     }
-        
+    
     // ────────── 接口示例 ──────────
-        
+    
     /**
      * 接口示例定义（弹窗标题 / 路径空值兑底的默认路径 / 请求参数示例 / 响应参数示例 / URL 查询参数示例，无则为 null）
      */
@@ -827,7 +828,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
             this(title, defaultPath, requestExample, responseExample, null);
         }
     }
-        
+    
     /**
      * 批量保存问题接口示例（请求体为问题数组，数组内可选字段可省略）
      */
@@ -856,7 +857,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
               "data": null
             }
             """);
-        
+    
     /**
      * 更新问题接口示例（请求体为单个问题对象，id 为待更新的问题 ID）
      */
@@ -878,7 +879,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
               "data": null
             }
             """);
-        
+    
     /**
      * 删除问题接口示例（支持单个 / 批量，请求体为问题 ID 数组）
      */
@@ -893,9 +894,9 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
               "data": null
             }
             """);
-        
+    
     /**
-     * 查询问题列表接口示例（trainingStatus 可选，不传返回全部：-2-初始状态；-1-待训练；0-成功；1-失败；2-成功同步回复；3-训练中；4-超时；5-同步失败(给答案表)）
+     * 查询问题列表接口示例（trainingStatus 可选，不传返回全部：-2-初始状态；-1-待训练；0-成功；1-失败；2-成功同步回复；3-训练中；4-超时；5-同步回复失败）
      */
     private static final ApiExample LIST_EXAMPLE = new ApiExample("查询问题列表", AiEnvConfig.DEFAULT_LIST_API, """
             {
@@ -924,7 +925,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
               ]
             }
             """);
-        
+    
     /**
      * 触发训练接口示例（questionIds 为勾选的问题 ID 列表，agentType：safety / system / ops / auto）
      */
@@ -940,7 +941,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
               "data": null
             }
             """);
-        
+    
     /**
      * 批量更新问题接口示例（ids 为勾选的问题 ID 列表，userId / trainingParam 均可选，留空字段不提交保持原值）
      */
@@ -957,7 +958,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
               "data": null
             }
             """);
-        
+    
     /**
      * 回复详情查询接口示例（answerId 以 URL 查询参数提交，请求体为空对象；data 字段名 → 文本值全量返回）
      */
@@ -976,7 +977,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
               }
             }
             """, "?answerId=2001");
-        
+    
     /**
      * 回复列表查询接口示例（query / answer / allowModify / sourceTraining 均可选，不传字段不参与筛选）
      */
@@ -1005,7 +1006,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
               ]
             }
             """);
-        
+    
     /**
      * 回复更新接口示例（ids 为待更新回复 ID 列表，单条更新传单元素数组；批量更新仅提交 ids 与 allowModify）
      */
@@ -1023,7 +1024,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
               "data": null
             }
             """);
-        
+    
     /**
      * 回复删除接口示例（支持单个 / 批量，请求体为回复 ID 数组）
      */
@@ -1084,7 +1085,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
               }
             ]
             """);
-        
+    
     /**
      * 创建接口“示例”链接（点击弹窗展示该接口的请求 / 响应参数 JSON 示例）
      */
@@ -1099,7 +1100,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         });
         return link;
     }
-        
+    
     /**
      * 弹窗展示接口示例（请求方式与地址、请求参数与响应参数 JSON 示例，地址按当前表单 Host 与接口路径动态拼接）
      */
@@ -1108,7 +1109,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(6, 6, 6, 6);
         gbc.anchor = GridBagConstraints.WEST;
-            
+        
         JLabel urlLabel = new JLabel("POST    " + buildExampleUrl(apiPath, example));
         urlLabel.setFont(UiConstants.FONT_MONO_12);
         gbc.gridx = 0;
@@ -1117,13 +1118,13 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         gbc.weightx = 1;
         gbc.fill = GridBagConstraints.HORIZONTAL;
         form.add(urlLabel, gbc);
-            
+        
         JLabel headerTip = new JLabel("请求头：Content-Type: application/json; charset=UTF-8（另自动附加该环境配置的通用请求头）");
         headerTip.setForeground(Color.GRAY);
         headerTip.setFont(UiConstants.FONT_SANS_10);
         gbc.gridy = 1;
         form.add(headerTip, gbc);
-            
+        
         String requestTitle = "请求参数示例" + (example.urlQuery() == null ? "" : "（参数已拼入上方地址）");
         gbc.gridy = 2;
         gbc.weighty = 1;
@@ -1134,10 +1135,10 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         gbc.gridwidth = 1;
         gbc.weighty = 0;
         gbc.fill = GridBagConstraints.NONE;
-            
+        
         JOptionPane.showMessageDialog(this, form, "接口示例 - " + example.title(), JOptionPane.PLAIN_MESSAGE);
     }
-        
+    
     /**
      * JSON 示例只读文本区（等宽字体、不换行保持 JSON 结构、高度按内容行数自适应，超出后内部滚动）
      */
@@ -1153,7 +1154,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         scroll.setPreferredSize(new Dimension(700, Math.min(20 + lines * 18, 320)));
         return scroll;
     }
-        
+    
     /**
      * 按当前表单 Host 与接口路径拼接完整示例地址（Host 未填写时用 {host} 占位，路径空值回退默认路径，协议补全与尾部斜杠处理与接口调用一致）
      */
@@ -1175,7 +1176,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         }
         return host + path + (example.urlQuery() == null ? "" : example.urlQuery());
     }
-        
+    
     // ────────── 表格模型 ──────────
     
     /**

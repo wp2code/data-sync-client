@@ -10,52 +10,58 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 数据库连接工具类
- * 统一管控 MySQL / PostgreSQL 的 JDBC 连接创建、测试、资源释放
+ * 数据库连接工具类 统一管控 MySQL / PostgreSQL 的 JDBC 连接创建、测试、资源释放
  */
 public class DbConnector {
-
+    
     /**
      * 列详细信息
      */
     public static class ColumnDetail {
+        
         public String columnName;
+        
         public String dataType;
+        
         public int columnSize;
+        
         public boolean nullable;
+        
         public String defaultValue;
+        
         public boolean isPrimaryKey;
+        
         public boolean isAutoIncrement;
+        
         public int ordinalPosition;
+        
         public String comment;
-
+        
         @Override
         public String toString() {
-            return columnName + " " + dataType + (columnSize > 0 ? "(" + columnSize + ")" : "")
-                    + (isPrimaryKey ? " PK" : "") + (nullable ? " NULL" : " NOT NULL")
-                    + (isAutoIncrement ? " AUTO_INCREMENT" : "")
-                    + (defaultValue != null ? " DEFAULT " + defaultValue : "")
-                    + (comment != null && !comment.isEmpty() ? " COMMENT '" + comment + "'" : "");
+            return columnName + " " + dataType + (columnSize > 0 ? "(" + columnSize + ")" : "") + (isPrimaryKey ? " PK" : "") + (nullable ? " NULL"
+                    : " NOT NULL") + (isAutoIncrement ? " AUTO_INCREMENT" : "") + (defaultValue != null ? " DEFAULT " + defaultValue : "") + (
+                    comment != null && !comment.isEmpty() ? " COMMENT '" + comment + "'" : "");
         }
     }
-
+    
     private DbConnector() {
         // 工具类，禁止实例化
     }
-
+    
     /**
      * 根据数据源配置获取数据库连接
      *
      * @param ds 数据源配置实体
      * @return 数据库连接
-     * @throws SQLException          连接失败时抛出
+     * @throws SQLException           连接失败时抛出
      * @throws ClassNotFoundException 驱动类未找到
      */
     public static Connection getConnection(DataSource ds) throws SQLException, ClassNotFoundException {
         Class.forName(ds.getDriverClassName());
         return DriverManager.getConnection(ds.buildJdbcUrl(), ds.getUsername(), ds.getPassword());
     }
-
+    
     /**
      * 测试数据源连接是否有效
      *
@@ -69,8 +75,7 @@ public class DbConnector {
         Connection conn = null;
         try {
             conn = getConnection(ds);
-            return "[SUCCESS] 连接成功 → " + ds.getDbType().toUpperCase()
-                + " " + ds.getHost() + ":" + ds.getPort() + "/" + ds.getDbName();
+            return "[SUCCESS] 连接成功 → " + ds.getDbType().toUpperCase() + " " + ds.getHost() + ":" + ds.getPort() + "/" + ds.getDbName();
         } catch (ClassNotFoundException e) {
             return "[FAILED] 数据库驱动未找到 → " + e.getMessage();
         } catch (SQLException e) {
@@ -79,7 +84,7 @@ public class DbConnector {
             closeQuietly(conn);
         }
     }
-
+    
     /**
      * 查询数据库服务器中的所有数据库（MySQL: SHOW DATABASES，PostgreSQL: pg_database）
      *
@@ -93,10 +98,9 @@ public class DbConnector {
         }
         String defaultDb = ds.getDbName();
         try (Connection conn = getConnection(ds);
-             Statement stmt = conn.createStatement();
-             ResultSet rs = ds.isPostgresql()
-                 ? stmt.executeQuery("SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname")
-                 : stmt.executeQuery("SHOW DATABASES")) {
+                Statement stmt = conn.createStatement();
+                ResultSet rs = ds.isPostgresql() ? stmt.executeQuery("SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname")
+                        : stmt.executeQuery("SHOW DATABASES")) {
             while (rs.next()) {
                 String db = rs.getString(1);
                 if (db == null) {
@@ -107,8 +111,7 @@ public class DbConnector {
                         continue;
                     }
                 } else {
-                    if ("information_schema".equals(db) || "mysql".equals(db)
-                            || "performance_schema".equals(db) || "sys".equals(db)) {
+                    if ("information_schema".equals(db) || "mysql".equals(db) || "performance_schema".equals(db) || "sys".equals(db)) {
                         continue;
                     }
                 }
@@ -124,7 +127,7 @@ public class DbConnector {
         }
         return databases;
     }
-
+    
     /**
      * 查询 PostgreSQL 数据库中的所有 Schema（非系统 schema）
      *
@@ -138,11 +141,10 @@ public class DbConnector {
             return schemas;
         }
         try (Connection conn = getConnection(ds);
-             ResultSet rs = conn.getMetaData().getSchemas()) {
+                ResultSet rs = conn.getMetaData().getSchemas()) {
             while (rs.next()) {
                 String schema = rs.getString("TABLE_SCHEM");
-                if (schema != null && !schema.startsWith("pg_") && !"information_schema".equals(schema)
-                    && !schemas.contains(schema)) {
+                if (schema != null && !schema.startsWith("pg_") && !"information_schema".equals(schema) && !schemas.contains(schema)) {
                     schemas.add(schema);
                 }
             }
@@ -151,7 +153,7 @@ public class DbConnector {
         }
         return schemas;
     }
-
+    
     /**
      * 查询指定 Schema / Database 下的所有用户表
      *
@@ -161,11 +163,13 @@ public class DbConnector {
      */
     public static List<String> fetchTables(DataSource ds, String schema) {
         List<String> tables = new ArrayList<>();
-        if (!ds.isValid()) return tables;
+        if (!ds.isValid()) {
+            return tables;
+        }
         try (Connection conn = getConnection(ds)) {
             if (ds.isPostgresql()) {
                 // PostgreSQL: 使用 schema 模式查询
-                try (ResultSet rs = conn.getMetaData().getTables(null, schema, "%", new String[]{"TABLE"})) {
+                try (ResultSet rs = conn.getMetaData().getTables(null, schema, "%", new String[] {"TABLE"})) {
                     while (rs.next()) {
                         String tableName = rs.getString("TABLE_NAME");
                         if (tableName != null) {
@@ -176,7 +180,7 @@ public class DbConnector {
             } else {
                 // MySQL: 直接用 SHOW TABLES 查询，避免 getTables catalog 参数兼容性问题
                 try (Statement stmt = conn.createStatement();
-                     ResultSet rs = stmt.executeQuery("SHOW FULL TABLES WHERE Table_type = 'BASE TABLE'")) {
+                        ResultSet rs = stmt.executeQuery("SHOW FULL TABLES WHERE Table_type = 'BASE TABLE'")) {
                     while (rs.next()) {
                         String tableName = rs.getString(1);
                         if (tableName != null) {
@@ -190,7 +194,7 @@ public class DbConnector {
         }
         return tables;
     }
-
+    
     /**
      * 查询指定表的所有列名
      *
@@ -201,7 +205,9 @@ public class DbConnector {
      */
     public static List<String> fetchColumns(DataSource ds, String tableName, String schema) {
         List<String> columns = new ArrayList<>();
-        if (!ds.isValid() || tableName == null || tableName.isBlank()) return columns;
+        if (!ds.isValid() || tableName == null || tableName.isBlank()) {
+            return columns;
+        }
         try (Connection conn = getConnection(ds)) {
             String catalog = null;
             String schemaPattern = schema;
@@ -222,7 +228,7 @@ public class DbConnector {
         }
         return columns;
     }
-
+    
     /**
      * 查询指定表的自增列名
      *
@@ -232,7 +238,9 @@ public class DbConnector {
      * @return 自增列名，无自增列时返回 null
      */
     public static String fetchAutoIncrementColumn(DataSource ds, String tableName, String schema) {
-        if (!ds.isValid() || tableName == null || tableName.isBlank()) return null;
+        if (!ds.isValid() || tableName == null || tableName.isBlank()) {
+            return null;
+        }
         try (Connection conn = getConnection(ds)) {
             String catalog = null;
             String schemaPattern = schema;
@@ -253,7 +261,7 @@ public class DbConnector {
         }
         return null;
     }
-
+    
     /**
      * 安全关闭数据库连接，不抛出异常
      */
@@ -266,7 +274,7 @@ public class DbConnector {
             }
         }
     }
-
+    
     /**
      * 查询指定表的列详细信息（列名、类型、是否可空、默认值、是否主键）
      *
@@ -277,7 +285,9 @@ public class DbConnector {
      */
     public static List<ColumnDetail> fetchColumnDetails(DataSource ds, String tableName, String schema) {
         List<ColumnDetail> columns = new ArrayList<>();
-        if (!ds.isValid() || tableName == null || tableName.isBlank()) return columns;
+        if (!ds.isValid() || tableName == null || tableName.isBlank()) {
+            return columns;
+        }
         try (Connection conn = getConnection(ds)) {
             String catalog = null;
             String schemaPattern = schema;
@@ -285,7 +295,7 @@ public class DbConnector {
                 catalog = ds.getDbName();
                 schemaPattern = null;
             }
-
+            
             // 获取主键列集合
             java.util.Set<String> pkColumns = new java.util.HashSet<>();
             try (ResultSet pkRs = conn.getMetaData().getPrimaryKeys(catalog, schemaPattern, tableName)) {
@@ -293,7 +303,7 @@ public class DbConnector {
                     pkColumns.add(pkRs.getString("COLUMN_NAME"));
                 }
             }
-
+            
             // 获取列详细信息
             try (ResultSet rs = conn.getMetaData().getColumns(catalog, schemaPattern, tableName, "%")) {
                 while (rs.next()) {
@@ -301,8 +311,7 @@ public class DbConnector {
                     col.columnName = rs.getString("COLUMN_NAME");
                     col.dataType = rs.getString("TYPE_NAME");
                     col.columnSize = rs.getInt("COLUMN_SIZE");
-                    col.nullable = "YES".equalsIgnoreCase(rs.getString("IS_NULLABLE"))
-                            || "1".equals(rs.getString("NULLABLE"));
+                    col.nullable = "YES".equalsIgnoreCase(rs.getString("IS_NULLABLE")) || "1".equals(rs.getString("NULLABLE"));
                     col.defaultValue = rs.getString("COLUMN_DEF");
                     col.isPrimaryKey = pkColumns.contains(col.columnName);
                     col.isAutoIncrement = "YES".equalsIgnoreCase(rs.getString("IS_AUTOINCREMENT"));
@@ -316,24 +325,28 @@ public class DbConnector {
         }
         return columns;
     }
-
+    
     /**
      * 索引详细信息
      */
     public static class IndexDetail {
+        
         public String indexName;
+        
         public String columnName;
+        
         public boolean nonUnique;      // true=非唯一索引, false=唯一索引
+        
         public short ordinalPosition;  // 列在索引中的位置（1-based）
+        
         public String ascOrDesc;       // "A"=升序, "D"=降序
-
+        
         @Override
         public String toString() {
-            return indexName + (nonUnique ? " (INDEX)" : " (UNIQUE)") + " ON " + columnName
-                    + ("D".equals(ascOrDesc) ? " DESC" : "");
+            return indexName + (nonUnique ? " (INDEX)" : " (UNIQUE)") + " ON " + columnName + ("D".equals(ascOrDesc) ? " DESC" : "");
         }
     }
-
+    
     /**
      * 查询指定表的所有索引信息
      *
@@ -344,7 +357,9 @@ public class DbConnector {
      */
     public static List<IndexDetail> fetchIndexes(DataSource ds, String tableName, String schema) {
         List<IndexDetail> indexes = new ArrayList<>();
-        if (!ds.isValid() || tableName == null || tableName.isBlank()) return indexes;
+        if (!ds.isValid() || tableName == null || tableName.isBlank()) {
+            return indexes;
+        }
         try (Connection conn = getConnection(ds)) {
             String catalog = null;
             String schemaPattern = schema;
@@ -356,12 +371,16 @@ public class DbConnector {
                 while (rs.next()) {
                     // 排除统计类索引和表统计行
                     short type = rs.getShort("TYPE");
-                    if (type == java.sql.DatabaseMetaData.tableIndexStatistic) continue;
-
+                    if (type == java.sql.DatabaseMetaData.tableIndexStatistic) {
+                        continue;
+                    }
+                    
                     String indexName = rs.getString("INDEX_NAME");
                     // 排除主键索引（主键索引由列比较处理）
-                    if (indexName == null || "PRIMARY".equalsIgnoreCase(indexName)) continue;
-
+                    if (indexName == null || "PRIMARY".equalsIgnoreCase(indexName)) {
+                        continue;
+                    }
+                    
                     IndexDetail idx = new IndexDetail();
                     idx.indexName = indexName;
                     idx.columnName = rs.getString("COLUMN_NAME");
@@ -376,16 +395,22 @@ public class DbConnector {
         }
         return indexes;
     }
-
+    
     /**
      * 批量关闭数据库资源（Statement、ResultSet、Connection）
      */
     public static void closeResources(Connection conn, Statement stmt, ResultSet rs) {
         if (rs != null) {
-            try { rs.close(); } catch (SQLException ignored) {}
+            try {
+                rs.close();
+            } catch (SQLException ignored) {
+            }
         }
         if (stmt != null) {
-            try { stmt.close(); } catch (SQLException ignored) {}
+            try {
+                stmt.close();
+            } catch (SQLException ignored) {
+            }
         }
         closeQuietly(conn);
     }

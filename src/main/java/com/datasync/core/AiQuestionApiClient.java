@@ -31,8 +31,8 @@ import org.slf4j.LoggerFactory;
 /**
  * AI 问题外部接口客户端。
  * <p>
- * 按环境配置（host + 接口路径）调用远端服务，完成问题的批量保存、更新、删除（单个 / 批量）、列表查询（训练状态服务端筛选）、触发训练与批量更新（用户信息 / 训练参数）、问题回复详情查询，以及问题回复的列表查询、更新与删除（回复审计）。<br> 接口约定：POST + JSON，响应格式
- * {code:"0", message, data}，code 为 "0" 表示成功。
+ * 按环境配置（host + 接口路径）调用远端服务，完成问题的批量保存、更新、删除（单个 / 批量）、列表查询（训练状态服务端筛选）、触发训练与批量更新（用户信息 / 训练参数）、问题回复详情查询，以及问题回复的列表查询、更新与删除（回复审计）。<br> 接口约定：POST +
+ * JSON，响应格式 {code:"0", message, data}，code 为 "0" 表示成功。
  *
  * @author liuweiping
  * @date 2026-09-16
@@ -108,7 +108,7 @@ public final class AiQuestionApiClient {
     /**
      * 查询问题列表（训练状态筛选随请求提交由服务端过滤，其余关键字过滤与分页在本地完成）
      *
-     * @param trainingStatus 训练状态筛选（null 表示不筛选，返回全部；-2-初始状态；-1-待训练；0-成功；1-失败；2-成功(同步回复)；3-训练中；4-超时；5-同步失败(给答案表)）
+     * @param trainingStatus 训练状态筛选（null 表示不筛选，返回全部；-2-默认；-1-待训练；0-成功；1-失败；2-成功(同步回复)；3-训练中；4-超时；5-同步回复失败）
      */
     public List<AiQuestion> listQuestions(AiEnvConfig env, Integer trainingStatus) throws AiApiException {
         String url = buildUrl(env, env.getListApi());
@@ -192,12 +192,13 @@ public final class AiQuestionApiClient {
     /**
      * 批量更新选中问题的用户ID / 训练参数 / 自动训练开关（留空的字段不提交，接口侧保持原值不变）
      *
-     * @param userId              用户ID（null / 空白表示不更新该字段）
-     * @param trainingParam       训练参数（null / 空白表示不更新该字段）
-     * @param allowAutoTraining   自动训练开关（null 表示不更新；0-允许；1-不允许）
+     * @param userId            用户ID（null / 空白表示不更新该字段）
+     * @param trainingParam     训练参数（null / 空白表示不更新该字段）
+     * @param allowAutoTraining 自动训练开关（null 表示不更新；0-允许；1-不允许）
      * @return 成功时返回接口 message，失败时抛出异常
      */
-    public String batchUpdateUser(AiEnvConfig env, List<Long> ids, String userId, String trainingParam, Integer allowAutoTraining) throws AiApiException {
+    public String batchUpdateUser(AiEnvConfig env, List<Long> ids, String userId, String trainingParam, Integer allowAutoTraining)
+            throws AiApiException {
         String url = buildUrl(env, env.getUpdateUserApi());
         ObjectNode body = objectMapper.createObjectNode();
         body.set("ids", objectMapper.valueToTree(ids));
@@ -260,12 +261,13 @@ public final class AiQuestionApiClient {
      * <p>
      * 问题 / 回复内容模糊查询与是否允许修改、是否来源训练筛选随请求提交，参数为空时不提交对应字段（不参与筛选）。
      *
-     * @param query           问题内容关键字（null / 空白表示不筛选）
-     * @param answer          回复内容关键字（null / 空白表示不筛选）
-     * @param allowModify     是否允许修改筛选（null 表示不筛选；0-不允许；1-允许）
-     * @param sourceTraining  是否来源训练筛选（null 表示不筛选；true-是；false-否）
+     * @param query          问题内容关键字（null / 空白表示不筛选）
+     * @param answer         回复内容关键字（null / 空白表示不筛选）
+     * @param allowModify    是否允许修改筛选（null 表示不筛选；0-不允许；1-允许）
+     * @param sourceTraining 是否来源训练筛选（null 表示不筛选；true-是；false-否）
      */
-    public List<AiAnswer> listAnswers(AiEnvConfig env, String query, String answer, Integer allowModify, Boolean sourceTraining) throws AiApiException {
+    public List<AiAnswer> listAnswers(AiEnvConfig env, String query, String answer, Integer allowModify, Boolean sourceTraining)
+            throws AiApiException {
         String url = buildUrl(env, env.getAnswerListApi());
         ObjectNode body = objectMapper.createObjectNode();
         if (query != null && !query.isBlank()) {

@@ -38,6 +38,7 @@ public class FileParams {
      * 编码格式 base64或text
      */
     private String encoding = "base64";
+    
     /**
      * 文件名称
      */

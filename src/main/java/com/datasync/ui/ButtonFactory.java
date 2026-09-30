@@ -1,12 +1,7 @@
 package com.datasync.ui;
 
-import javax.swing.JButton;
-import java.awt.Color;
-import java.awt.Cursor;
-import java.awt.Graphics;
-import java.awt.Graphics2D;
-import java.awt.Insets;
-import java.awt.RenderingHints;
+import java.awt.*;
+import javax.swing.*;
 
 /**
  * 按钮样式工厂：按语义分类统一样式，避免散落的 setFont/setBackground。
@@ -32,11 +27,13 @@ import java.awt.RenderingHints;
  * </ul>
  */
 public final class ButtonFactory {
-
+    
     private ButtonFactory() {
     }
-
-    /** 主操作按钮：主色填充背景 + 白字 + 加粗 */
+    
+    /**
+     * 主操作按钮：主色填充背景 + 白字 + 加粗
+     */
     public static JButton createPrimary(String text) {
         JButton btn = new JButton(text);
         btn.setFont(UiConstants.FONT_SANS_12_BOLD);
@@ -47,7 +44,9 @@ public final class ButtonFactory {
         return btn;
     }
     
-    /** 危险操作按钮（备用）：主色填充背景 + 白字 + 加粗
+    /**
+     * 危险操作按钮（备用）：主色填充背景 + 白字 + 加粗
+     *
      * @param text
      * @return
      */
@@ -60,8 +59,10 @@ public final class ButtonFactory {
         applyCommonStyle(btn, new Insets(4, 14, 4, 14));
         return btn;
     }
-
-    /** 危险操作按钮：透明背景 + 危险色文字（暗色主题用浅红，浅色主题用深红） */
+    
+    /**
+     * 危险操作按钮：透明背景 + 危险色文字（暗色主题用浅红，浅色主题用深红）
+     */
     public static JButton createDestructive(String text) {
         JButton btn = new JButton(text);
         btn.setFont(UiConstants.FONT_SANS_12);
@@ -70,21 +71,27 @@ public final class ButtonFactory {
         applyCommonStyle(btn, new Insets(2, 10, 2, 10));
         return btn;
     }
-
-    /** 次要操作按钮：默认外观 + 12pt + 标准间距 */
+    
+    /**
+     * 次要操作按钮：默认外观 + 12pt + 标准间距
+     */
     public static JButton createSecondary(String text) {
         return createToolbar(text);
     }
-
-    /** 工具栏按钮：默认外观 + 12pt，用于导航 / 侧边工具 / 刷新等 */
+    
+    /**
+     * 工具栏按钮：默认外观 + 12pt，用于导航 / 侧边工具 / 刷新等
+     */
     public static JButton createToolbar(String text) {
         JButton btn = new JButton(text);
         btn.setFont(UiConstants.FONT_SANS_12);
         applyCommonStyle(btn, new Insets(2, 10, 2, 10));
         return btn;
     }
-
-    /** 链接式小按钮：12pt + 危险色文字 + 紧凑 margin，适合内嵌操作（行内删除） */
+    
+    /**
+     * 链接式小按钮：12pt + 危险色文字 + 紧凑 margin，适合内嵌操作（行内删除）
+     */
     public static JButton createLink(String text) {
         JButton btn = new JButton(text);
         btn.setFont(UiConstants.FONT_SANS_12);
@@ -93,7 +100,7 @@ public final class ButtonFactory {
         applyCommonStyle(btn, new Insets(1, 8, 1, 8));
         return btn;
     }
-
+    
     /**
      * 胶囊描边按钮：常态半透明填充 + 彩色描边 + 亮色文字，悬浮 / 按下时饱和色填充并反白文字
      * <p>
@@ -106,7 +113,7 @@ public final class ButtonFactory {
     public static JButton createPill(String text, Color accent, Color accentLight) {
         return new PillButton(text, accent, accentLight);
     }
-
+    
     /**
      * 应用通用样式：关闭 focusPainted、统一 margin、设置手型光标。
      */
@@ -115,31 +122,31 @@ public final class ButtonFactory {
         btn.setMargin(margin);
         btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
     }
-
+    
     /**
      * 胶囊按钮实现：自绘圆角底与描边，状态反馈由按钮模型（rollover / pressed）驱动
      */
     private static final class PillButton extends JButton {
-
+        
         /**
          * 胶囊圆角半径
          */
         private static final int ARC = 14;
-
+        
         /**
          * 常态填充色透明度（强调色叠加在主题背景上的轻填充）
          */
         private static final int FILL_ALPHA = 36;
-
+        
         /**
          * 常态描边色透明度
          */
         private static final int BORDER_ALPHA = 120;
-
+        
         private final Color accent;
-
+        
         private final Color accentLight;
-
+        
         private PillButton(String text, Color accent, Color accentLight) {
             super(text);
             this.accent = accent;
@@ -154,7 +161,7 @@ public final class ButtonFactory {
             setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             setMargin(new Insets(4, 14, 4, 14));
         }
-
+        
         @Override
         protected void paintComponent(Graphics g) {
             boolean rollover = getModel().isRollover();
@@ -187,7 +194,7 @@ public final class ButtonFactory {
                 textGraphics.dispose();
             }
         }
-
+        
         private static Color withAlpha(Color color, int alpha) {
             return new Color(color.getRed(), color.getGreen(), color.getBlue(), alpha);
         }
