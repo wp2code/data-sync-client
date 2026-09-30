@@ -4,6 +4,15 @@
 
 发布新版本时：在下方新增一节 `## [vX.Y.Z] - 日期`，与 Git Tag、`build.gradle` 的 `version`、`UiConstants.VERSION` 保持一致，Release 描述将自动取自对应小节。
 
+## [v1.1.1] - 2026-09-30
+
+### 新增
+- 启动自动检查更新支持节流：距上次检查超过 N 小时才检查，N 可配置（SQLite `app_config` 表 `update.check.interval.hours` 键），默认 24 小时，设为 0 表示每次启动都检查；亦可通过启动参数 `-Ddatasync.update.intervalHours` 覆盖
+- 新增通用键值配置表 `app_config` 及读写接口
+
+### 变更
+- 手动点击「检查更新」不受节流限制，且会刷新计时
+
 ## [v1.1.0] - 2026-09-30
 
 ### 新增
