@@ -39,6 +39,15 @@ public final class UpdateService {
     /** 最新 Release API */
     public static final String LATEST_RELEASE_API = REPO_API + "/releases/latest";
 
+    /** 自动检查间隔配置键（小时，存于 app_config 表） */
+    public static final String CONFIG_KEY_CHECK_INTERVAL_HOURS = "update.check.interval.hours";
+
+    /** 上次自动检查时间配置键（epoch 毫秒，存于 app_config 表） */
+    public static final String CONFIG_KEY_LAST_CHECK_TIME = "update.check.last.time";
+
+    /** 自动检查间隔默认值：24 小时 */
+    public static final int DEFAULT_CHECK_INTERVAL_HOURS = 24;
+
     private static final String EXE_NAME = "DataSync.exe";
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -57,6 +66,52 @@ public final class UpdateService {
 
     public static UpdateService create() {
         return new UpdateService();
+    }
+
+    /**
+     * 获取自动检查间隔（小时）。优先级：启动参数 -Ddatasync.update.intervalHours &gt; app_config 配置 &gt; 默认 24。
+     * 配置为 0 表示每次启动都检查。
+     */
+    public static int getCheckIntervalHours() {
+        String prop = System.getProperty("datasync.update.intervalHours");
+        if (prop != null) {
+            try {
+                return Integer.parseInt(prop.trim());
+            } catch (NumberFormatException ignored) {
+                // 参数非法则继续走配置
+            }
+        }
+        return com.datasync.util.SQLiteConfigUtil.getInstance()
+                .getIntAppConfig(CONFIG_KEY_CHECK_INTERVAL_HOURS, DEFAULT_CHECK_INTERVAL_HOURS);
+    }
+
+    /**
+     * 判断是否满足自动检查条件：距上次检查超过 N 小时（N 可配置，默认 24，0 表示总是检查）。
+     * 手动点击「检查更新」不受此限制。
+     */
+    public static boolean shouldAutoCheck() {
+        int intervalHours = getCheckIntervalHours();
+        if (intervalHours <= 0) {
+            return true;
+        }
+        String last = com.datasync.util.SQLiteConfigUtil.getInstance()
+                .getAppConfig(CONFIG_KEY_LAST_CHECK_TIME, "");
+        long lastMillis;
+        try {
+            lastMillis = Long.parseLong(last.trim());
+        } catch (NumberFormatException e) {
+            // 无记录，视为从未检查过
+            return true;
+        }
+        return System.currentTimeMillis() - lastMillis >= intervalHours * 3600_000L;
+    }
+
+    /**
+     * 记录本次检查时间（每次实际检查后调用）。
+     */
+    public static void markChecked() {
+        com.datasync.util.SQLiteConfigUtil.getInstance()
+                .setAppConfig(CONFIG_KEY_LAST_CHECK_TIME, String.valueOf(System.currentTimeMillis()));
     }
 
     /**

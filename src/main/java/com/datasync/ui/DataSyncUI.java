@@ -113,8 +113,14 @@ public class DataSyncUI extends JFrame {
         UpdateService.cleanupObsoleteFiles();
         SQLiteConfigUtil.getInstance().initialize();
         refreshConfigCombos();
-        // 启动 3 秒后静默检查更新（仅发现新版本时提示，不干扰使用）
-        Timer updateTimer = new Timer(3000, e -> performUpdateCheck(true));
+        // 启动 3 秒后静默检查更新（距上次检查超过 N 小时才检查，默认 24 小时，可配置）
+        Timer updateTimer = new Timer(3000, e -> {
+            if (UpdateService.shouldAutoCheck()) {
+                performUpdateCheck(true);
+            } else {
+                log.debug("距上次检查更新未超过 {} 小时，跳过自动检查", UpdateService.getCheckIntervalHours());
+            }
+        });
         updateTimer.setRepeats(false);
         updateTimer.start();
     }
@@ -570,7 +576,10 @@ public class DataSyncUI extends JFrame {
             
             @Override
             protected UpdateService.UpdateInfo doInBackground() throws Exception {
-                return UpdateService.create().checkForUpdate();
+                UpdateService.UpdateInfo info = UpdateService.create().checkForUpdate();
+                // 无论结果如何，记录本次检查时间（供启动节流判断）
+                UpdateService.markChecked();
+                return info;
             }
             
             @Override
