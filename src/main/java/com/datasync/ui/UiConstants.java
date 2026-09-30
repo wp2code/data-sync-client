@@ -11,7 +11,7 @@ public final class UiConstants {
     private UiConstants() {
     }
     
-    public static final String VERSION = "v1.0.0";
+    public static final String VERSION = "v1.1.0";
     
     public static final String GITHUB_ADDR = "https://github.com/wp2code/data-sync-client";
     
