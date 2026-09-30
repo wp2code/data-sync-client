@@ -1,0 +1,91 @@
+name: Release
+
+# 推送 v* 格式的 Tag 时自动构建并发布新版本到 GitHub Releases（仅 main 分支上的 Tag 生效）
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # 拉取完整历史，供 main 分支归属校验使用
+          fetch-depth: 0
+
+      - name: Verify tag is on main branch
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          # 确保 main 分支引用存在（按需 fetch）
+          git fetch origin main --tags 2>$null
+          $mainHash = git rev-parse origin/main
+          $tagHash = git rev-parse "$tag^{commit}"
+          Write-Host "tag=$tagHash, main=$mainHash"
+          # merge-base --is-ancestor 通过退出码返回结果（无 stdout 输出）
+          git merge-base --is-ancestor $tagHash $mainHash
+          if ($LASTEXITCODE -ne 0) {
+            throw "Tag $tag 不在 main 分支上，仅允许从 main 分支发布新版本"
+          }
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Verify version consistency
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          # 从 build.gradle 提取 version
+          $gradleVersion = (Select-String -Path build.gradle -Pattern "version\s*=\s*'([^']+)'").Matches[0].Groups[1].Value
+          # 从 UiConstants.java 提取 VERSION
+          $uiVersion = (Select-String -Path src/main/java/com/datasync/ui/UiConstants.java -Pattern 'VERSION\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
+          Write-Host "Tag=$tag, build.gradle=$gradleVersion, UiConstants=$uiVersion"
+          if ("v$gradleVersion" -ne $tag -or $uiVersion -ne $tag) {
+            throw "版本号不一致：请确保 Tag、build.gradle 的 version、UiConstants.VERSION 三者一致（如 $tag）"
+          }
+
+      - name: Build exe & package zip
+        shell: cmd
+        run: gradlew.bat createExe packageZip --no-daemon
+
+      - name: Generate SHA-256 checksum
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash -Algorithm SHA256 build/launch4j/DataSync.exe).Hash.ToLower()
+          "$hash  DataSync.exe" | Out-File -Encoding ascii build/launch4j/DataSync.exe.sha256
+          Get-Content build/launch4j/DataSync.exe.sha256
+
+      - name: Extract changelog for this version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $lines = Get-Content CHANGELOG.md
+          $start = -1
+          for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($lines[$i] -match '^##\s+') {
+              if ($start -ge 0) { $end = $i; break }
+              if ($lines[$i] -match [regex]::Escape($tag)) { $start = $i }
+            }
+          }
+          if ($start -lt 0) { throw "CHANGELOG.md 中未找到 $tag 的版本记录，请先补充版本日志" }
+          if (-not $end) { $end = $lines.Count }
+          $lines[$start..($end-1)] | Out-File -Encoding utf8 release_notes.md
+          Get-Content release_notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release_notes.md
+          files: |
+            build/launch4j/DataSync.exe
+            build/launch4j/DataSync.exe.sha256
+            build/distributions/DataSync-*-win-x64.zip

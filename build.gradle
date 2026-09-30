@@ -5,7 +5,7 @@ plugins {
 }
 
 group = 'com.datasync'
-version = '1.0.0'
+version = '1.1.1'
 
 ext {
     // 内置 JRE 版本（Eclipse Temurin）
@@ -70,6 +70,19 @@ dependencies {
     implementation group: 'org.gitlab4j', name: 'gitlab4j-api', version: '6.3.0'
     // Source: https://mvnrepository.com/artifact/com.google.guava/guava
     implementation("com.google.guava:guava:33.6.0-jre")
+
+    // JUnit 5 单元测试
+    testImplementation platform('org.junit:junit-bom:5.10.2')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+}
+
+// 启用 JUnit Platform 运行测试
+test {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
 }
 
 application {

@@ -129,6 +129,14 @@ public class SQLiteConfigUtil {
             );
             """;
     
+    // 通用键值配置表（如更新检查间隔、上次检查时间等）
+    private static final String CREATE_APP_CONFIG_TABLE_SQL = """
+            CREATE TABLE IF NOT EXISTS app_config (
+                key   VARCHAR(64) PRIMARY KEY,
+                value TEXT        DEFAULT NULL
+            );
+            """;
+    
     // ────────── 单例 ──────────
     private static final SQLiteConfigUtil INSTANCE = new SQLiteConfigUtil();
     
@@ -153,6 +161,7 @@ public class SQLiteConfigUtil {
                 stmt.execute(CREATE_SCRIPT_TABLE_SQL);
                 stmt.execute(CREATE_GITLAB_CONFIG_TABLE_SQL);
                 stmt.execute(CREATE_AI_ENV_CONFIG_TABLE_SQL);
+                stmt.execute(CREATE_APP_CONFIG_TABLE_SQL);
                 ensureAiEnvConfigColumns(stmt);
                 seedDefaultAiEnv(stmt);
             }
@@ -162,6 +171,56 @@ public class SQLiteConfigUtil {
     }
     
     // ────────── CRUD ──────────
+    
+    // ────────── 通用键值配置（app_config） ──────────
+    
+    /**
+     * 读取字符串配置，不存在或读取失败时返回默认值
+     */
+    public String getAppConfig(String key, String defaultValue) {
+        String sql = "SELECT value FROM app_config WHERE key = ?";
+        try (Connection conn = getConnection();
+                PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, key);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    String value = rs.getString("value");
+                    return value != null ? value : defaultValue;
+                }
+            }
+        } catch (SQLException e) {
+            logger.error("[SQLite] 读取配置失败: {}", key, e);
+        }
+        return defaultValue;
+    }
+    
+    /**
+     * 读取整型配置，不存在或非法时返回默认值
+     */
+    public int getIntAppConfig(String key, int defaultValue) {
+        try {
+            return Integer.parseInt(getAppConfig(key, String.valueOf(defaultValue)).trim());
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
+    }
+    
+    /**
+     * 写入配置（不存在则插入，存在则更新）
+     */
+    public boolean setAppConfig(String key, String value) {
+        String sql = "INSERT INTO app_config (key, value) VALUES (?, ?) "
+                + "ON CONFLICT(key) DO UPDATE SET value = excluded.value";
+        try (Connection conn = getConnection();
+                PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, key);
+            ps.setString(2, value);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            logger.error("[SQLite] 写入配置失败: {}", key, e);
+            return false;
+        }
+    }
     
     /**
      * 保存数据源配置

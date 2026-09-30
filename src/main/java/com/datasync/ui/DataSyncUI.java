@@ -9,6 +9,7 @@ import com.datasync.components.combobox.IconJComboBox;
 import com.datasync.core.DataSyncService;
 import com.datasync.core.DbConnector;
 import com.datasync.core.GitLabService;
+import com.datasync.core.UpdateService;
 import com.datasync.model.ConnectionWrapper;
 import com.datasync.model.DataSource;
 import com.datasync.model.DbType;
@@ -77,6 +78,13 @@ public class DataSyncUI extends JFrame {
     
     private LinkJLabel diffLink;
     
+    // ────────── 在线更新组件 ──────────
+    
+    private JButton checkUpdateBtn;
+    
+    /** 下载进度条：发现新版本下载时显示在「检查更新」按钮旁 */
+    private JProgressBar updateProgressBar;
+    
     private JCheckBox truncateCheckBox;
     
     private JPanel srcSchemaPanel;
@@ -108,8 +116,20 @@ public class DataSyncUI extends JFrame {
     
     public DataSyncUI() {
         initUI();
+        // 清理上次在线升级遗留的旧文件
+        UpdateService.cleanupObsoleteFiles();
         SQLiteConfigUtil.getInstance().initialize();
         refreshConfigCombos();
+        // 启动 3 秒后静默检查更新（距上次检查超过 N 小时才检查，默认 24 小时，可配置）
+        Timer updateTimer = new Timer(3000, e -> {
+            if (UpdateService.shouldAutoCheck()) {
+                performUpdateCheck(true);
+            } else {
+                log.debug("距上次检查更新未超过 {} 小时，跳过自动检查", UpdateService.getCheckIntervalHours());
+            }
+        });
+        updateTimer.setRepeats(false);
+        updateTimer.start();
     }
     
     // ────────── UI 初始化 ──────────
@@ -539,11 +559,132 @@ public class DataSyncUI extends JFrame {
             LogUtil.clearLog(LogUtil.DATA_SYNC_UI_LOG_AREA);
         });
         JPanel btnPanel = new JPanel(new BorderLayout());
+        JPanel leftPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         final LinkJLabel versionLink = new LinkJLabel(UiConstants.VERSION, UiConstants.GITHUB_ADDR);
-        btnPanel.add(versionLink, BorderLayout.WEST);
+        checkUpdateBtn = ButtonFactory.createSecondary("检查更新");
+        checkUpdateBtn.addActionListener(e -> performUpdateCheck(false));
+        updateProgressBar = new JProgressBar(0, 100);
+        updateProgressBar.setStringPainted(true);
+        updateProgressBar.setVisible(false);
+        updateProgressBar.setPreferredSize(new Dimension(150, checkUpdateBtn.getPreferredSize().height));
+        leftPanel.add(versionLink);
+        leftPanel.add(checkUpdateBtn);
+        leftPanel.add(updateProgressBar);
+        btnPanel.add(leftPanel, BorderLayout.WEST);
         btnPanel.add(clearBtn, BorderLayout.EAST);
         panel.add(btnPanel, BorderLayout.SOUTH);
         return panel;
+    }
+    
+    // ────────── 在线更新 ──────────
+    
+    /**
+     * 检查更新：后台查询 GitHub 最新 Release，发现新版本时询问用户是否立即升级。
+     *
+     * @param silent true 表示静默模式（启动时自动检查）：无新版本或检查失败时不弹窗
+     */
+    private void performUpdateCheck(boolean silent) {
+        // 检查期间按钮禁用并显示状态，防止重复点击
+        checkUpdateBtn.setEnabled(false);
+        checkUpdateBtn.setText("检查中…");
+        new SwingWorker<UpdateService.UpdateInfo, Void>() {
+            
+            @Override
+            protected UpdateService.UpdateInfo doInBackground() throws Exception {
+                UpdateService.UpdateInfo info = UpdateService.create().checkForUpdate();
+                // 无论结果如何，记录本次检查时间（供启动节流判断）
+                UpdateService.markChecked();
+                return info;
+            }
+            
+            @Override
+            protected void done() {
+                checkUpdateBtn.setEnabled(true);
+                checkUpdateBtn.setText("检查更新");
+                try {
+                    UpdateService.UpdateInfo info = get();
+                    if (!UpdateService.isNewerVersion(info.version(), UiConstants.VERSION)) {
+                        if (!silent) {
+                            JOptionPane.showMessageDialog(DataSyncUI.this,
+                                    "当前已是最新版本 " + UiConstants.VERSION, "检查更新", JOptionPane.INFORMATION_MESSAGE);
+                        }
+                        return;
+                    }
+                    String message = "发现新版本 " + info.version() + "\n\n"
+                            + (info.notes().isBlank() ? "" : info.notes() + "\n\n")
+                            + "是否立即下载并更新？（更新完成后将自动重启）";
+                    if (JOptionPane.showConfirmDialog(DataSyncUI.this, message, "在线更新",
+                            JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
+                        downloadAndApplyUpdate(info);
+                    }
+                } catch (Exception ex) {
+                    log.warn("检查更新失败", ex);
+                    if (!silent) {
+                        JOptionPane.showMessageDialog(DataSyncUI.this,
+                                "检查更新失败：" + ex.getMessage(), "检查更新", JOptionPane.WARNING_MESSAGE);
+                    }
+                }
+            }
+        }.execute();
+    }
+    
+    /**
+     * 下载新版本并替换当前 exe，成功后自动重启。
+     * 下载期间「检查更新」按钮变为禁用状态，旁边显示下载进度条。
+     */
+    private void downloadAndApplyUpdate(UpdateService.UpdateInfo info) {
+        // 按钮进入下载态：禁用 + 显示进度条
+        checkUpdateBtn.setEnabled(false);
+        checkUpdateBtn.setText("下载中…");
+        updateProgressBar.setValue(0);
+        updateProgressBar.setString("下载 0%");
+        updateProgressBar.setIndeterminate(true);
+        updateProgressBar.setVisible(true);
+        
+        new SwingWorker<Void, Integer>() {
+            
+            @Override
+            protected Void doInBackground() throws Exception {
+                // 成功时进程内部直接退出，本方法不会返回
+                UpdateService.create().downloadAndApply(info, this::publish);
+                return null;
+            }
+            
+            @Override
+            protected void process(List<Integer> chunks) {
+                int percent = chunks.get(chunks.size() - 1);
+                updateProgressBar.setIndeterminate(false);
+                updateProgressBar.setValue(percent);
+                updateProgressBar.setString("下载 " + percent + "%");
+            }
+            
+            @Override
+            protected void done() {
+                // 下载结束（失败或重启失败）恢复按钮与进度条
+                updateProgressBar.setVisible(false);
+                checkUpdateBtn.setEnabled(true);
+                checkUpdateBtn.setText("检查更新");
+                try {
+                    get();
+                } catch (java.util.concurrent.ExecutionException ex) {
+                    Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+                    if (cause instanceof UpdateService.RestartException) {
+                        // 更新已成功，仅自动重启失败：提示手动启动，当前窗口可继续使用
+                        log.warn("更新完成但自动重启失败", cause);
+                        JOptionPane.showMessageDialog(DataSyncUI.this, cause.getMessage(),
+                                "更新完成", JOptionPane.INFORMATION_MESSAGE);
+                    } else {
+                        log.warn("在线更新失败", cause);
+                        JOptionPane.showMessageDialog(DataSyncUI.this,
+                                "更新失败：" + cause.getMessage(), "在线更新", JOptionPane.ERROR_MESSAGE);
+                    }
+                } catch (Exception ex) {
+                    log.warn("在线更新失败", ex);
+                    JOptionPane.showMessageDialog(DataSyncUI.this,
+                            "更新失败：" + ex.getMessage(), "在线更新", JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        }.execute();
     }
     
     // ────────── GitLab管理对话框 ──────────
