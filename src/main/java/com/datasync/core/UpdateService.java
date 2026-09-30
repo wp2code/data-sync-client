@@ -235,6 +235,7 @@ public final class UpdateService {
         if (exe == null) {
             throw new IllegalStateException("未找到 " + EXE_NAME + "（当前非 exe 方式运行），请手动下载更新：" + info.url());
         }
+        logUpdate("开始更新 " + UiConstants.VERSION + " -> " + info.version() + "，当前 exe: " + exe);
         Path dir = exe.getParent();
         Path newFile = dir.resolve(EXE_NAME + ".new");
         Path oldFile = dir.resolve(EXE_NAME + ".old");
@@ -281,10 +282,79 @@ public final class UpdateService {
         }
 
         // 4. 启动新版本并退出当前进程
-        new ProcessBuilder(exe.toString())
-                .directory(dir.toFile())
-                .start();
+        logUpdate("更新就位，开始重启: " + exe);
+        if (!restartApplication(dir)) {
+            // 更新已完成（新 exe 已就位），仅自动重启失败：提示用户手动启动，不能回滚
+            throw new RestartException("新版本已更新完成，但自动重启失败，请关闭当前窗口后手动启动 " + EXE_NAME);
+        }
+        // 给新进程完成 JVM 初始化的时间，避免旧进程过早退出影响其启动
+        try {
+            Thread.sleep(1500);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
         System.exit(0);
+    }
+
+    /**
+     * 重启失败异常：exe 已替换成功，仅自动拉起新进程失败，用户手动启动即可。
+     */
+    public static class RestartException extends IllegalStateException {
+
+        public RestartException(String message) {
+            super(message);
+        }
+    }
+
+    /**
+     * 启动新版 exe，成功返回 true。
+     * 依次尝试两种方式：
+     * 1. 直接启动（输出重定向到 DISCARD，避免旧进程退出后管道断裂导致新进程阻塞/退出）
+     * 2. 通过 cmd start 完全脱离父子进程关系启动（兼容部分安全软件/权限拦截场景）
+     */
+    private static boolean restartApplication(Path dir) {
+        // 方式一：直接启动
+        try {
+            new ProcessBuilder(dir.resolve(EXE_NAME).toString())
+                    .directory(dir.toFile())
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .redirectError(ProcessBuilder.Redirect.DISCARD)
+                    .start();
+            logUpdate("重启方式一（直接启动）成功");
+            return true;
+        } catch (Exception e) {
+            logUpdate("重启方式一失败: " + e);
+        }
+        // 方式二：cmd start 分离启动（支持路径含空格）
+        try {
+            new ProcessBuilder("cmd", "/c", "start", "", "/D", dir.toString(), EXE_NAME)
+                    .directory(dir.toFile())
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .redirectError(ProcessBuilder.Redirect.DISCARD)
+                    .start();
+            logUpdate("重启方式二（cmd start）成功");
+            return true;
+        } catch (Exception e) {
+            logUpdate("重启方式二失败: " + e);
+        }
+        return false;
+    }
+
+    /**
+     * 追加更新日志到 {应用目录}/data/update.log，便于排查更新/重启问题（失败不影响主流程）。
+     */
+    private static void logUpdate(String message) {
+        try {
+            Path exe = new UpdateService().currentExePath();
+            Path baseDir = exe != null ? exe.getParent() : Path.of(System.getProperty("user.dir"));
+            Path logFile = baseDir.resolve("data").resolve("update.log");
+            Files.createDirectories(logFile.getParent());
+            Files.writeString(logFile, java.time.LocalDateTime.now() + " " + message + System.lineSeparator(),
+                    java.nio.charset.StandardCharsets.UTF_8,
+                    java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+        } catch (Exception ignored) {
+            // 日志失败不影响更新流程
+        }
     }
 
     /**
