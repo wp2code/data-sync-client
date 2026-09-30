@@ -837,7 +837,6 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
                 "question": "如何配置数据源",
                 "questionClassify": "数据源",
                 "userId": "u10001",
-                "userSession": "sess-8f3e2a1c",
                 "trainingParam": "{\\"topK\\":3}",
                 "answer": "",
                 "enableTraining": 1,
@@ -867,7 +866,6 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
               "question": "如何配置数据源",
               "questionClassify": "数据源",
               "userId": "u10001",
-              "userSession": "sess-8f3e2a1c",
               "trainingParam": "{\\"topK\\":3}",
               "answer": "进入数据源管理页面新增配置",
               "enableTraining": 1,
@@ -913,7 +911,6 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
                   "question": "如何配置数据源",
                   "questionClassify": "数据源",
                   "userId": "u10001",
-                  "userSession": "sess-8f3e2a1c",
                   "remark": "",
                   "answerId": 2001,
                   "trainingParam": "{\\"topK\\":3}",
@@ -945,13 +942,12 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
             """);
         
     /**
-     * 批量更新问题接口示例（ids 为勾选的问题 ID 列表，userId / userSession / trainingParam 均可选，留空字段不提交保持原值）
+     * 批量更新问题接口示例（ids 为勾选的问题 ID 列表，userId / trainingParam 均可选，留空字段不提交保持原值）
      */
     private static final ApiExample UPDATE_USER_EXAMPLE = new ApiExample("批量更新问题", AiEnvConfig.DEFAULT_UPDATE_USER_API, """
             {
               "ids": [1001, 1002],
               "userId": "u10001",
-              "userSession": "sess-8f3e2a1c",
               "trainingParam": "{\\"topK\\":5}"
             }
             """, """

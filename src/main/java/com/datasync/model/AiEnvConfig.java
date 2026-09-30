@@ -123,7 +123,7 @@ public class AiEnvConfig {
     private String trainApi = DEFAULT_TRAIN_API;
     
     /**
-     * 批量更新用户接口路径（问题列表勾选问题后批量更新用户ID与用户Session）
+     * 批量更新用户接口路径（问题列表勾选问题后批量更新用户ID、训练参数与自动训练开关）
      */
     private String updateUserApi = DEFAULT_UPDATE_USER_API;
     

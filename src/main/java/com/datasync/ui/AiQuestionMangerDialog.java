@@ -61,7 +61,7 @@ import org.slf4j.LoggerFactory;
  * <p>
  * 问题数据通过外部接口存取（环境 host + 接口路径，见 {@link AiEnvConfig}）：<br> 批量保存、更新、删除、列表查询均调用远端服务，列表只加载当前所选环境，训练状态筛选随列表请求提交由服务端过滤，关键字 / 分类过滤与分页在本地完成。<br>
  * 页签一「问题训练」：上屏问题录入（Tab 切换「界面手动录入」与「批量粘贴录入」两种方式，手动录入支持 Excel 模板导入）+
- * 下屏问题列表（仅展示当前环境、模糊查询、分类与训练状态筛选、分页、复选框勾选与表头全选、回复ID超链接查询回复详情、行内查看详情/编辑/训练/删除、双击编辑、批量触发训练、批量更新用户信息 / 训练参数、批量删除）<br> 页签二「回复审计」：问题回复列表（问题 /
+ * 下屏问题列表（仅展示当前环境、模糊查询、分类与训练状态筛选、分页、复选框勾选与表头全选、回复ID超链接查询回复详情、行内查看详情/编辑/训练/删除、双击编辑、批量触发训练、批量更新用户信息 / 训练参数 / 自动训练、批量删除）<br> 页签二「回复审计」：问题回复列表（问题 /
  * 回复内容模糊查询与允许修改、来源训练筛选由接口完成、本地分页、复选框勾选与表头全选、行内查看详情 / 编辑 / 删除、批量更新是否允许修改状态、批量删除）
  *
  * @author liuweiping
@@ -142,6 +142,21 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     private static final String ALL_USER = "全部用户";
     
     /**
+     * 问题列表自动训练筛选下拉的『全部』选项（选中时不过滤自动训练状态）
+     */
+    private static final String ALL_AUTO_TRAINING = "全部";
+    
+    /**
+     * 自动训练筛选下拉选项：允许（筛选值 0）
+     */
+    private static final String AUTO_TRAINING_ALLOW = "允许";
+    
+    /**
+     * 自动训练筛选下拉选项：不允许（筛选值 1）
+     */
+    private static final String AUTO_TRAINING_NOT_ALLOW = "不允许";
+    
+    /**
      * 训练状态筛选项文字（下标对应训练状态值 +2：-2-初始状态；-1-待训练；0-成功；1-失败；2-同步成功(给答案表)；3-训练中；4-超时；5-同步失败(给答案表)）
      */
     private static final String[] TRAINING_STATUS_TEXTS = {"初始状态", "待训练", "成功", "失败", "同步成功(给答案表)", "训练中", "超时",
@@ -171,7 +186,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         return Long.compare(idB, idA);
     };
     
-    // ── 下屏表格列索引（表格不展示用户Session / 优先级，可在详情与编辑弹窗查看）──
+    // ── 下屏表格列索引（表格不展示优先级，可在详情与编辑弹窗查看）──
     private static final int COL_CHECK = 0;
     
     private static final int COL_ID = 1;
@@ -203,9 +218,11 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
      */
     private static final int COL_TRAINING_COST = 13;
     
-    private static final int COL_REMARK = 14;
+    private static final int COL_AUTO_TRAINING = 14;
     
-    private static final int COL_ACTION = 15;
+    private static final int COL_REMARK = 15;
+    
+    private static final int COL_ACTION = 16;
     
     /**
      * 复选框列固定宽度
@@ -348,11 +365,11 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
      */
     private JButton pasteProjectBtn;
     
-    private CustomTextField pasteUserSessionField;
-    
     private JLabel parsePreviewLabel;
     
     private CustomTextField pasteClassifyField;
+    
+    private JComboBox<String> pasteAutoTrainingCombo;
     
     private JTextArea pasteTrainingParamArea;
     
@@ -398,6 +415,11 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
      * 重置问题列表筛选期间抑制联动刷新（避免中间状态触发条件不完整的接口加载，由重置统一触发一次查询）
      */
     private boolean suppressQuestionFilterEvents = false;
+    
+    /**
+     * 自动训练筛选下拉（选项固定：全部 / 允许 / 不允许，选中后本地过滤列表）
+     */
+    private JComboBox<String> autoTrainingFilterCombo;
     
     private JComboBox<String> pageSizeCombo;
     
@@ -758,11 +780,11 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     }
     
     /**
-     * 手动录入网格表头：问题、用户ID、所属项目、分类、开启训练、训练参数、固定回复、操作
+     * 手动录入网格表头：问题、用户ID、所属项目、分类、自动训练、训练参数、操作
      */
     private void addManualGridHeader() {
-        String[] headers = {"问题", "所属用户", "所属项目", "分类", "开启训练", "训练参数", "固定回复", "操作"};
-        double[] weights = {3.0, 0.4, 0.35, 0.35, 0, 0.5, 0.5, 0};
+        String[] headers = {"问题", "所属用户", "所属项目", "分类", "自动训练", "训练参数", "操作"};
+        double[] weights = {3.0, 0.4, 0.35, 0.35, 0, 0.5, 0};
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.gridy = 0;
         gbc.insets = new Insets(2, 3, 2, 3);
@@ -822,15 +844,12 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         manualGridPanel.add(row.classifyCombo, gbc);
         gbc.gridx = 4;
         gbc.weightx = 0;
-        row.enableTrainingCombo.setPreferredSize(new Dimension(92, 26));
-        manualGridPanel.add(row.enableTrainingCombo, gbc);
+        row.autoTrainingCombo.setPreferredSize(new Dimension(92, 26));
+        manualGridPanel.add(row.autoTrainingCombo, gbc);
         gbc.gridx = 5;
         gbc.weightx = 0.5;
         manualGridPanel.add(row.trainingParamArea, gbc);
         gbc.gridx = 6;
-        gbc.weightx = 0.5;
-        manualGridPanel.add(row.answerArea, gbc);
-        gbc.gridx = 7;
         gbc.weightx = 0;
         manualGridPanel.add(row.deleteRowBtn, gbc);
     }
@@ -872,10 +891,9 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         List<AiQuestion> questions = new ArrayList<>();
         String resolvedClassify = null;
         String resolvedUserId = null;
-        int resolvedEnable = AiQuestion.TRAINING_ENABLED;
+        int resolvedAutoTraining = AiQuestion.AUTO_TRAINING_ALLOWED;
         List<String> resolvedProjectCodes = null;
-        for (int i = 0; i < entryRows.size(); i++) {
-            QuestionEntryRow row = entryRows.get(i);
+        for (QuestionEntryRow row : entryRows) {
             String question = row.questionField.getText().trim();
             if (question.isEmpty()) {
                 continue;
@@ -896,13 +914,13 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             if (!classify.isEmpty() && !SAME_AS_ABOVE.equals(classify)) {
                 resolvedClassify = classify;
             }
-            // 开启训练：『同上』时继承上一行的有效值
-            Object enableSelection = row.enableTrainingCombo.getSelectedItem();
-            String enableText = enableSelection != null ? enableSelection.toString() : "开启";
-            if ("开启".equals(enableText)) {
-                resolvedEnable = AiQuestion.TRAINING_ENABLED;
-            } else if ("不开启".equals(enableText)) {
-                resolvedEnable = AiQuestion.TRAINING_DISABLED;
+            // 自动训练开关：『同上』时继承上一行的有效值
+            Object autoTrainingSelection = row.autoTrainingCombo.getSelectedItem();
+            String autoTrainingText = autoTrainingSelection != null ? autoTrainingSelection.toString() : "允许";
+            if ("允许".equals(autoTrainingText)) {
+                resolvedAutoTraining = AiQuestion.AUTO_TRAINING_ALLOWED;
+            } else if ("不允许".equals(autoTrainingText)) {
+                resolvedAutoTraining = AiQuestion.AUTO_TRAINING_NOT_ALLOWED;
             }
             AiQuestion item = new AiQuestion();
             item.setEnvName(envName);
@@ -911,8 +929,9 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             item.setProjectCodeList(resolvedProjectCodes == null || resolvedProjectCodes.isEmpty() ? null : new ArrayList<>(resolvedProjectCodes));
             item.setQuestionClassify(resolvedClassify);
             item.setTrainingParam(row.trainingParamArea.getText().trim());
-            item.setAnswer(row.answerArea.getText().trim());
-            item.setEnableTraining(resolvedEnable);
+            item.setAnswer("");
+            item.setEnableTraining(AiQuestion.TRAINING_ENABLED);
+            item.setAllowAutoTraining(resolvedAutoTraining);
             item.setPriority(0);
             questions.add(item);
         }
@@ -1084,12 +1103,10 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             row.userIdField.getEditor().setItem(nullToEmpty(question.getUserId()));
             // 分类：与 collectManualQuestions 的读取路径一致，直接写入编辑器内容
             row.classifyCombo.getEditor().setItem(nullToEmpty(question.getQuestionClassify()));
-            row.enableTrainingCombo.setSelectedItem(question.isTrainingEnabled() ? "开启" : "不开启");
             row.trainingParamArea.setText(nullToEmpty(question.getTrainingParam()));
-            row.answerArea.setText(nullToEmpty(question.getAnswer()));
             // 所属项目：与上一行相同时保持『同上』，否则取消『同上』并设置具体项目
             List<String> currentCodes = question.getProjectCodeList();
-            if (row.projectSameAsAbove != null && currentCodes != null && prevProjectCodes != null && currentCodes.equals(prevProjectCodes)) {
+            if (row.projectSameAsAbove != null && currentCodes != null && currentCodes.equals(prevProjectCodes)) {
                 // 保持『同上』选中状态
             } else if (row.projectSameAsAbove != null && currentCodes == null && prevProjectCodes == null) {
                 // 都为空，保持『同上』
@@ -1155,10 +1172,11 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         String projectFilter = selectedProjectFilter();
         String userFilter = selectedUserFilter();
         Integer statusFilter = selectedTrainingStatusFilter();
+        Integer autoTrainingFilter = selectedAutoTrainingFilter();
         List<AiQuestion> filtered = new ArrayList<>();
         for (AiQuestion item : allQuestions) {
             if (matchesKeyword(item, keyword) && matchesClassify(item, classifyFilter) && matchesProject(item, projectFilter) && matchesUserFilter(
-                    item, userFilter) && matchesTrainingStatus(item, statusFilter)) {
+                    item, userFilter) && matchesTrainingStatus(item, statusFilter) && matchesAutoTraining(item, autoTrainingFilter)) {
                 filtered.add(item);
             }
         }
@@ -1374,7 +1392,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     }
     
     /**
-     * 批量粘贴右屏：用户ID / 用户Session / 问题分类（适用全部问题，可留空）与训练参数
+     * 批量粘贴右屏：用户ID / 分类（适用全部问题，可留空）与训练参数
      */
     private JPanel buildPasteMetaPanel() {
         JPanel panel = new JPanel(new GridBagLayout());
@@ -1392,7 +1410,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         gbc.gridx = 0;
         gbc.gridy = 0;
         gbc.weightx = 0;
-        panel.add(new JLabel("用户ID："), gbc);
+        panel.add(new JLabel("   用户ID："), gbc);
         gbc.gridx = 1;
         gbc.weightx = 1.0;
         panel.add(pasteUserIdField, gbc);
@@ -1415,23 +1433,24 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         gbc.weightx = 1.0;
         panel.add(pasteProjectBtn, gbc);
         
-        pasteUserSessionField = new CustomTextField("用户Session（适用全部问题，可留空）");
+        pasteClassifyField = new CustomTextField("问题的分类（适用全部问题，可留空）");
         gbc.gridx = 0;
         gbc.gridy = 2;
         gbc.weightx = 0;
-        panel.add(new JLabel("用户Session："), gbc);
-        gbc.gridx = 1;
-        gbc.weightx = 1.0;
-        panel.add(pasteUserSessionField, gbc);
-        
-        pasteClassifyField = new CustomTextField("问题的分类（适用全部问题，可留空）");
-        gbc.gridx = 0;
-        gbc.gridy = 3;
-        gbc.weightx = 0;
-        panel.add(new JLabel("问题分类："), gbc);
+        panel.add(new JLabel("      分类："), gbc);
         gbc.gridx = 1;
         gbc.weightx = 1.0;
         panel.add(pasteClassifyField, gbc);
+        
+        pasteAutoTrainingCombo = new JComboBox<>(new String[] {"允许", "不允许"});
+        pasteAutoTrainingCombo.setSelectedItem("允许");
+        gbc.gridx = 0;
+        gbc.gridy = 3;
+        gbc.weightx = 0;
+        panel.add(new JLabel("自动训练："), gbc);
+        gbc.gridx = 1;
+        gbc.weightx = 1.0;
+        panel.add(pasteAutoTrainingCombo, gbc);
         
         pasteTrainingParamArea = new JTextArea(3, 20);
         pasteTrainingParamArea.setLineWrap(true);
@@ -1491,9 +1510,9 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             return;
         }
         String userId = extractUserIdFromCombo(pasteUserIdField.getSelectedItem());
-        String userSession = pasteUserSessionField.getText().trim();
         String classify = pasteClassifyField.getText().trim();
         String trainingParam = pasteTrainingParamArea.getText().trim();
+        int autoTraining = "允许".equals(pasteAutoTrainingCombo.getSelectedItem()) ? AiQuestion.AUTO_TRAINING_ALLOWED : AiQuestion.AUTO_TRAINING_NOT_ALLOWED;
         List<AiQuestion> items = new ArrayList<>();
         for (String question : questions) {
             AiQuestion item = new AiQuestion();
@@ -1501,11 +1520,11 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             item.setQuestion(question);
             item.setUserId(userId.isEmpty() ? null : userId);
             item.setProjectCodeList(pasteSelectedProjects.isEmpty() ? null : new ArrayList<>(pasteSelectedProjects));
-            item.setUserSession(userSession.isEmpty() ? null : userSession);
             item.setQuestionClassify(classify.isEmpty() ? null : classify);
             item.setTrainingParam(trainingParam);
             item.setAnswer("");
             item.setEnableTraining(AiQuestion.TRAINING_ENABLED);
+            item.setAllowAutoTraining(autoTraining);
             item.setPriority(0);
             items.add(item);
         }
@@ -1529,8 +1548,8 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         pasteUserIdField.getEditor().setItem("");
         pasteSelectedProjects.clear();
         pasteProjectBtn.setText(projectButtonLabel(pasteSelectedProjects));
-        pasteUserSessionField.setText("");
         pasteClassifyField.setText("");
+        pasteAutoTrainingCombo.setSelectedItem("允许");
         pasteTrainingParamArea.setText("");
         updateParsePreview();
     }
@@ -1883,7 +1902,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         filterLeft.add(refreshBtn);
         // 重置：清空关键字并恢复分类 / 训练状态筛选为全部，回到第一页重新查询
         JButton resetBtn = ButtonFactory.createPill("重置", UiConstants.COLOR_NEUTRAL, UiConstants.COLOR_NEUTRAL_LIGHT);
-        resetBtn.setToolTipText("清空关键字并恢复分类 / 项目 / 用户 / 训练状态为全部，回到第一页重新查询");
+        resetBtn.setToolTipText("清空关键字并恢复分类 / 项目 / 用户 / 训练状态 / 自动训练为全部，回到第一页重新查询");
         resetBtn.addActionListener(e -> resetQuestionFilters());
         filterLeft.add(resetBtn);
         // 更多条件展开链接（超文本样式）
@@ -1929,7 +1948,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         trainBtn.addActionListener(e -> triggerTrainingQuestions());
         filterRight.add(trainBtn);
         JButton batchUpdateBtn = ButtonFactory.createPill("批量更新", UiConstants.COLOR_PRIMARY, UiConstants.COLOR_PRIMARY_LIGHT);
-        batchUpdateBtn.setToolTipText("批量更新勾选问题的用户ID、用户Session与训练参数（点击表头复选框可全选当前页）");
+        batchUpdateBtn.setToolTipText("批量更新勾选问题的用户ID、训练参数与自动训练（点击表头复选框可全选当前页）");
         batchUpdateBtn.addActionListener(e -> batchUpdateUserQuestions());
         filterRight.add(batchUpdateBtn);
         JButton batchDeleteBtn = ButtonFactory.createPill("批量删除", UiConstants.COLOR_DANGER, UiConstants.COLOR_DANGER_LIGHT);
@@ -1965,6 +1984,18 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             }
         });
         filterRow2.add(userFilterCombo);
+        filterRow2.add(new JLabel("自动训练："));
+        // 自动训练筛选：选项固定（全部 / 允许 / 不允许），选中后本地过滤列表
+        autoTrainingFilterCombo = new JComboBox<>(new String[] {ALL_AUTO_TRAINING, AUTO_TRAINING_ALLOW, AUTO_TRAINING_NOT_ALLOW});
+        autoTrainingFilterCombo.setPreferredSize(new Dimension(100, 26));
+        autoTrainingFilterCombo.setToolTipText("按自动训练状态过滤问题列表");
+        autoTrainingFilterCombo.addActionListener(e -> {
+            if (!suppressQuestionFilterEvents) {
+                currentPage = 1;
+                applyLocalFilterAndPaging();
+            }
+        });
+        filterRow2.add(autoTrainingFilterCombo);
         toolbar.add(filterRow2, BorderLayout.SOUTH);
         panel.add(toolbar, BorderLayout.NORTH);
         
@@ -1974,7 +2005,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         questionTable.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         questionTable.setRowHeight(28);
         questionTable.getTableHeader().setReorderingAllowed(false);
-        int[] columnWidths = {CHECK_COLUMN_WIDTH, 50, 280, 90, 120, 100, 150, 150, 90, 80, 90, 140, 140, 100, 110, ACTION_COLUMN_WIDTH};
+        int[] columnWidths = {CHECK_COLUMN_WIDTH, 50, 280, 90, 120, 100, 150, 150, 90, 80, 90, 140, 140, 100, 80, 110, ACTION_COLUMN_WIDTH};
         for (int i = 0; i < columnWidths.length; i++) {
             questionTable.getColumnModel().getColumn(i).setPreferredWidth(columnWidths[i]);
         }
@@ -2017,6 +2048,12 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         questionTable.getColumnModel().getColumn(COL_LAST_TRAINING_TIME).setCellRenderer(centeredRenderer());
         // 训练耗时列：数值居中展示（列头已注明单位秒）
         questionTable.getColumnModel().getColumn(COL_TRAINING_COST).setCellRenderer(centeredRenderer());
+        questionTable.getColumnModel().getColumn(COL_AUTO_TRAINING).setCellRenderer((table, value, isSelected, hasFocus, row, column) -> {
+            JLabel label = new JLabel(value.toString());
+            label.setHorizontalAlignment(SwingConstants.CENTER);
+            label.setForeground("允许".equals(value.toString()) ? UiConstants.COLOR_SUCCESS : UiConstants.COLOR_DANGER);
+            return label;
+        });
         questionTable.getColumnModel().getColumn(COL_REMARK).setCellRenderer(new TextCellRenderer(20));
         questionTable.getColumnModel().getColumn(COL_ACTION)
                 .setCellRenderer(new ActionCellRenderer(() -> hoverActionRow, () -> hoverActionZone, "查看问题详情（全部字段）", true, ACTION_DELETE));
@@ -2298,10 +2335,11 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         String projectFilter = selectedProjectFilter();
         String userFilter = selectedUserFilter();
         Integer statusFilter = selectedTrainingStatusFilter();
+        Integer autoTrainingFilter = selectedAutoTrainingFilter();
         List<AiQuestion> filtered = new ArrayList<>();
         for (AiQuestion item : allQuestions) {
             if (matchesKeyword(item, keyword) && matchesClassify(item, classifyFilter) && matchesProject(item, projectFilter) && matchesUserFilter(
-                    item, userFilter) && matchesTrainingStatus(item, statusFilter)) {
+                    item, userFilter) && matchesTrainingStatus(item, statusFilter) && matchesAutoTraining(item, autoTrainingFilter)) {
                 filtered.add(item);
             }
         }
@@ -2391,7 +2429,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     }
     
     /**
-     * 分类筛选精确匹配（下拉项为去重后的分类，问题分类按 trim 后比较）
+     * 分类筛选精确匹配（下拉项为去重后的分类，分类按 trim 后比较）
      */
     private boolean matchesClassify(AiQuestion question, String classifyFilter) {
         if (classifyFilter == null) {
@@ -2568,6 +2606,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             classifyFilterCombo.setSelectedItem(ALL_CLASSIFY);
             projectFilterCombo.setSelectedItem(ALL_PROJECT);
             userFilterCombo.setSelectedItem(ALL_USER);
+            autoTrainingFilterCombo.setSelectedItem(ALL_AUTO_TRAINING);
         } finally {
             suppressClassifyEvents = false;
             suppressProjectFilterEvents = false;
@@ -2598,6 +2637,34 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             return true;
         }
         return statusFilter.equals(question.getTrainingStatus());
+    }
+    
+    /**
+     * 当前选中的自动训练筛选值（null 表示『全部』，不参与过滤；0-允许；1-不允许）
+     */
+    private Integer selectedAutoTrainingFilter() {
+        if (autoTrainingFilterCombo == null) {
+            return null;
+        }
+        Object selected = autoTrainingFilterCombo.getSelectedItem();
+        if (selected == null || ALL_AUTO_TRAINING.equals(selected.toString())) {
+            return null;
+        }
+        return AUTO_TRAINING_ALLOW.equals(selected.toString()) ? AiQuestion.AUTO_TRAINING_ALLOWED : AiQuestion.AUTO_TRAINING_NOT_ALLOWED;
+    }
+    
+    /**
+     * 自动训练筛选匹配
+     */
+    private boolean matchesAutoTraining(AiQuestion question, Integer autoTrainingFilter) {
+        if (autoTrainingFilter == null) {
+            return true;
+        }
+        Integer value = question.getAllowAutoTraining();
+        if (value == null) {
+            value = AiQuestion.AUTO_TRAINING_ALLOWED;
+        }
+        return autoTrainingFilter.equals(value);
     }
     
     /**
@@ -2669,17 +2736,17 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         addFormRow(form, gbc, 2, new JLabel("所属项目："), new JLabel(nullToEmpty(question.getProjectName())));
         addFormRow(form, gbc, 3, new JLabel("问题："), readonlyArea(nullToEmpty(question.getQuestion()), 2));
         addFormRow(form, gbc, 4, new JLabel("用户ID："), readonlyField(nullToEmpty(question.getUserId())));
-        addFormRow(form, gbc, 5, new JLabel("用户Session："), readonlyArea(nullToEmpty(question.getUserSession()), 2));
-        addFormRow(form, gbc, 6, new JLabel("分类："), readonlyField(nullToEmpty(question.getQuestionClassify())));
-        addFormRow(form, gbc, 7, new JLabel("训练参数："), readonlyArea(nullToEmpty(question.getTrainingParam()), 4));
-        addFormRow(form, gbc, 8, new JLabel("固定回复："), readonlyArea(nullToEmpty(question.getAnswer()), 10));
-        addFormRow(form, gbc, 9, new JLabel("回复ID："), new JLabel(question.getAnswerId() != null ? String.valueOf(question.getAnswerId()) : ""));
-        addFormRow(form, gbc, 10, new JLabel("开启训练："), new JLabel(question.isTrainingEnabled() ? "开启" : "不开启"));
-        addFormRow(form, gbc, 11, new JLabel("训练状态："), new JLabel(trainingStatusText(question.getTrainingStatus())));
-        addFormRow(form, gbc, 12, new JLabel("开始训练时间："), new JLabel(formatEpochMillis(question.getStartTrainingTime())));
-        addFormRow(form, gbc, 13, new JLabel("最近完成训练时间："), new JLabel(formatEpochMillis(question.getLastTrainingTime())));
+        addFormRow(form, gbc, 5, new JLabel("分类："), readonlyField(nullToEmpty(question.getQuestionClassify())));
+        addFormRow(form, gbc, 6, new JLabel("训练参数："), readonlyArea(nullToEmpty(question.getTrainingParam()), 4));
+        addFormRow(form, gbc, 7, new JLabel("固定回复："), readonlyArea(nullToEmpty(question.getAnswer()), 10));
+        addFormRow(form, gbc, 8, new JLabel("回复ID："), new JLabel(question.getAnswerId() != null ? String.valueOf(question.getAnswerId()) : ""));
+        addFormRow(form, gbc, 9, new JLabel("开启训练："), new JLabel(question.isTrainingEnabled() ? "开启" : "不开启"));
+        addFormRow(form, gbc, 10, new JLabel("训练状态："), new JLabel(trainingStatusText(question.getTrainingStatus())));
+        addFormRow(form, gbc, 11, new JLabel("开始训练时间："), new JLabel(formatEpochMillis(question.getStartTrainingTime())));
+        addFormRow(form, gbc, 12, new JLabel("最近完成训练时间："), new JLabel(formatEpochMillis(question.getLastTrainingTime())));
         String trainingCost = trainingCostText(question);
-        addFormRow(form, gbc, 14, new JLabel("训练耗时："), new JLabel(trainingCost.isEmpty() ? "" : trainingCost + " 秒"));
+        addFormRow(form, gbc, 13, new JLabel("训练耗时："), new JLabel(trainingCost.isEmpty() ? "" : trainingCost + " 秒"));
+        addFormRow(form, gbc, 14, new JLabel("自动训练："), new JLabel(question.isAutoTrainingAllowed() ? "允许" : "不允许"));
         addFormRow(form, gbc, 15, new JLabel("优先级别："), new JLabel(String.valueOf(question.getPriority() != null ? question.getPriority() : 0)));
         addFormRow(form, gbc, 16, new JLabel("备注："), readonlyArea(nullToEmpty(question.getRemark()), 3));
         JOptionPane.showMessageDialog(this, form, "问题详情", JOptionPane.PLAIN_MESSAGE);
@@ -2805,7 +2872,6 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
                 userIdCombo.getEditor().setItem(currentUserId);
             }
         }
-        JTextField userSessionField = new JTextField(nullToEmpty(question.getUserSession()), 20);
         JTextField classifyField = new JTextField(nullToEmpty(question.getQuestionClassify()), 20);
         JTextArea trainingParamArea = new JTextArea(nullToEmpty(question.getTrainingParam()), 5, 30);
         trainingParamArea.setLineWrap(true);
@@ -2815,6 +2881,8 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         answerArea.setWrapStyleWord(true);
         JComboBox<String> enableCombo = new JComboBox<>(new String[] {"开启", "不开启"});
         enableCombo.setSelectedIndex(question.isTrainingEnabled() ? 0 : 1);
+        JComboBox<String> autoTrainingEditCombo = new JComboBox<>(new String[] {"允许", "不允许"});
+        autoTrainingEditCombo.setSelectedIndex(question.isAutoTrainingAllowed() ? 0 : 1);
         JTextField priorityField = new JTextField(String.valueOf(question.getPriority() != null ? question.getPriority() : 0), 8);
         
         JPanel form = new JPanel(new GridBagLayout());
@@ -2824,11 +2892,11 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         addFormRow(form, gbc, 0, new JLabel("环境："), new JLabel(nullToEmpty(question.getEnvName())));
         addFormRow(form, gbc, 1, new JLabel("问题："), dialogScroll(questionArea, 2));
         addFormRow(form, gbc, 2, new JLabel("用户ID："), userIdCombo);
-        addFormRow(form, gbc, 3, new JLabel("用户Session："), userSessionField);
-        addFormRow(form, gbc, 4, new JLabel("分类："), classifyField);
-        addFormRow(form, gbc, 5, new JLabel("训练参数："), dialogScroll(trainingParamArea, 5));
-        addFormRow(form, gbc, 6, new JLabel("固定回复："), dialogScroll(answerArea, 10));
-        addFormRow(form, gbc, 7, new JLabel("开启训练："), enableCombo);
+        addFormRow(form, gbc, 3, new JLabel("分类："), classifyField);
+        addFormRow(form, gbc, 4, new JLabel("训练参数："), dialogScroll(trainingParamArea, 5));
+        addFormRow(form, gbc, 5, new JLabel("固定回复："), dialogScroll(answerArea, 10));
+        addFormRow(form, gbc, 6, new JLabel("开启训练："), enableCombo);
+        addFormRow(form, gbc, 7, new JLabel("自动训练："), autoTrainingEditCombo);
         
         int option = JOptionPane.showConfirmDialog(this, form, "编辑问题", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
         if (option != JOptionPane.OK_OPTION) {
@@ -2848,14 +2916,13 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         }
         String newClassify = classifyField.getText().trim();
         String newUserId = extractUserIdFromCombo(userIdCombo.getSelectedItem()).trim();
-        String newUserSession = userSessionField.getText().trim();
         question.setQuestion(newQuestion);
         question.setUserId(newUserId.isEmpty() ? null : newUserId);
-        question.setUserSession(newUserSession.isEmpty() ? null : newUserSession);
         question.setQuestionClassify(newClassify.isEmpty() ? null : newClassify);
         question.setTrainingParam(trainingParamArea.getText().trim());
         question.setAnswer(answerArea.getText().trim());
         question.setEnableTraining(enableCombo.getSelectedIndex() == 0 ? AiQuestion.TRAINING_ENABLED : AiQuestion.TRAINING_DISABLED);
+        question.setAllowAutoTraining(autoTrainingEditCombo.getSelectedIndex() == 0 ? AiQuestion.AUTO_TRAINING_ALLOWED : AiQuestion.AUTO_TRAINING_NOT_ALLOWED);
         question.setPriority(newPriority);
         AiEnvConfig envConfig = findEnvByName(question.getEnvName());
         if (envConfig == null) {
@@ -3102,7 +3169,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     }
     
     /**
-     * 批量更新已勾选问题的用户ID / 用户Session / 训练参数（勾选跨页 / 跨搜索保留）
+     * 批量更新已勾选问题的用户ID / 训练参数 / 自动训练（勾选跨页 / 跨搜索保留）
      * <p>
      * 弹窗中填写的字段才会提交（留空表示不更新该字段，至少填写一项）；<br> 按问题所属环境分组调用批量更新接口，同一环境合并一次请求，单环境失败不影响其它环境。
      */
@@ -3135,13 +3202,12 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             selectedTotal += entry.getValue().size();
             summaryLines.add("　环境 [" + envConfig.getEnvName() + "] " + entry.getValue().size() + " 条");
         }
-        // 确认弹窗：勾选摘要 + 用户ID / 用户Session / 训练参数 输入（留空表示不更新对应字段）
+        // 确认弹窗：勾选摘要 + 用户ID / 训练参数 输入（留空表示不更新对应字段）
         // 输入区复用 addFormRow 两列 GridBagLayout：标签右对齐（冒号对齐）、输入框同列起始与等宽对齐
         FilterComboBox<String> userIdCombo = new FilterComboBox<>();
         for (String userOption : userOptions) {
             userIdCombo.addItem(userOption);
         }
-        JTextField userSessionField = new JTextField(24);
         JTextArea trainingParamArea = new JTextArea(3, 24);
         trainingParamArea.setLineWrap(true);
         trainingParamArea.setWrapStyleWord(true);
@@ -3150,8 +3216,10 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         inputGbc.insets = new Insets(4, 4, 4, 4);
         inputGbc.anchor = GridBagConstraints.WEST;
         addFormRow(inputForm, inputGbc, 0, new JLabel("用户ID："), userIdCombo);
-        addFormRow(inputForm, inputGbc, 1, new JLabel("用户Session："), userSessionField);
-        addFormRow(inputForm, inputGbc, 2, new JLabel("训练参数："), new JScrollPane(trainingParamArea));
+        addFormRow(inputForm, inputGbc, 1, new JLabel("训练参数："), new JScrollPane(trainingParamArea));
+        JComboBox<String> autoTrainingCombo = new JComboBox<>(new String[] {"不更新", "允许", "不允许"});
+        autoTrainingCombo.setSelectedIndex(0);
+        addFormRow(inputForm, inputGbc, 2, new JLabel("自动训练："), autoTrainingCombo);
         inputForm.setAlignmentX(Component.LEFT_ALIGNMENT);
         JLabel emptyHintLabel = new JLabel("留空表示不更新对应字段，三个字段至少填写一项");
         emptyHintLabel.setForeground(Color.GRAY);
@@ -3173,24 +3241,25 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         confirmPanel.add(Box.createVerticalStrut(4));
         confirmPanel.add(emptyHintLabel);
         String userId;
-        String userSession;
         String trainingParam;
+        int autoTrainingIndex;
         while (true) {
             int confirm = JOptionPane.showConfirmDialog(this, confirmPanel, "确认批量更新", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
             if (confirm != JOptionPane.YES_OPTION) {
                 return;
             }
             userId = extractUserIdFromCombo(userIdCombo.getSelectedItem()).trim();
-            userSession = userSessionField.getText().trim();
             trainingParam = trainingParamArea.getText().trim();
-            if (!userId.isEmpty() || !userSession.isEmpty() || !trainingParam.isEmpty()) {
+            autoTrainingIndex = autoTrainingCombo.getSelectedIndex();
+            if (!userId.isEmpty() || !trainingParam.isEmpty() || autoTrainingIndex > 0) {
                 break;
             }
-            JOptionPane.showMessageDialog(this, "用户ID、用户Session与训练参数不能同时留空，请至少填写一项", "提示", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(this, "用户ID、训练参数与自动训练不能同时留空，请至少填写一项", "提示", JOptionPane.WARNING_MESSAGE);
         }
         String targetUserId = userId.isEmpty() ? null : userId;
-        String targetUserSession = userSession.isEmpty() ? null : userSession;
         String targetTrainingParam = trainingParam.isEmpty() ? null : trainingParam;
+        Integer targetAllowAutoTraining = autoTrainingCombo.getSelectedIndex() == 0 ? null
+                : (autoTrainingCombo.getSelectedIndex() == 1 ? AiQuestion.AUTO_TRAINING_ALLOWED : AiQuestion.AUTO_TRAINING_NOT_ALLOWED);
         runApiTask("批量更新", () -> {
             List<String> successDetails = new ArrayList<>();
             List<String> errors = new ArrayList<>();
@@ -3199,7 +3268,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
                 List<Long> ids = envIdGroups.get(envConfig.getEnvName());
                 try {
                     String message = AiQuestionApiClient.getInstance()
-                            .batchUpdateUser(envConfig, ids, targetUserId, targetUserSession, targetTrainingParam);
+                            .batchUpdateUser(envConfig, ids, targetUserId, targetTrainingParam, targetAllowAutoTraining);
                     successCount += ids.size();
                     successDetails.add("环境 [" + envConfig.getEnvName() + "] " + ids.size() + " 条：" + message);
                 } catch (AiQuestionApiClient.AiApiException ex) {
@@ -4614,7 +4683,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     // ────────── 手动录入单行组件 ──────────
     
     /**
-     * 手动录入一行录入组件集合：问题、用户ID、所属项目、分类、开启训练、训练参数、固定回复、删除按钮
+     * 手动录入一行录入组件集合：问题、用户ID、所属项目、分类、自动训练、训练参数、删除按钮
      */
     private class QuestionEntryRow {
         
@@ -4639,11 +4708,9 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         
         private final FilterComboBox<String> classifyCombo;
         
-        private final JComboBox<String> enableTrainingCombo;
+        private final JComboBox<String> autoTrainingCombo;
         
         private final JTextArea trainingParamArea;
-        
-        private final JTextArea answerArea;
         
         private final JButton deleteRowBtn;
         
@@ -4708,17 +4775,17 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
                 classifyCombo.setSelectedItem(SAME_AS_ABOVE);
             }
             
-            // 开启训练：第 2 行起支持『同上』，默认开启
-            enableTrainingCombo = new JComboBox<>();
+            // 自动训练开关：第 2 行起支持『同上』，默认允许
+            autoTrainingCombo = new JComboBox<>();
             if (rowIndex > 0) {
-                enableTrainingCombo.addItem(SAME_AS_ABOVE);
+                autoTrainingCombo.addItem(SAME_AS_ABOVE);
             }
-            enableTrainingCombo.addItem("开启");
-            enableTrainingCombo.addItem("不开启");
+            autoTrainingCombo.addItem("允许");
+            autoTrainingCombo.addItem("不允许");
             if (rowIndex > 0) {
-                enableTrainingCombo.setSelectedItem(SAME_AS_ABOVE);
+                autoTrainingCombo.setSelectedItem(SAME_AS_ABOVE);
             } else {
-                enableTrainingCombo.setSelectedItem("开启");
+                autoTrainingCombo.setSelectedItem("允许");
             }
             
             // 训练参数：多行文本
@@ -4726,12 +4793,6 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             trainingParamArea.setLineWrap(true);
             trainingParamArea.setWrapStyleWord(true);
             trainingParamArea.setFont(UiConstants.FONT_SANS_11);
-            
-            // 固定回复：多行文本（问题命中时优先返回的固定回复）
-            answerArea = new JTextArea(2, 10);
-            answerArea.setLineWrap(true);
-            answerArea.setWrapStyleWord(true);
-            answerArea.setFont(UiConstants.FONT_SANS_11);
             
             // 删除本行：点击后移除该行，其它行已录入内容保持不变
             deleteRowBtn = ButtonFactory.createLink("删除");
@@ -4748,7 +4809,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     private static class QuestionTableModel extends AbstractTableModel {
         
         private final String[] columns = {"选择", "ID", "问题", "分类", "所属用户", "所属项目", "训练参数", "固定回复", "回复ID", "开启训练",
-                "训练状态", "开始训练时间", "最近完成训练时间", "训练耗时(秒)", "备注", "操作"};
+                "训练状态", "开始训练时间", "最近完成训练时间", "训练耗时(秒)", "自动训练", "备注", "操作"};
         
         private final List<AiQuestion> questions = new ArrayList<>();
         
@@ -4914,6 +4975,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
                 case COL_START_TRAINING_TIME -> formatEpochMillis(question.getStartTrainingTime());
                 case COL_LAST_TRAINING_TIME -> formatEpochMillis(question.getLastTrainingTime());
                 case COL_TRAINING_COST -> trainingCostText(question);
+                case COL_AUTO_TRAINING -> question.isAutoTrainingAllowed() ? "允许" : "不允许";
                 case COL_REMARK -> nullToEmpty(question.getRemark());
                 default -> "";
             };

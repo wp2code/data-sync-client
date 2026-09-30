@@ -190,25 +190,25 @@ public final class AiQuestionApiClient {
     }
     
     /**
-     * 批量更新选中问题的用户ID / 用户Session / 训练参数（留空的字段不提交，接口侧保持原值不变）
+     * 批量更新选中问题的用户ID / 训练参数 / 自动训练开关（留空的字段不提交，接口侧保持原值不变）
      *
-     * @param userId        用户ID（null / 空白表示不更新该字段）
-     * @param userSession   用户session（null / 空白表示不更新该字段）
-     * @param trainingParam 训练参数（null / 空白表示不更新该字段）
+     * @param userId              用户ID（null / 空白表示不更新该字段）
+     * @param trainingParam       训练参数（null / 空白表示不更新该字段）
+     * @param allowAutoTraining   自动训练开关（null 表示不更新；0-允许；1-不允许）
      * @return 成功时返回接口 message，失败时抛出异常
      */
-    public String batchUpdateUser(AiEnvConfig env, List<Long> ids, String userId, String userSession, String trainingParam) throws AiApiException {
+    public String batchUpdateUser(AiEnvConfig env, List<Long> ids, String userId, String trainingParam, Integer allowAutoTraining) throws AiApiException {
         String url = buildUrl(env, env.getUpdateUserApi());
         ObjectNode body = objectMapper.createObjectNode();
         body.set("ids", objectMapper.valueToTree(ids));
         if (userId != null && !userId.isBlank()) {
             body.put("userId", userId);
         }
-        if (userSession != null && !userSession.isBlank()) {
-            body.put("userSession", userSession);
-        }
         if (trainingParam != null && !trainingParam.isBlank()) {
             body.put("trainingParam", trainingParam);
+        }
+        if (allowAutoTraining != null) {
+            body.put("allowAutoTraining", allowAutoTraining);
         }
         return postForMessage(env, url, body);
     }

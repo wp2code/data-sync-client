@@ -35,7 +35,7 @@ import org.slf4j.LoggerFactory;
  * 提供「界面手动录入」的 Excel 支持能力：<br>
  * 1. {@link #generateTemplate(File)}：运行时生成示例模板（表头 + 示例数据 + 填写说明页），无需预置二进制资源；<br>
  * 2. {@link #parseQuestions(File)}：解析 .xlsx / .xls 文件（WorkbookFactory 自动识别格式），<br>
- * 表头行自动跳过，问题为空的行忽略，开启训练做格式校验，错误信息带 Excel 行号。
+ * 表头行自动跳过，问题为空的行忽略，错误信息带 Excel 行号。
  *
  * @author liuweiping
  * @date 2026-09-17
@@ -47,7 +47,7 @@ public final class ExcelQuestionUtil {
     /**
      * 模板 / 导入文件的表头（列顺序固定，与手动录入网格一致；项目编码列追加末尾）
      */
-    static final String[] TEMPLATE_HEADERS = {"问题", "用户ID", "分类", "开启训练", "训练参数", "固定答案", "项目编码"};
+    static final String[] TEMPLATE_HEADERS = {"问题", "用户ID", "分类", "训练参数", "项目编码"};
 
     /**
      * 模板问题数据 Sheet 名称
@@ -63,13 +63,6 @@ public final class ExcelQuestionUtil {
      * 表头首列名称（用于识别并跳过表头行）
      */
     private static final String HEADER_QUESTION = "问题";
-
-    /**
-     * 开启训练列的可选值
-     */
-    private static final String ENABLE_TEXT_ON = "开启";
-
-    private static final String ENABLE_TEXT_OFF = "不开启";
 
     private ExcelQuestionUtil() {
     }
@@ -99,9 +92,9 @@ public final class ExcelQuestionUtil {
             }
 
             String[][] samples = {
-                    {"如何新增数据源？", "10000", "数据源管理", "开启", "datasource", "在数据源管理页面点击『新增』，填写连接信息后保存。", "P00000001"},
-                    {"数据同步失败如何排查？", "10000", "数据同步", "开启", "sync", "查看日志中的错误提示，检查网络与账号权限。", "P00000001,P00000002"},
-                    {"支持哪些数据库类型？", "10000", "常见问题", "不开启", "", "支持 MySQL、PostgreSQL 等常见数据库。", ""}
+                    {"如何新增数据源？", "10000", "数据源管理", "datasource", "P00000001"},
+                    {"数据同步失败如何排查？", "10000", "数据同步", "sync", "P00000001,P00000002"},
+                    {"支持哪些数据库类型？", "10000", "常见问题", "", ""}
             };
             for (int r = 0; r < samples.length; r++) {
                 Row row = sheet.createRow(r + 1);
@@ -117,11 +110,9 @@ public final class ExcelQuestionUtil {
                     {"2. 问题：必填，内容为空的行导入时自动忽略"},
                     {"3. 用户ID：选填，标识问题归属用户，会随请求提交到远端接口"},
                     {"4. 分类：选填，可留空"},
-                    {"5. 开启训练：仅支持『" + ENABLE_TEXT_ON + "』或『" + ENABLE_TEXT_OFF + "』，留空默认" + ENABLE_TEXT_ON},
-                    {"6. 训练参数：选填，可留空"},
-                    {"7. 固定答案：选填，可留空；问题命中时优先返回该固定答案"},
-                    {"8. 项目编码：选填，多个项目编码用英文逗号分割（如 P00000001,P00000002），可留空"},
-                    {"9. 填写完成后保存文件，在客户端「界面手动录入」页点击『导入 Excel』选择该文件"}
+                    {"5. 训练参数：选填，可留空"},
+                    {"6. 项目编码：选填，多个项目编码用英文逗号分割（如 P00000001,P00000002），可留空"},
+                    {"7. 填写完成后保存文件，在客户端「界面手动录入」页点击『导入 Excel』选择该文件"}
             };
             for (int i = 0; i < guideLines.length; i++) {
                 guide.createRow(i).createCell(0).setCellValue(guideLines[i][0]);
@@ -181,17 +172,16 @@ public final class ExcelQuestionUtil {
                 }
                 String userId = cellText(row, 1, formatter);
                 String classify = cellText(row, 2, formatter);
-                String enableText = cellText(row, 3, formatter);
-                String trainingParam = cellText(row, 4, formatter);
-                String answer = cellText(row, 5, formatter);
-                String projectCodes = cellText(row, 6, formatter);
+                String trainingParam = cellText(row, 3, formatter);
+                String projectCodes = cellText(row, 4, formatter);
 
                 AiQuestion item = new AiQuestion();
                 item.setQuestion(question);
                 item.setUserId(userId.isEmpty() ? null : userId);
                 item.setQuestionClassify(classify.isEmpty() ? null : classify);
                 item.setTrainingParam(trainingParam);
-                item.setAnswer(answer);
+                item.setAnswer("");
+                item.setEnableTraining(AiQuestion.TRAINING_ENABLED);
                 item.setPriority(0);
                 // 项目编码：英文逗号分割，去空去重，保持顺序
                 if (!projectCodes.isEmpty()) {
@@ -205,35 +195,11 @@ public final class ExcelQuestionUtil {
                     item.setProjectCodeList(codeList.isEmpty() ? null : codeList);
                 }
 
-                Integer enable = parseEnableTraining(enableText);
-                if (enable == null) {
-                    result.errors.add("第 " + (i + 1) + " 行：开启训练仅支持『" + ENABLE_TEXT_ON + " / " + ENABLE_TEXT_OFF + "』，当前值："
-                            + (enableText.isEmpty() ? "（空）" : enableText));
-                    continue;
-                }
-                item.setEnableTraining(enable);
-
                 result.questions.add(item);
             }
         }
         logger.info("[Excel] 解析文件 {} 完成：{} 条问题，{} 处错误", inputFile.getName(), result.questions.size(), result.errors.size());
         return result;
-    }
-
-    /**
-     * 解析开启训练列：开启→1，不开启→2，留空默认开启，其它值非法返回 null
-     */
-    private static Integer parseEnableTraining(String text) {
-        if (text == null || text.isEmpty()) {
-            return AiQuestion.TRAINING_ENABLED;
-        }
-        if (ENABLE_TEXT_ON.equals(text)) {
-            return AiQuestion.TRAINING_ENABLED;
-        }
-        if (ENABLE_TEXT_OFF.equals(text)) {
-            return AiQuestion.TRAINING_DISABLED;
-        }
-        return null;
     }
 
     /**

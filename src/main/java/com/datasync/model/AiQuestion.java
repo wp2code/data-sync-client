@@ -27,6 +27,16 @@ public class AiQuestion {
     public static final int TRAINING_DISABLED = 2;
     
     /**
+     * 自动训练开关：允许自动训练
+     */
+    public static final int AUTO_TRAINING_ALLOWED = 0;
+    
+    /**
+     * 自动训练开关：不允许自动训练
+     */
+    public static final int AUTO_TRAINING_NOT_ALLOWED = 1;
+    
+    /**
      * 训练状态：初始状态
      */
     public static final int TRAINING_STATUS_INITIAL = -2;
@@ -100,7 +110,7 @@ public class AiQuestion {
     private String userId;
     
     /**
-     * 用户session（用户会话标识，可通过问题列表批量更新接口修改）
+     * 用户session（用户会话标识，接口可能返回该字段，但客户端不再展示与编辑）
      */
     private String userSession;
     
@@ -145,6 +155,11 @@ public class AiQuestion {
     private Integer enableTraining = TRAINING_ENABLED;
     
     /**
+     * 自动训练开关：0-允许；1-不允许，默认 0（允许）
+     */
+    private Integer allowAutoTraining = AUTO_TRAINING_ALLOWED;
+    
+    /**
      * 优先级别，越大越优先，默认 0
      */
     private Integer priority = 0;
@@ -163,5 +178,12 @@ public class AiQuestion {
      */
     public boolean isTrainingEnabled() {
         return enableTraining != null && enableTraining == TRAINING_ENABLED;
+    }
+    
+    /**
+     * 是否允许自动训练
+     */
+    public boolean isAutoTrainingAllowed() {
+        return allowAutoTraining == null || allowAutoTraining == AUTO_TRAINING_ALLOWED;
     }
 }

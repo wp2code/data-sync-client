@@ -73,10 +73,7 @@ public final class ButtonFactory {
 
     /** 次要操作按钮：默认外观 + 12pt + 标准间距 */
     public static JButton createSecondary(String text) {
-        JButton btn = new JButton(text);
-        btn.setFont(UiConstants.FONT_SANS_12);
-        applyCommonStyle(btn, new Insets(2, 10, 2, 10));
-        return btn;
+        return createToolbar(text);
     }
 
     /** 工具栏按钮：默认外观 + 12pt，用于导航 / 侧边工具 / 刷新等 */
