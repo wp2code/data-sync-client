@@ -52,13 +52,25 @@ public final class UpdateService {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
+    /** 单次 API 请求超时（GitHub 网络不佳时需给足时间） */
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(20);
+
+    /** 下载响应超时（等待响应头的时限，不含传输过程） */
+    private static final Duration DOWNLOAD_TIMEOUT = Duration.ofSeconds(60);
+
+    /** 网络异常自动重试次数（含首次，共尝试 3 次） */
+    private static final int MAX_ATTEMPTS = 3;
+
+    /** 重试间隔基数（毫秒），逐次翻倍：1s、2s */
+    private static final long RETRY_BACKOFF_MS = 1_000;
+
     /** 新版本信息 */
     public record UpdateInfo(String version, String url, String sha256, String notes) {
     }
 
     private final HttpClient http = HttpClient.newBuilder()
             .followRedirects(HttpClient.Redirect.NORMAL)
-            .connectTimeout(Duration.ofSeconds(15))
+            .connectTimeout(Duration.ofSeconds(20))
             .build();
 
     private UpdateService() {
@@ -66,6 +78,42 @@ public final class UpdateService {
 
     public static UpdateService create() {
         return new UpdateService();
+    }
+
+    /**
+     * 发送 HTTP 请求，网络类异常（超时 / 连接重置 / DNS 失败等 IOException）自动重试，业务错误（404 等）不重试。
+     *
+     * @param what    请求描述，用于日志
+     * @param timeout 单次请求超时
+     */
+    private <T> HttpResponse<T> sendWithRetry(HttpRequest.Builder requestBuilder,
+                                              HttpResponse.BodyHandler<T> bodyHandler,
+                                              Duration timeout,
+                                              String what) throws Exception {
+        Exception lastFailure = null;
+        for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            try {
+                HttpRequest request = requestBuilder.timeout(timeout).GET().build();
+                return http.send(request, bodyHandler);
+            } catch (java.io.IOException e) {
+                lastFailure = e;
+                if (attempt < MAX_ATTEMPTS) {
+                    long backoff = RETRY_BACKOFF_MS * (1L << (attempt - 1));
+                    logUpdate(what + " 第 " + attempt + "/" + MAX_ATTEMPTS + " 次请求失败（"
+                            + e.getClass().getSimpleName() + ": " + e.getMessage() + "），"
+                            + backoff + "ms 后重试");
+                    try {
+                        Thread.sleep(backoff);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw e;
+                    }
+                } else {
+                    logUpdate(what + " 重试 " + MAX_ATTEMPTS + " 次均失败: " + e);
+                }
+            }
+        }
+        throw lastFailure;
     }
 
     /**
@@ -119,13 +167,11 @@ public final class UpdateService {
      * 注意：GitHub API 匿名限额为每 IP 60 次/小时，足够手动+启动检查使用。
      */
     public UpdateInfo checkForUpdate() throws Exception {
-        HttpRequest request = HttpRequest.newBuilder(URI.create(LATEST_RELEASE_API))
-                .timeout(Duration.ofSeconds(15))
+        HttpRequest.Builder requestBuilder = HttpRequest.newBuilder(URI.create(LATEST_RELEASE_API))
                 .header("Accept", "application/vnd.github+json")
-                .header("User-Agent", "DataSync-Updater")
-                .GET()
-                .build();
-        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+                .header("User-Agent", "DataSync-Updater");
+        HttpResponse<String> response = sendWithRetry(requestBuilder,
+                HttpResponse.BodyHandlers.ofString(), REQUEST_TIMEOUT, "查询最新 Release");
         if (response.statusCode() == 404) {
             throw new IllegalStateException("GitHub 上尚未发布任何 Release");
         }
@@ -156,11 +202,17 @@ public final class UpdateService {
         // 读取校验文件内容（若提供）
         String sha256 = "";
         if (sha256AssetUrl != null) {
-            HttpRequest shaRequest = HttpRequest.newBuilder(URI.create(sha256AssetUrl)).GET().build();
-            HttpResponse<String> shaResponse = http.send(shaRequest, HttpResponse.BodyHandlers.ofString());
-            if (shaResponse.statusCode() == 200) {
-                // 格式："<hex>  DataSync.exe" 或纯 hex
-                sha256 = shaResponse.body().trim().split("\\s+")[0].toLowerCase();
+            try {
+                HttpResponse<String> shaResponse = sendWithRetry(
+                        HttpRequest.newBuilder(URI.create(sha256AssetUrl)),
+                        HttpResponse.BodyHandlers.ofString(), REQUEST_TIMEOUT, "读取 SHA-256 校验文件");
+                if (shaResponse.statusCode() == 200) {
+                    // 格式："<hex>  DataSync.exe" 或纯 hex
+                    sha256 = shaResponse.body().trim().split("\\s+")[0].toLowerCase();
+                }
+            } catch (Exception e) {
+                // 校验文件拉取失败不阻断更新，仅跳过校验并记录
+                logUpdate("SHA-256 校验文件获取失败，本次更新将跳过校验: " + e);
             }
         }
         return new UpdateInfo(version, exeUrl, sha256, release.path("body").asText(""));
@@ -240,9 +292,10 @@ public final class UpdateService {
         Path newFile = dir.resolve(EXE_NAME + ".new");
         Path oldFile = dir.resolve(EXE_NAME + ".old");
 
-        // 1. 下载到同级目录（同卷保证 move 原子性）
-        HttpRequest request = HttpRequest.newBuilder(URI.create(info.url())).GET().build();
-        HttpResponse<InputStream> response = http.send(request, HttpResponse.BodyHandlers.ofInputStream());
+        // 1. 下载到同级目录（同卷保证 move 原子性），网络异常自动重试
+        HttpResponse<InputStream> response = sendWithRetry(
+                HttpRequest.newBuilder(URI.create(info.url())),
+                HttpResponse.BodyHandlers.ofInputStream(), DOWNLOAD_TIMEOUT, "下载新版本 exe");
         if (response.statusCode() != 200) {
             throw new IllegalStateException("下载失败，HTTP " + response.statusCode());
         }
@@ -259,6 +312,11 @@ public final class UpdateService {
                     progress.accept((int) (done * 100 / total));
                 }
             }
+        } catch (java.io.IOException e) {
+            // 网络中断：清理半成品文件后抛出，避免残留损坏的 .new
+            Files.deleteIfExists(newFile);
+            logUpdate("下载中断: " + e);
+            throw e;
         }
 
         // 2. SHA-256 校验（Release 提供 .sha256 资产时）

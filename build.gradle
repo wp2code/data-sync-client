@@ -5,7 +5,7 @@ plugins {
 }
 
 group = 'com.datasync'
-version = '1.1.0'
+version = '1.1.1'
 
 ext {
     // 内置 JRE 版本（Eclipse Temurin）
