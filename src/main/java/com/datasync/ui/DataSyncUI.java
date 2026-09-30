@@ -630,14 +630,13 @@ public class DataSyncUI extends JFrame {
     
     /**
      * 下载新版本并替换当前 exe，成功后自动重启。
-     * 下载期间「检查更新」按钮变为禁用状态，旁边显示下载进度条。
+     * 下载期间「检查更新」按钮隐藏，旁边显示下载进度条，下载结束或失败后恢复。
      */
     private void downloadAndApplyUpdate(UpdateService.UpdateInfo info) {
-        // 按钮进入下载态：禁用 + 显示进度条
-        checkUpdateBtn.setEnabled(false);
-        checkUpdateBtn.setText("下载中…");
+        // 按钮进入下载态：隐藏 + 显示进度条
+        checkUpdateBtn.setVisible(false);
         updateProgressBar.setValue(0);
-        updateProgressBar.setString("下载 0%");
+        updateProgressBar.setString(info.version() + " 下载 0%");
         updateProgressBar.setIndeterminate(true);
         updateProgressBar.setVisible(true);
         
@@ -655,15 +654,14 @@ public class DataSyncUI extends JFrame {
                 int percent = chunks.get(chunks.size() - 1);
                 updateProgressBar.setIndeterminate(false);
                 updateProgressBar.setValue(percent);
-                updateProgressBar.setString("下载 " + percent + "%");
+                updateProgressBar.setString(info.version() + " 下载 " + percent + "%");
             }
             
             @Override
             protected void done() {
                 // 下载结束（失败或重启失败）恢复按钮与进度条
                 updateProgressBar.setVisible(false);
-                checkUpdateBtn.setEnabled(true);
-                checkUpdateBtn.setText("检查更新");
+                checkUpdateBtn.setVisible(true);
                 try {
                     get();
                 } catch (java.util.concurrent.ExecutionException ex) {
