@@ -88,29 +88,47 @@ jobs:
         shell: pwsh
         run: |
           $tag = "$env:TAG"
+          Write-Host "::notice::TAG=$tag, HEAD=$((git rev-parse HEAD).Substring(0,8)), PWD=$PWD"
 
-          $gradleMatch = Select-String -Path build.gradle -Pattern "^\s*version\s*=\s*'([^']+)'"
-          if (-not $gradleMatch) {
-            throw "build.gradle 中未找到 `version = 'X.Y.Z'` 行"
+          # 1) 从 build.gradle 提取 version
+          $gradleContent = Get-Content build.gradle -Raw
+          if (-not $gradleContent) {
+            throw "无法读取 build.gradle（路径：$PWD/build.gradle）"
           }
-          $gradleVersion = $gradleMatch.Matches[0].Groups[1].Value
-          Write-Host "::notice::tag=$tag, build.gradle=$gradleVersion"
+          $gradleMatch = [regex]::Match(
+            $gradleContent,
+            "^\s*version\s*=\s*'([^']+)'",
+            [System.Text.RegularExpressions.RegexOptions]::Multiline
+          )
+          if (-not $gradleMatch.Success) {
+            Write-Host "::error::build.gradle 中未找到 `version = 'X.Y.Z'` 行。前 30 行："
+            Write-Host (($gradleContent -split "`n" | Select-Object -First 30) -join "`n")
+            throw "build.gradle 缺少顶层 `version = 'X.Y.Z'` 行"
+          }
+          $gradleVersion = $gradleMatch.Groups[1].Value
+          Write-Host "::notice::build.gradle version = $gradleVersion"
 
-          # UiConstants 必须走动态加载（不再硬编码字面量版本）
+          # 2) UiConstants.VERSION 必须从 version.properties 动态加载（不再硬编码字面量）
           $uiPath = "src/main/java/com/datasync/ui/UiConstants.java"
           $uiSrc = Get-Content $uiPath -Raw
+          if (-not $uiSrc) {
+            throw "无法读取 $uiPath"
+          }
           $expectedPattern = 'VERSION\s*=\s*"v"\s*\+\s*loadVersion\s*\('
           if ($uiSrc -notmatch $expectedPattern) {
-            throw "$uiPath 中 VERSION 字段应为 `"v" + loadVersion()` 形式（从 version.properties 动态加载），而不是硬编码字面量"
+            Write-Host "::error::$uiPath 中 VERSION 字段不正确。期望：`VERSION = `"v`" + loadVersion()`。实际内容（前 20 行）："
+            Write-Host (($uiSrc -split "`n" | Select-Object -First 20) -join "`n")
+            throw "$uiPath 中 VERSION 字段应为 `"v" + loadVersion()` 形式（从 version.properties 动态加载）"
           }
+          Write-Host "::notice::UiConstants.VERSION loads dynamically from version.properties"
 
-          # 强一致性：tag 必须等于 v$gradleVersion
+          # 3) 强一致性：tag 必须等于 v$gradleVersion
           $expectedTag = "v$gradleVersion"
           if ($tag -ne $expectedTag) {
             throw "Tag 与 build.gradle 版本不一致：tag=$tag, build.gradle=$gradleVersion（期望 tag=$expectedTag）"
           }
 
-          Write-Host "::notice::Version consistency check passed"
+          Write-Host "::notice::Version consistency check passed (tag=$tag == v$gradleVersion)"
 
       # ── 5. 构建 EXE 和分发 ZIP ───────────────────────────────
       - name: Build exe & package zip
