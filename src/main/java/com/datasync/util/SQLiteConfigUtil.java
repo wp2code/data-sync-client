@@ -164,6 +164,7 @@ public class SQLiteConfigUtil {
                 stmt.execute(CREATE_APP_CONFIG_TABLE_SQL);
                 ensureAiEnvConfigColumns(stmt);
                 seedDefaultAiEnv(stmt);
+//                seedDefaultAppConfig(stmt);
             }
         } catch (Exception e) {
             logger.error("[SQLite] 初始化失败", e);
@@ -720,6 +721,7 @@ public class SQLiteConfigUtil {
             }
         }
     }
+
     
     /**
      * 保证全局选中环境有效：无选中环境时自动选中第一个（旧库迁移 / 选中环境被删除后兜底）
