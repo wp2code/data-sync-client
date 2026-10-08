@@ -77,83 +77,54 @@ jobs:
           java-version: '17'
           cache: 'gradle'
 
+      # ── 4. 校验版本号一致性 ─────────────────────────────────────────
+      # 检查点：
+      #   - tag (vX.Y.Z) == "v" + build.gradle version
+      #   - UiConstants.VERSION 不再硬编码（应从 version.properties 加载）
+      # 采用最简单、稳定的 PowerShell 写法。
       - name: Verify version consistency
         env:
           TAG: ${{ github.ref_name }}
         shell: pwsh
         run: |
-          # 统一异常处理：把详细诊断写入 GITHUB_STEP_SUMMARY（公开可见，无需登录）
-          $summaryFile = "$env:GITHUB_STEP_SUMMARY"
-          $diag = New-Object System.Collections.Generic.List[string]
+          $tag = "$env:TAG"
+          Write-Host "TAG=$tag"
 
-          try {
-            $tag = "$env:TAG"
-            $headSha = git rev-parse HEAD
-            $headShort = $headSha.Substring(0, 8)
-            $bgExists = Test-Path build.gradle
-            $uiExists = Test-Path "src/main/java/com/datasync/ui/UiConstants.java"
-            Write-Host "::notice::TAG=$tag, HEAD=$headShort, PWD=$PWD"
-            Write-Host "::notice::build.gradle exists: $bgExists, UiConstants.java exists: $uiExists"
-            $diag.Add("TAG=$tag, HEAD=$headShort, PWD=$PWD")
-            $diag.Add("build.gradle exists: $bgExists, UiConstants.java exists: $uiExists")
-
-            if (-not $bgExists) { throw "build.gradle not found: $PWD/build.gradle" }
-            if (-not $uiExists) { throw "UiConstants.java not found" }
-
-            # 1) build.gradle version
-            $gradleContent = Get-Content build.gradle -Raw
-            $gradleMatch = [regex]::Match(
-              $gradleContent,
-              "^\s*version\s*=\s*'([^']+)'",
-              [System.Text.RegularExpressions.RegexOptions]::Multiline
-            )
-            if (-not $gradleMatch.Success) {
-              Write-Host "::error::build.gradle missing top-level `version = 'X.Y.Z'` line. First 30 lines:"
-              $gradleContent -split "`n" | Select-Object -First 30 | ForEach-Object { Write-Host "::error::  $_" }
-              throw "build.gradle missing top-level version line"
-            }
-            $gradleVersion = $gradleMatch.Groups[1].Value
-            Write-Host "::notice::build.gradle version = $gradleVersion"
-            $diag.Add("build.gradle version: $gradleVersion")
-
-            # 2) UiConstants.VERSION must be dynamic
-            $uiPath = "src/main/java/com/datasync/ui/UiConstants.java"
-            $uiSrc = Get-Content $uiPath -Raw
-            $expectedPattern = 'VERSION\s*=\s*"v"\s*\+\s*loadVersion\s*\('
-            if ($uiSrc -notmatch $expectedPattern) {
-              Write-Host "::error::$uiPath VERSION field wrong. First 20 lines:"
-              $uiSrc -split "`n" | Select-Object -First 20 | ForEach-Object { Write-Host "::error::  $_" }
-              throw "$uiPath VERSION field should be `"v`" + loadVersion()` form"
-            }
-            Write-Host "::notice::UiConstants.VERSION loads dynamically from version.properties"
-            $diag.Add("UiConstants.VERSION: dynamic load (OK)")
-
-            # 3) tag == v$gradleVersion
-            $expectedTag = "v$gradleVersion"
-            if ($tag -ne $expectedTag) {
-              throw "Tag and build.gradle version mismatch: tag=$tag, build.gradle=$gradleVersion (expected tag=$expectedTag)"
-            }
-
-            Write-Host "::notice::Version consistency check passed (tag=$tag == v$gradleVersion)"
-            $diag.Add("Version consistency check PASSED: $tag == v$gradleVersion")
-
-            # Write to step summary
-            if ($summaryFile) {
-              "## Version Check: PASSED" | Out-File -FilePath $summaryFile -Append -Encoding utf8
-              ($diag | ForEach-Object { "- $_" }) | Out-File -FilePath $summaryFile -Append -Encoding utf8
-            }
-          } catch {
-            $errMsg = $_.Exception.Message
-            Write-Host "::error::FAILED: $errMsg"
-            if ($summaryFile) {
-              "## Version Check: FAILED" | Out-File -FilePath $summaryFile -Append -Encoding utf8
-              "" | Out-File -FilePath $summaryFile -Append -Encoding utf8
-              ($diag | ForEach-Object { "- $_" }) | Out-File -FilePath $summaryFile -Append -Encoding utf8
-              "" | Out-File -FilePath $summaryFile -Append -Encoding utf8
-              "**Error**: $errMsg" | Out-File -FilePath $summaryFile -Append -Encoding utf8
-            }
-            throw
+          $gradlePath = "build.gradle"
+          if (-not (Test-Path $gradlePath)) {
+            Write-Host "::error::build.gradle not found at $PWD\build.gradle"
+            exit 1
           }
+          $gradleContent = Get-Content $gradlePath -Raw
+          $m = [regex]::Match($gradleContent, "version\s*=\s*'([^']+)'")
+          if (-not $m.Success) {
+            Write-Host "::error::Cannot find version line in build.gradle"
+            exit 1
+          }
+          $gradleVersion = $m.Groups[1].Value
+          Write-Host "build.gradle version = $gradleVersion"
+
+          $uiPath = "src\main\java\com\datasync\ui\UiConstants.java"
+          if (-not (Test-Path $uiPath)) {
+            Write-Host "::error::UiConstants.java not found at $PWD\$uiPath"
+            exit 1
+          }
+          $uiContent = Get-Content $uiPath -Raw
+          $uiPattern = 'VERSION\s*=\s*"v"\s*\+\s*loadVersion\s*\('
+          if ($uiContent -notmatch $uiPattern) {
+            Write-Host "::error::UiConstants.VERSION is not dynamic"
+            exit 1
+          }
+          Write-Host "UiConstants.VERSION loads dynamically"
+
+          $expectedTag = "v$gradleVersion"
+          if ($tag -ne $expectedTag) {
+            Write-Host "::error::Tag mismatch: tag=$tag expected=$expectedTag"
+            exit 1
+          }
+
+          Write-Host "::notice::Version consistency check PASSED: $tag == v$gradleVersion"
+
 
       # ── 5. 构建 EXE 和分发 ZIP ───────────────────────────────
       - name: Build exe & package zip
