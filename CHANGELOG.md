@@ -5,6 +5,11 @@
 发布新版本时：在下方新增一节 `## [vX.Y.Z] - 日期`，与 Git Tag、`build.gradle` 的 `version`、`UiConstants.VERSION` 保持一致，Release 描述将自动取自对应小节。
 
 
+## [v1.1.2] - 2026-10-08
+
+### 修复
+- 在线升级下载新 exe 时偶发 `java.io.IOException: closed`：改用 `BodyHandlers.ofByteArray()` 替代 `BodyHandlers.ofInputStream()`，从 GitHub 资产 302 重定向及 HTTP/2 流中断场景下 publishing stream 被强制关闭时抛出该异常的根因上规避；同时为下载请求补充 `Accept: application/octet-stream` 头与 `Content-Length` 完整性校验
+
 ## [v1.1.1] - 2026-09-30
 
 ### 修复

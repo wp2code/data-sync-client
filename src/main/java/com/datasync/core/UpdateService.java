@@ -4,7 +4,6 @@ import com.datasync.ui.UiConstants;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -332,31 +331,39 @@ public final class UpdateService {
         Path newFile = dir.resolve(EXE_NAME + ".new");
         Path oldFile = dir.resolve(EXE_NAME + ".old");
 
-        // 1. 下载到同级目录（同卷保证 move 原子性），网络异常自动重试
-        HttpResponse<InputStream> response = sendWithRetry(
-                HttpRequest.newBuilder(URI.create(info.url())),
-                HttpResponse.BodyHandlers.ofInputStream(), DOWNLOAD_TIMEOUT, "下载新版本 exe");
+        // 1. 下载到内存字节数组：使用 BodyHandlers.ofByteArray 而非 ofInputStream，
+        //    可规避 publishing stream 在 HTTP/2 流中断 / 302 重定向场景下抛出
+        //    "java.io.IOException: closed" 的问题（GitHub 资产下载会触发跨域重定向）。
+        HttpRequest.Builder downloadBuilder = HttpRequest.newBuilder(URI.create(info.url()))
+                .header("Accept", "application/octet-stream")
+                .header("User-Agent", "DataSync-Updater");
+        HttpResponse<byte[]> response = sendWithRetry(downloadBuilder,
+                HttpResponse.BodyHandlers.ofByteArray(), DOWNLOAD_TIMEOUT, "下载新版本 exe");
         if (response.statusCode() != 200) {
             throw new IllegalStateException("下载失败，HTTP " + response.statusCode());
         }
-        long total = response.headers().firstValueAsLong("Content-Length").orElse(0);
-        try (InputStream in = response.body();
-             OutputStream out = Files.newOutputStream(newFile)) {
-            byte[] buffer = new byte[8192];
-            long done = 0;
-            int n;
-            while ((n = in.read(buffer)) > 0) {
-                out.write(buffer, 0, n);
-                done += n;
-                if (progress != null && total > 0) {
-                    progress.accept((int) (done * 100 / total));
-                }
-            }
+        byte[] data = response.body();
+        if (data == null || data.length == 0) {
+            // ofByteArray 收到空响应体通常是 GitHub 防爬或网络中间设备拦截，直接抛出由 sendWithRetry 重试
+            throw new java.io.IOException("下载失败，响应体为空（可能被网络拦截）");
+        }
+        long expected = response.headers().firstValueAsLong("Content-Length").orElse(0L);
+        if (expected > 0 && data.length != expected) {
+            // 防止下载不完整时把损坏 .new 留给后续步骤
+            throw new java.io.IOException("下载不完整，期望 " + expected + " 字节，实际收到 " + data.length + " 字节");
+        }
+        if (progress != null) {
+            progress.accept(90); // 90%：已成功接收全部字节，提示用户已开始落盘
+        }
+        try {
+            Files.write(newFile, data);
         } catch (java.io.IOException e) {
-            // 网络中断：清理半成品文件后抛出，避免残留损坏的 .new
             Files.deleteIfExists(newFile);
-            logUpdate("下载中断: " + e);
+            logUpdate("写入新版本失败: " + e);
             throw e;
+        }
+        if (progress != null) {
+            progress.accept(100);
         }
 
         // 2. SHA-256 校验（Release 提供 .sha256 资产时）
