@@ -77,54 +77,54 @@ jobs:
           java-version: '17'
           cache: 'gradle'
 
-      # ── 4. 校验版本号一致性 ─────────────────────────────────────────
+      # ── 4. 校验版本号一致性 ──────────────────────────────────
       # 检查点：
       #   - tag (vX.Y.Z) == "v" + build.gradle version
       #   - UiConstants.VERSION 不再硬编码（应从 version.properties 加载）
-      # 采用最简单、稳定的 PowerShell 写法。
+      # 用 bash 避免 PowerShell 在 CI 上的反引号/编码边界问题
       - name: Verify version consistency
         env:
           TAG: ${{ github.ref_name }}
-        shell: pwsh
+        shell: bash
         run: |
-          $tag = "$env:TAG"
-          Write-Host "TAG=$tag"
+          tag="$TAG"
+          echo "TAG=$tag"
 
-          $gradlePath = "build.gradle"
-          if (-not (Test-Path $gradlePath)) {
-            Write-Host "::error::build.gradle not found at $PWD\build.gradle"
+          # 1) build.gradle version
+          if [ ! -f build.gradle ]; then
+            echo "::error::build.gradle not found at $(pwd)/build.gradle"
+            ls -la
             exit 1
-          }
-          $gradleContent = Get-Content $gradlePath -Raw
-          $m = [regex]::Match($gradleContent, "version\s*=\s*'([^']+)'")
-          if (-not $m.Success) {
-            Write-Host "::error::Cannot find version line in build.gradle"
+          fi
+          gradle_version=$(grep -E "^[[:space:]]*version[[:space:]]*=[[:space:]]*'[^']+'" build.gradle | head -1 | sed -E "s/.*'([^']+)'.*/\1/")
+          if [ -z "$gradle_version" ]; then
+            echo "::error::Cannot find version line in build.gradle"
+            head -30 build.gradle
             exit 1
-          }
-          $gradleVersion = $m.Groups[1].Value
-          Write-Host "build.gradle version = $gradleVersion"
+          fi
+          echo "build.gradle version = $gradle_version"
 
-          $uiPath = "src\main\java\com\datasync\ui\UiConstants.java"
-          if (-not (Test-Path $uiPath)) {
-            Write-Host "::error::UiConstants.java not found at $PWD\$uiPath"
+          # 2) UiConstants.VERSION must load dynamically from version.properties
+          ui_file="src/main/java/com/datasync/ui/UiConstants.java"
+          if [ ! -f "$ui_file" ]; then
+            echo "::error::$ui_file not found"
             exit 1
-          }
-          $uiContent = Get-Content $uiPath -Raw
-          $uiPattern = 'VERSION\s*=\s*"v"\s*\+\s*loadVersion\s*\('
-          if ($uiContent -notmatch $uiPattern) {
-            Write-Host "::error::UiConstants.VERSION is not dynamic"
+          fi
+          if ! grep -qE 'VERSION[[:space:]]*=[[:space:]]*"v"[[:space:]]*\+[[:space:]]*loadVersion[[:space:]]*\(' "$ui_file"; then
+            echo "::error::UiConstants.VERSION is not dynamic; should be loadVersion()-based"
+            head -20 "$ui_file"
             exit 1
-          }
-          Write-Host "UiConstants.VERSION loads dynamically"
+          fi
+          echo "UiConstants.VERSION loads dynamically"
 
-          $expectedTag = "v$gradleVersion"
-          if ($tag -ne $expectedTag) {
-            Write-Host "::error::Tag mismatch: tag=$tag expected=$expectedTag"
+          # 3) tag must equal v$gradle_version
+          expected_tag="v$gradle_version"
+          if [ "$tag" != "$expected_tag" ]; then
+            echo "::error::Tag mismatch: tag=$tag expected=$expected_tag"
             exit 1
-          }
+          fi
 
-          Write-Host "::notice::Version consistency check PASSED: $tag == v$gradleVersion"
-
+          echo "::notice::Version consistency check PASSED: $tag == v$gradle_version"
 
       # ── 5. 构建 EXE 和分发 ZIP ───────────────────────────────
       - name: Build exe & package zip
@@ -151,7 +151,7 @@ jobs:
         run: |
           $exe = "build/launch4j/DataSync.exe"
           if (-not (Test-Path $exe)) {
-            throw "EXE 不存在：$exe（构建可能失败）"
+            throw "EXE not found: $exe (build may have failed)"
           }
           $hash = (Get-FileHash -Algorithm SHA256 $exe).Hash.ToLower()
           "$hash  DataSync.exe" | Out-File -Encoding ascii build/launch4j/DataSync.exe.sha256
@@ -159,37 +159,33 @@ jobs:
           Get-Content build/launch4j/DataSync.exe.sha256
 
       # ── 8. 从 CHANGELOG.md 提取本版本日志作为 Release 描述 ────
-      # 使用严格正则 `^##\s+\[v1.1.1\]` 避免 v1.1.1 误匹配 v1.1.10
+      # 使用严格正则避免 v1.1.1 误匹配 v1.1.10
       - name: Extract changelog for this version
         env:
           TAG: ${{ github.ref_name }}
-        shell: pwsh
+        shell: bash
         run: |
-          $tag = "$env:TAG"
-          $changelog = "CHANGELOG.md"
-          if (-not (Test-Path $changelog)) {
-            throw "未找到 $changelog"
-          }
-          $lines = Get-Content $changelog
-          $start = -1
-          $end = $lines.Count
-          $tagPattern = "^\s*##\s+\[\s*$([regex]::Escape($tag))\s*\]"
-
-          for ($i = 0; $i -lt $lines.Count; $i++) {
-            if ($lines[$i] -match '^##\s+') {
-              if ($start -ge 0) { $end = $i; break }
-              if ($lines[$i] -match $tagPattern) { $start = $i }
-            }
-          }
-          if ($start -lt 0) {
-            throw "CHANGELOG.md 中未找到 $tag 的 `## [$tag]` 小节，请先补充版本日志"
-          }
-          if ($end -le $start) { $end = $lines.Count }
-
-          $lines[$start..($end-1)] | Out-File -Encoding utf8 release_notes.md
-          Write-Host "::notice::Extracted release notes:"
-          Write-Host "----- release_notes.md -----"
-          Get-Content release_notes.md
+          tag="$TAG"
+          if [ ! -f CHANGELOG.md ]; then
+            echo "::error::CHANGELOG.md not found"
+            exit 1
+          fi
+          # Find the section for this tag: from "## [vX.Y.Z]" to next "## " or EOF
+          start_line=$(grep -nE "^##[[:space:]]+\[[[:space:]]*$tag[[:space:]]*\]" CHANGELOG.md | head -1 | cut -d: -f1)
+          if [ -z "$start_line" ]; then
+            echo "::error::No '## [$tag]' section in CHANGELOG.md"
+            exit 1
+          fi
+          next_line=$(tail -n +$((start_line + 1)) CHANGELOG.md | grep -nE "^##[[:space:]]" | head -1 | cut -d: -f1)
+          if [ -z "$next_line" ]; then
+            total=$(wc -l < CHANGELOG.md)
+            end_line=$total
+          else
+            end_line=$((start_line + next_line - 1))
+          fi
+          sed -n "${start_line},${end_line}p" CHANGELOG.md > release_notes.md
+          echo "----- release_notes.md -----"
+          cat release_notes.md
 
       # ── 9. 创建 GitHub Release ───────────────────────────────
       # 需要前面所有步骤成功：构建产物存在 + release_notes.md 已生成
