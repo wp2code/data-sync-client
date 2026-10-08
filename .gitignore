@@ -18,3 +18,6 @@ local.properties
 # OS
 .DS_Store
 *.db
+
+# CodeBuddy IDE metadata (per-user, not project data)
+.codebuddy/
