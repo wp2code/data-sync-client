@@ -5,7 +5,7 @@ DataSync Client 是一款基于 Java 17 + Swing 的桌面数据库同步工具�
 ![Java 17](https://img.shields.io/badge/Java-17-blue)
 ![Gradle](https://img.shields.io/badge/Build-Gradle-green)
 ![Swing](https://img.shields.io/badge/UI-Swing%20FlatLaf-orange)
-![Version](https://img.shields.io/badge/Version-1.1.0-brightgreen)
+![Version](https://img.shields.io/badge/Version-1.1.1-brightgreen)
 
 ## 功能特性
 
@@ -32,6 +32,7 @@ DataSync Client 是一款基于 Java 17 + Swing 的桌面数据库同步工具�
 
 - 启动时静默检查 GitHub Releases 新版本，发现新版本才提示。
 - 支持下载进度展示、SHA-256 校验、自动替换 exe 并重启（JRE 不随版本升级，无需重新下载）。
+- 更新可靠性保障：网络类异常自动重试（指数退避，最多 3 次）、下载中断自动清理半成品文件、exe 被安全软件占用时自动转延迟替换（进程退出后由辅助脚本完成替换并重启）。
 - 日志面板提供「检查更新」按钮，可手动检查；Release 描述正文即版本日志，随升级提示一并展示。
 
 ### 通用
@@ -71,7 +72,7 @@ DataSync Client 是一款基于 Java 17 + Swing 的桌面数据库同步工具�
 # 运行程序
 ./gradlew run
 
-# 完整构建（编译 + Fat JAR + Windows .exe + ZIP 分发包）
+# 完整构建（编译 + 测试 + 瘦 JAR + Windows .exe + ZIP 分发包）
 ./gradlew build
 ```
 
@@ -79,9 +80,9 @@ Windows 环境下请将 `./gradlew` 替换为 `gradlew.bat`。
 
 构建产物：
 
-- Fat JAR：`build/libs/data-sync-client-1.1.0.jar`
-- Windows 可执行文件：`build/launch4j/DataSync.exe`（自带 `jre/` 目录）
-- ZIP 分发包：`build/distributions/DataSync-1.1.0-win-x64.zip`（解压即可运行，无需 JAVA_HOME）
+- 瘦 JAR：`build/libs/data-sync-client-1.1.1.jar`（依赖位于同目录 `build/libs/lib/`，通过 MANIFEST `Class-Path` 引用）
+- Windows 可执行文件：`build/launch4j/DataSync.exe`（自带 `jre/` 与 `lib/` 目录）
+- ZIP 分发包：`build/distributions/DataSync-1.1.1-win-x64.zip`（解压即可运行，无需 JAVA_HOME）
 
 ## 使用说明
 
@@ -157,19 +158,19 @@ src/main/java/com/datasync/
 
 ## 打包发布
 
-### 仅生成 Fat JAR
+### 仅生成瘦 JAR
 
 ```bash
-./gradlew jar
+./gradlew jar copyLibs
 ```
 
-生成后可通过以下命令运行：
+生成后可通过以下命令运行（需保证 `lib/` 与 JAR 同目录，即位于 `build/libs/` 下）：
 
 ```bash
-java -jar build/libs/data-sync-client-1.1.0.jar
+java -jar build/libs/data-sync-client-1.1.1.jar
 ```
 
-### 生成 Windows .exe（自带 JRE）
+### 生成 Windows .exe（自带 JRE + 依赖）
 
 ```bash
 ./gradlew jar
@@ -180,6 +181,7 @@ java -jar build/libs/data-sync-client-1.1.0.jar
 
 - Windows 可执行文件：`build/launch4j/DataSync.exe`
 - 内置 JRE 目录：`build/launch4j/jre/`
+- 第三方依赖目录：`build/launch4j/lib/`（瘦 JAR 所需的运行时依赖）
 
 运行 `DataSync.exe` 时，程序会优先使用同目录下的 `jre` 文件夹，无需用户本机安装 JDK。
 
@@ -189,14 +191,31 @@ java -jar build/libs/data-sync-client-1.1.0.jar
 ./gradlew packageZip
 ```
 
-将 `DataSync.exe` 与 `jre/` 打包为 `build/distributions/DataSync-<version>-win-x64.zip`，解压即可运行。`./gradlew build` 会依次完成 Fat JAR、`.exe` 与 ZIP 分发包的全部构建。
+将 `DataSync.exe`、`jre/` 与 `lib/` 打包为 `build/distributions/DataSync-<version>-win-x64.zip`，解压即可运行。`./gradlew build` 会依次完成瘦 JAR、`.exe` 与 ZIP 分发包的全部构建。
 
 ## 版本发布
 
-- 版本号使用 Git Tag（如 `v1.1.0`），与 GitHub Release 一一对应；
-- Release 需附带资产 `DataSync.exe`（升级目标）与可选的 `DataSync.exe.sha256`（校验文件）；
-- Release 描述正文即版本日志，客户端升级提示会自动展示；
-- 新版本发布时请同步更新 `build.gradle` 的 `version`、`UiConstants.VERSION`，并在 [CHANGELOG.md](CHANGELOG.md) 中新增对应小节。
+发布流程已完全自动化：推送 `vX.Y.Z` 格式的 Git Tag 即触发 GitHub Actions（[release.yml](.github/workflows/release.yml)）自动完成构建、校验与发布。
+
+**发布步骤：**
+
+1. 修改 `build.gradle` 中的 `version`（版本号会在构建时注入 `version.properties`，运行期由 `UiConstants` 动态读取，无需改代码）；
+2. 在 [CHANGELOG.md](CHANGELOG.md) 中新增 `## [vX.Y.Z] - 日期` 小节（该小节将被自动提取为 GitHub Release 描述）；
+3. 提交后打 Tag 并推送：`git tag -a vX.Y.Z -m "Release vX.Y.Z" && git push origin main vX.Y.Z`。
+
+**CI 会自动校验并完成：**
+
+- Tag 必须位于 `main` 分支历史中，且与 `build.gradle` 版本号一致；
+- 从 CHANGELOG.md 提取对应版本小节作为 Release 描述；
+- 构建 `.exe` 与 ZIP 分发包，生成 `DataSync.exe.sha256` 校验文件，并作为 Release 资产发布。
+
+**Release 资产清单（客户端在线更新依赖）：**
+
+| 资产 | 用途 |
+| --- | --- |
+| `DataSync.exe` | 在线更新的升级目标（必需） |
+| `DataSync.exe.sha256` | 下载完整性校验（可选，缺失时跳过校验） |
+| `DataSync-<version>-win-x64.zip` | 新用户完整分发包（解压即用） |
 
 ## 许可证
 

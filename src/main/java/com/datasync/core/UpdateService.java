@@ -333,7 +333,14 @@ public final class UpdateService {
         logUpdate("开始更新 " + UiConstants.VERSION + " -> " + info.version() + "，当前 exe: " + exe);
         logUpdate("下载地址 " + info.url());
         // 仅执行下载 + 校验 + 替换（不含重启），便于单元测试覆盖
-        performDownloadAndReplace(exe, info, progress);
+        boolean inPlace = performDownloadAndReplace(exe, info, progress);
+
+        if (!inPlace) {
+            // 延迟替换模式：当前 exe 被占用，辅助脚本会在本进程退出后完成替换并拉起新 exe
+            logUpdate("当前 exe 被占用，已安排延迟替换：本进程退出后由辅助脚本完成更新与重启");
+            System.exit(0);
+            return;
+        }
 
         // 4. 启动新版本并退出当前进程
         Path dir = exe.getParent();
@@ -358,8 +365,11 @@ public final class UpdateService {
      * @param exe      当前 exe 路径（待替换目标）
      * @param info     远端版本信息
      * @param progress 下载进度回调（0-100，可为 null）
+     * @return {@code true} 表示新 exe 已就地替换完成（调用方可直接重启）；
+     *         {@code false} 表示当前 exe 被安全软件等占用、已转为延迟替换模式
+     *         （辅助脚本会在本进程退出后完成替换并拉起新 exe，调用方直接退出即可）
      */
-    void performDownloadAndReplace(Path exe, UpdateInfo info, IntConsumer progress) throws Exception {
+    boolean performDownloadAndReplace(Path exe, UpdateInfo info, IntConsumer progress) throws Exception {
         Path dir = exe.getParent();
         Path newFile = dir.resolve(EXE_NAME + ".new");
         Path oldFile = dir.resolve(EXE_NAME + ".old");
@@ -406,9 +416,20 @@ public final class UpdateService {
             }
         }
 
-        // 3. 替换：正在运行的 exe 允许重命名，但不允许覆盖/删除
-        Files.deleteIfExists(oldFile);
-        Files.move(exe, oldFile);
+        // 3. 替换：正在运行的 exe 允许重命名，但不允许覆盖/删除；
+        //    杀毒/安全软件以独占句柄打开 exe 时连重命名也会被拒（共享冲突），
+        //    先多次重试规避瞬时锁定，仍失败则降级为延迟替换
+        try {
+            Files.deleteIfExists(oldFile);
+        } catch (java.io.IOException e) {
+            // 遗留 .old 被占用不致命，继续尝试带替换的改名
+            logUpdate("清理遗留 .old 失败（继续尝试替换）: " + e);
+        }
+        if (!renameExeToOldWithRetry(exe, oldFile)) {
+            logUpdate("当前 exe 被占用无法改名，转为延迟替换模式");
+            scheduleDeferredSwap(exe, newFile, oldFile);
+            return false;
+        }
         try {
             Files.move(newFile, exe, StandardCopyOption.REPLACE_EXISTING);
         } catch (Exception e) {
@@ -416,6 +437,60 @@ public final class UpdateService {
             Files.move(oldFile, exe, StandardCopyOption.REPLACE_EXISTING);
             throw e;
         }
+        return true;
+    }
+
+    /**
+     * 将当前 exe 改名为 .old，带重试。共享冲突/安全软件锁定通常是瞬时的，短间隔多次尝试可绕过；
+     * 其他 IO 错误（如磁盘满、权限）重试无意义，直接放弃转入延迟替换。
+     */
+    private static boolean renameExeToOldWithRetry(Path exe, Path oldFile) {
+        final int maxAttempts = 5;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                Files.move(exe, oldFile, StandardCopyOption.REPLACE_EXISTING);
+                if (attempt > 1) {
+                    logUpdate("exe 改名 .old 于第 " + attempt + " 次重试成功");
+                }
+                return true;
+            } catch (java.io.IOException e) {
+                logUpdate("exe 改名 .old 失败（第 " + attempt + "/" + maxAttempts + " 次）: " + e);
+            }
+            try {
+                Thread.sleep(400);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 延迟替换兜底：当前 exe 被占用导致无法立即改名时，启动一个完全分离的 PowerShell 辅助进程，
+     * 等待本进程退出（文件锁必然释放）后再完成 exe → .old、.new → exe 的替换并拉起新 exe。
+     * Windows 环境可用；辅助进程启动失败则抛出异常，由上层提示用户手动更新。
+     */
+    private static void scheduleDeferredSwap(Path exe, Path newFile, Path oldFile) throws java.io.IOException {
+        long pid = ProcessHandle.current().pid();
+        Path dir = exe.getParent();
+        // 路径内嵌单引号转义为两个单引号
+        String script = "Wait-Process -Id " + pid + " -ErrorAction SilentlyContinue;"
+                + "for($i=0;$i -lt 20;$i++){ try{ Move-Item -LiteralPath '" + psQuote(exe) + "' -Destination '"
+                + psQuote(oldFile) + "' -Force -ErrorAction Stop; break } catch { Start-Sleep -Milliseconds 500 } };"
+                + "Move-Item -LiteralPath '" + psQuote(newFile) + "' -Destination '" + psQuote(exe) + "' -Force;"
+                + "Start-Process -FilePath '" + psQuote(exe) + "' -WorkingDirectory '" + psQuote(dir) + "'";
+        Process helper = new ProcessBuilder("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script)
+                .directory(dir.toFile())
+                .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                .redirectError(ProcessBuilder.Redirect.DISCARD)
+                .start();
+        logUpdate("延迟替换辅助进程已启动 pid=" + helper.pid() + "，等待本进程(" + pid + ")退出后执行替换");
+    }
+
+    /** PowerShell 单引号字符串字面量转义：' → '' */
+    private static String psQuote(Path path) {
+        return path.toString().replace("'", "''");
     }
     
     /**

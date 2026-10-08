@@ -11,6 +11,7 @@
 - 下载新版本中断时自动清理半成品文件，避免残留损坏的 `.new` 文件
 - SHA-256 校验文件获取失败不再阻断更新，仅跳过校验并记录日志
 - 在线升级下载新 exe 时偶发 `java.io.IOException: closed`：改用 `BodyHandlers.ofByteArray()` 替代 `BodyHandlers.ofInputStream()`，从 GitHub 资产 302 重定向及 HTTP/2 流中断场景下规避该异常；同时为下载请求补充 `Accept: application/octet-stream` 头与 `Content-Length` 完整性校验
+- 当前 exe 被杀毒 / 安全软件占用导致无法改名为 `.old` 时：改名自动重试（最多 5 次），仍失败则转延迟替换模式——由分离的辅助进程等本程序退出后完成替换并自动拉起新版本
 
 ### 变更
 - 适当放宽网络超时：连接超时 20s、API 请求超时 20s、下载响应超时 60s
