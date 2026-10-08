@@ -1,0 +1,12 @@
+# GitHub Actions workflow 文件必须保持 LF 行尾：
+# windows-latest runner 的 git core.autocrlf=true 会在 checkout 时把 LF 转成 CRLF，
+# 导致 run: | 块中的 bash 脚本每行末尾带 \r，bash 解析直接失败。
+*.yml text eol=lf
+*.yaml text eol=lf
+*.sh text eol=lf
+*.md text eol=lf
+*.gradle text eol=lf
+*.java text eol=lf
+*.properties text eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
