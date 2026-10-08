@@ -4,21 +4,18 @@
 
 发布新版本时：在下方新增一节 `## [vX.Y.Z] - 日期`，与 Git Tag、`build.gradle` 的 `version`、`UiConstants.VERSION` 保持一致，Release 描述将自动取自对应小节。
 
-
-## [v1.1.2] - 2026-10-08
-
-### 修复
-- 在线升级下载新 exe 时偶发 `java.io.IOException: closed`：改用 `BodyHandlers.ofByteArray()` 替代 `BodyHandlers.ofInputStream()`，从 GitHub 资产 302 重定向及 HTTP/2 流中断场景下 publishing stream 被强制关闭时抛出该异常的根因上规避；同时为下载请求补充 `Accept: application/octet-stream` 头与 `Content-Length` 完整性校验
-
-## [v1.1.1] - 2026-09-30
+## [v1.1.1] - 2026-10-08
 
 ### 修复
 - 在线更新网络可靠性增强：网络类异常（超时 / 连接重置 / DNS 失败）自动重试，指数退避间隔，最多尝试 3 次；业务错误（如 404）不重试
 - 下载新版本中断时自动清理半成品文件，避免残留损坏的 `.new` 文件
 - SHA-256 校验文件获取失败不再阻断更新，仅跳过校验并记录日志
+- 在线升级下载新 exe 时偶发 `java.io.IOException: closed`：改用 `BodyHandlers.ofByteArray()` 替代 `BodyHandlers.ofInputStream()`，从 GitHub 资产 302 重定向及 HTTP/2 流中断场景下规避该异常；同时为下载请求补充 `Accept: application/octet-stream` 头与 `Content-Length` 完整性校验
 
 ### 变更
 - 适当放宽网络超时：连接超时 20s、API 请求超时 20s、下载响应超时 60s
+- 打包方式由 Fat JAR 调整为瘦 JAR + 独立 `lib/` 依赖目录，分发包结构为 `DataSync.exe + jre/ + lib/`，显著减小单文件体积
+- 更新日志文件由 `{应用目录}/data/update.log` 移至 `{应用目录}/logs/update.log`
 
 ## [v1.1.0] - 2026-09-30
 

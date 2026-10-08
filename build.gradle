@@ -5,7 +5,7 @@ plugins {
 }
 
 group = 'com.datasync'
-version = '1.1.2'
+version = '1.1.1'
 ext {
     // 内置 JRE 版本（Eclipse Temurin）
     jreVersion = '17.0.12+7'
@@ -112,7 +112,25 @@ tasks.register('smokeTestFullscreen', JavaExec) {
     mainClass = 'com.datasync.SmokeTestFullscreen'
 }
 
-// 配置可执行 JAR 打包 —— 将所有依赖整合进一个 Fat JAR
+// 将所有运行时第三方依赖 JAR 单独拷贝到 build/libs/lib/ 目录
+tasks.register('copyLibs', Copy) {
+    description = '将运行时第三方依赖复制到 build/libs/lib/ 目录'
+    group = 'build'
+
+    from configurations.runtimeClasspath
+    into layout.buildDirectory.dir('libs/lib')
+
+    // 仅保留 JAR 文件，跳过目录型 classpath 条目
+    include '*.jar'
+
+    outputs.upToDateWhen { false }
+}
+
+tasks.named('build') {
+    dependsOn 'copyLibs'
+}
+
+// 配置可执行 JAR 打包 —— 输出瘦 JAR，运行时通过 MANIFEST Class-Path 引用 lib/ 下的第三方依赖
 jar {
     manifest {
         attributes(
@@ -125,16 +143,12 @@ jar {
     // 剔除重复的签名文件，避免打包冲突
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 
-    from {
-        configurations.runtimeClasspath.collect {
-            it.isDirectory() ? it : zipTree(it).matching {
-                // 排除依赖包的 MANIFEST，避免覆盖项目自己的
-                exclude 'META-INF/MANIFEST.MF'
-                exclude 'META-INF/*.SF'
-                exclude 'META-INF/*.DSA'
-                exclude 'META-INF/*.RSA'
-            }
-        }
+    // 在打包前动态生成 Class-Path，指向同目录 lib/ 下的所有运行时依赖 JAR
+    doFirst {
+        def classpathEntries = configurations.runtimeClasspath.findAll { it.name.endsWith('jar') }
+                .collect { "lib/${it.name}" }
+                .join(' ')
+        manifest.attributes('Class-Path': classpathEntries)
     }
 }
 
@@ -259,6 +273,7 @@ tasks.named('distTar') {
 
 // 打包 exe + jre 为 ZIP 分发包（解压即可运行，无需 JAVA_HOME）
 tasks.register('packageZip', Zip) {
+    dependsOn 'copyLibs'
     dependsOn 'createExe'
 
     archiveBaseName = 'DataSync'
@@ -267,9 +282,13 @@ tasks.register('packageZip', Zip) {
     archiveExtension = 'zip'
     destinationDirectory = layout.buildDirectory.dir('distributions')
 
+    // 直接打包 build/launch4j/：该目录下 Launch4j 插件已同步出 DataSync.exe、jre/、lib/（依赖 JAR）。
+    // 运行目录结构：
+    //   DataSync-x.y.z-win-x64/
+    //     ├── DataSync.exe
+    //     ├── jre/
+    //     └── lib/   ← 第三方依赖 JAR（由 Launch4j 在 createExe 时生成）
     from(layout.buildDirectory.dir('launch4j'))
-    // 排除 lib 目录（依赖 JAR 已打入 Fat JAR）
-    exclude 'lib/**'
 
     outputs.upToDateWhen { false }
 }
