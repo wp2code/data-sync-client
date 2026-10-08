@@ -1,87 +1,186 @@
 name: Release
 
-# 推送 v* 格式的 Tag 时自动构建并发布新版本到 GitHub Releases（仅 main 分支上的 Tag 生效）
+# 推送 v* 格式的 Tag 时自动构建并发布新版本到 GitHub Releases
+# 仅 main（或 master）分支上的 Tag 生效
 on:
   push:
     tags:
       - 'v*'
+
+# 防止同一 tag 多次并发执行（如 force-push 同一 tag）
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
 
 jobs:
   release:
+    name: Build & Publish Release
     runs-on: windows-latest
+    # 显式超时：30 分钟包含 clean build + 上传；超出立即 fail
+    timeout-minutes: 30
+
     steps:
+      # ── 1. 拉取完整历史（含 tags） ─────────────────────────
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # 拉取完整历史，供 main 分支归属校验使用
           fetch-depth: 0
+          fetch-tags: true
 
+      # ── 2. 校验 tag 必须位于主分支历史中 ────────────────────
+      # 兼容 main 或 master（不同仓库默认分支名可能不同）
       - name: Verify tag is on main branch
+        env:
+          TAG: ${{ github.ref_name }}
         shell: pwsh
         run: |
-          $tag = "${{ github.ref_name }}"
-          # 确保 main 分支引用存在（按需 fetch）
-          git fetch origin main --tags 2>$null
-          $mainHash = git rev-parse origin/main
+          $tag = "$env:TAG"
           $tagHash = git rev-parse "$tag^{commit}"
-          Write-Host "tag=$tagHash, main=$mainHash"
-          # merge-base --is-ancestor 通过退出码返回结果（无 stdout 输出）
-          git merge-base --is-ancestor $tagHash $mainHash
-          if ($LASTEXITCODE -ne 0) {
-            throw "Tag $tag 不在 main 分支上，仅允许从 main 分支发布新版本"
+          Write-Host "Verifying tag $tag ($tagHash) is on the main branch..."
+
+          $mainBranches = @('main', 'master')
+          $found = $false
+          foreach ($branch in $mainBranches) {
+            $remoteRef = "origin/$branch"
+            try {
+              git fetch origin $branch 2>$null
+              $branchHash = git rev-parse $remoteRef 2>$null
+              if (-not $branchHash) {
+                Write-Host "::notice::$remoteRef not found, skipping"
+                continue
+              }
+              # merge-base --is-ancestor 通过退出码返回结果
+              git merge-base --is-ancestor $tagHash $branchHash
+              if ($LASTEXITCODE -eq 0) {
+                Write-Host "::notice::Tag $tag is reachable from $remoteRef ($branchHash)"
+                $found = $true
+                break
+              } else {
+                Write-Host "Tag $tag is NOT an ancestor of $remoteRef"
+              }
+            } catch {
+              Write-Host "::warning::Error checking $remoteRef : $_"
+            }
+          }
+          if (-not $found) {
+            throw "Tag $tag 不在 main/master 分支历史中，仅允许从主分支发布新版本"
           }
 
+      # ── 3. 设置 JDK 17（启用 Gradle 缓存） ──────────────────
       - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+          cache: 'gradle'
 
+      # ── 4. 校验版本号一致性 ──────────────────────────────────
+      # 检查点：
+      #   - tag (vX.Y.Z) == "v" + build.gradle version
+      #   - UiConstants.VERSION 不再硬编码（应从 version.properties 加载）
+      #     这避免在 c692d9b 重构后，Select-String 找不到字面量版本而抛索引越界
       - name: Verify version consistency
+        env:
+          TAG: ${{ github.ref_name }}
         shell: pwsh
         run: |
-          $tag = "${{ github.ref_name }}"
-          # 从 build.gradle 提取 version
-          $gradleVersion = (Select-String -Path build.gradle -Pattern "version\s*=\s*'([^']+)'").Matches[0].Groups[1].Value
-          # 从 UiConstants.java 提取 VERSION
-          $uiVersion = (Select-String -Path src/main/java/com/datasync/ui/UiConstants.java -Pattern 'VERSION\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
-          Write-Host "Tag=$tag, build.gradle=$gradleVersion, UiConstants=$uiVersion"
-          if ("v$gradleVersion" -ne $tag -or $uiVersion -ne $tag) {
-            throw "版本号不一致：请确保 Tag、build.gradle 的 version、UiConstants.VERSION 三者一致（如 $tag）"
+          $tag = "$env:TAG"
+
+          $gradleMatch = Select-String -Path build.gradle -Pattern "^\s*version\s*=\s*'([^']+)'"
+          if (-not $gradleMatch) {
+            throw "build.gradle 中未找到 `version = 'X.Y.Z'` 行"
+          }
+          $gradleVersion = $gradleMatch.Matches[0].Groups[1].Value
+          Write-Host "::notice::tag=$tag, build.gradle=$gradleVersion"
+
+          # UiConstants 必须走动态加载（不再硬编码字面量版本）
+          $uiPath = "src/main/java/com/datasync/ui/UiConstants.java"
+          $uiSrc = Get-Content $uiPath -Raw
+          $expectedPattern = 'VERSION\s*=\s*"v"\s*\+\s*loadVersion\s*\('
+          if ($uiSrc -notmatch $expectedPattern) {
+            throw "$uiPath 中 VERSION 字段应为 `"v" + loadVersion()` 形式（从 version.properties 动态加载），而不是硬编码字面量"
           }
 
+          # 强一致性：tag 必须等于 v$gradleVersion
+          $expectedTag = "v$gradleVersion"
+          if ($tag -ne $expectedTag) {
+            throw "Tag 与 build.gradle 版本不一致：tag=$tag, build.gradle=$gradleVersion（期望 tag=$expectedTag）"
+          }
+
+          Write-Host "::notice::Version consistency check passed"
+
+      # ── 5. 构建 EXE 和分发 ZIP ───────────────────────────────
       - name: Build exe & package zip
         shell: cmd
-        run: gradlew.bat createExe packageZip --no-daemon
+        run: gradlew.bat createExe packageZip --no-daemon --console=plain
 
+      # ── 6. 备份构建产物（失败排查 + 二次发布用） ──────────────
+      - name: Upload build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts-${{ github.ref_name }}
+          path: |
+            build/launch4j/DataSync.exe
+            build/launch4j/DataSync.exe.sha256
+            build/distributions/DataSync-*-win-x64.zip
+            release_notes.md
+          if-no-files-found: warn
+          retention-days: 14
+
+      # ── 7. 生成 EXE 的 SHA-256 校验文件 ──────────────────────
       - name: Generate SHA-256 checksum
         shell: pwsh
         run: |
-          $hash = (Get-FileHash -Algorithm SHA256 build/launch4j/DataSync.exe).Hash.ToLower()
+          $exe = "build/launch4j/DataSync.exe"
+          if (-not (Test-Path $exe)) {
+            throw "EXE 不存在：$exe（构建可能失败）"
+          }
+          $hash = (Get-FileHash -Algorithm SHA256 $exe).Hash.ToLower()
           "$hash  DataSync.exe" | Out-File -Encoding ascii build/launch4j/DataSync.exe.sha256
+          Write-Host "::notice::SHA-256 = $hash"
           Get-Content build/launch4j/DataSync.exe.sha256
 
+      # ── 8. 从 CHANGELOG.md 提取本版本日志作为 Release 描述 ────
+      # 使用严格正则 `^##\s+\[v1.1.1\]` 避免 v1.1.1 误匹配 v1.1.10
       - name: Extract changelog for this version
+        env:
+          TAG: ${{ github.ref_name }}
         shell: pwsh
         run: |
-          $tag = "${{ github.ref_name }}"
-          $lines = Get-Content CHANGELOG.md
+          $tag = "$env:TAG"
+          $changelog = "CHANGELOG.md"
+          if (-not (Test-Path $changelog)) {
+            throw "未找到 $changelog"
+          }
+          $lines = Get-Content $changelog
           $start = -1
+          $end = $lines.Count
+          $tagPattern = "^\s*##\s+\[\s*$([regex]::Escape($tag))\s*\]"
+
           for ($i = 0; $i -lt $lines.Count; $i++) {
             if ($lines[$i] -match '^##\s+') {
               if ($start -ge 0) { $end = $i; break }
-              if ($lines[$i] -match [regex]::Escape($tag)) { $start = $i }
+              if ($lines[$i] -match $tagPattern) { $start = $i }
             }
           }
-          if ($start -lt 0) { throw "CHANGELOG.md 中未找到 $tag 的版本记录，请先补充版本日志" }
-          if (-not $end) { $end = $lines.Count }
+          if ($start -lt 0) {
+            throw "CHANGELOG.md 中未找到 $tag 的 `## [$tag]` 小节，请先补充版本日志"
+          }
+          if ($end -le $start) { $end = $lines.Count }
+
           $lines[$start..($end-1)] | Out-File -Encoding utf8 release_notes.md
+          Write-Host "::notice::Extracted release notes:"
+          Write-Host "----- release_notes.md -----"
           Get-Content release_notes.md
 
+      # ── 9. 创建 GitHub Release ───────────────────────────────
+      # 需要前面所有步骤成功：构建产物存在 + release_notes.md 已生成
       - name: Create GitHub Release
+        if: success()
         uses: softprops/action-gh-release@v2
         with:
           body_path: release_notes.md
@@ -89,3 +188,5 @@ jobs:
             build/launch4j/DataSync.exe
             build/launch4j/DataSync.exe.sha256
             build/distributions/DataSync-*-win-x64.zip
+          fail_on_unmatched_files: true
+          generate_release_notes: false
