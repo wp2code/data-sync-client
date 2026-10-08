@@ -63,6 +63,8 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
     
     private JTextField trainApiField;
     
+    private JTextField stopTrainApiField;
+    
     private JTextField updateUserApiField;
     
     private JTextField answerInfoApiField;
@@ -200,6 +202,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         deleteApiField = new JTextField(28);
         listApiField = new JTextField(28);
         trainApiField = new JTextField(28);
+        stopTrainApiField = new JTextField(28);
         updateUserApiField = new JTextField(28);
         answerInfoApiField = new JTextField(28);
         answerListApiField = new JTextField(28);
@@ -216,6 +219,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         deleteApiField.setFont(UiConstants.FONT_SANS_12);
         listApiField.setFont(UiConstants.FONT_SANS_12);
         trainApiField.setFont(UiConstants.FONT_SANS_12);
+        stopTrainApiField.setFont(UiConstants.FONT_SANS_12);
         updateUserApiField.setFont(UiConstants.FONT_SANS_12);
         answerInfoApiField.setFont(UiConstants.FONT_SANS_12);
         answerListApiField.setFont(UiConstants.FONT_SANS_12);
@@ -236,7 +240,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         headerTitleLabel.setFont(UiConstants.FONT_SANS_12_BOLD);
         headerTitleLabel.setForeground(UiConstants.COLOR_PRIMARY);
         headerTitleRow.add(headerTitleLabel);
-        headerToggleLabel = new LinkJLabel("配置 ▾", "");
+        headerToggleLabel = new LinkJLabel("配置 ▼", "");
         headerToggleLabel.setFont(UiConstants.FONT_SANS_12);
         headerToggleLabel.addMouseListener(new MouseAdapter() {
             @Override
@@ -283,18 +287,19 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         addFormRow(formPanel, gbc, 7, new JLabel("删除："), deleteApiField, exampleLink(DELETE_EXAMPLE, deleteApiField));
         addFormRow(formPanel, gbc, 8, new JLabel("查询："), listApiField, exampleLink(LIST_EXAMPLE, listApiField));
         addFormRow(formPanel, gbc, 9, new JLabel("触发训练："), trainApiField, exampleLink(TRAIN_EXAMPLE, trainApiField));
-        addFormRow(formPanel, gbc, 10, new JLabel("批量更新接口："), updateUserApiField, exampleLink(UPDATE_USER_EXAMPLE, updateUserApiField));
-        addFormRow(formPanel, gbc, 11, new JLabel("回复详情查询："), answerInfoApiField, exampleLink(ANSWER_INFO_EXAMPLE, answerInfoApiField));
-        addFormGroupTitle(formPanel, gbc, 12, "公共接口");
-        addFormRow(formPanel, gbc, 13, new JLabel("获取用户列表："), userListApiField, exampleLink(USER_LIST_EXAMPLE, userListApiField));
-        addFormRow(formPanel, gbc, 14, new JLabel("获取项目列表："), projectListApiField, exampleLink(PROJECT_LIST_EXAMPLE, projectListApiField));
-        addFormGroupTitle(formPanel, gbc, 15, "回复审计接口");
-        addFormRow(formPanel, gbc, 16, new JLabel("回复列表："), answerListApiField, exampleLink(ANSWER_LIST_EXAMPLE, answerListApiField));
-        addFormRow(formPanel, gbc, 17, new JLabel("回复更新："), answerUpdateApiField, exampleLink(ANSWER_UPDATE_EXAMPLE, answerUpdateApiField));
-        addFormRow(formPanel, gbc, 18, new JLabel("回复删除："), answerDeleteApiField, exampleLink(ANSWER_DELETE_EXAMPLE, answerDeleteApiField));
-        addFormRow(formPanel, gbc, 19, new JLabel("问题来源查询："), answerSourceInfoApiField,
+        addFormRow(formPanel, gbc, 10, new JLabel("停止训练："), stopTrainApiField, exampleLink(STOP_TRAIN_EXAMPLE, stopTrainApiField));
+        addFormRow(formPanel, gbc, 11, new JLabel("批量更新接口："), updateUserApiField, exampleLink(UPDATE_USER_EXAMPLE, updateUserApiField));
+        addFormRow(formPanel, gbc, 12, new JLabel("回复详情查询："), answerInfoApiField, exampleLink(ANSWER_INFO_EXAMPLE, answerInfoApiField));
+        addFormGroupTitle(formPanel, gbc, 13, "公共接口");
+        addFormRow(formPanel, gbc, 14, new JLabel("获取用户列表："), userListApiField, exampleLink(USER_LIST_EXAMPLE, userListApiField));
+        addFormRow(formPanel, gbc, 15, new JLabel("获取项目列表："), projectListApiField, exampleLink(PROJECT_LIST_EXAMPLE, projectListApiField));
+        addFormGroupTitle(formPanel, gbc, 16, "回复审计接口");
+        addFormRow(formPanel, gbc, 17, new JLabel("回复列表："), answerListApiField, exampleLink(ANSWER_LIST_EXAMPLE, answerListApiField));
+        addFormRow(formPanel, gbc, 18, new JLabel("回复更新："), answerUpdateApiField, exampleLink(ANSWER_UPDATE_EXAMPLE, answerUpdateApiField));
+        addFormRow(formPanel, gbc, 19, new JLabel("回复删除："), answerDeleteApiField, exampleLink(ANSWER_DELETE_EXAMPLE, answerDeleteApiField));
+        addFormRow(formPanel, gbc, 20, new JLabel("问题来源查询："), answerSourceInfoApiField,
                 exampleLink(ANSWER_SOURCE_INFO_EXAMPLE, answerSourceInfoApiField));
-        addFormRow(formPanel, gbc, 20, new JLabel("备注："), remarkField);
+        addFormRow(formPanel, gbc, 21, new JLabel("备注："), remarkField);
         
         // 表单整体放入滚动面板：窗口高度不足时出现滚动条，内容与表格高度不被压缩
         JScrollPane formScrollPane = new JScrollPane(formPanel);
@@ -334,6 +339,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         deleteApiField.setText(valueOrDefault(env.getDeleteApi()));
         listApiField.setText(valueOrDefault(env.getListApi()));
         trainApiField.setText(valueOrDefault(env.getTrainApi()));
+        stopTrainApiField.setText(valueOrDefault(env.getStopTrainApi()));
         updateUserApiField.setText(valueOrDefault(env.getUpdateUserApi()));
         answerInfoApiField.setText(valueOrDefault(env.getAnswerInfoApi()));
         answerListApiField.setText(valueOrDefault(env.getAnswerListApi()));
@@ -364,6 +370,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         deleteApiField.setText(AiEnvConfig.DEFAULT_DELETE_API);
         listApiField.setText(AiEnvConfig.DEFAULT_LIST_API);
         trainApiField.setText(AiEnvConfig.DEFAULT_TRAIN_API);
+        stopTrainApiField.setText(AiEnvConfig.DEFAULT_STOP_TRAIN_API);
         updateUserApiField.setText(AiEnvConfig.DEFAULT_UPDATE_USER_API);
         answerInfoApiField.setText(AiEnvConfig.DEFAULT_ANSWER_INFO_API);
         answerListApiField.setText(AiEnvConfig.DEFAULT_ANSWER_LIST_API);
@@ -442,6 +449,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         config.setDeleteApi(deleteApiField.getText().trim());
         config.setListApi(listApiField.getText().trim());
         config.setTrainApi(trainApiField.getText().trim());
+        config.setStopTrainApi(stopTrainApiField.getText().trim());
         config.setUpdateUserApi(updateUserApiField.getText().trim());
         config.setAnswerInfoApi(answerInfoApiField.getText().trim());
         config.setAnswerListApi(answerListApiField.getText().trim());
@@ -795,7 +803,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
     private void toggleHeaderContent() {
         boolean expanded = !headerContentPanel.isVisible();
         headerContentPanel.setVisible(expanded);
-        headerToggleLabel.setText(expanded ? "收起 ▴" : "配置 ▾");
+        headerToggleLabel.setText(expanded ? "收起 ▲" : "配置 ▼");
         if (expanded) {
             updateHeaderTableHeight();
         }
@@ -896,7 +904,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
             """);
     
     /**
-     * 查询问题列表接口示例（trainingStatus 可选，不传返回全部：-2-初始状态；-1-待训练；0-成功；1-失败；2-成功同步回复；3-训练中；4-超时；5-同步回复失败）
+     * 查询问题列表接口示例（trainingStatus 可选，不传返回全部：-2-初始状态；-1-待训练；0-成功；1-失败；2-成功同步回复；3-训练中；4-超时；5-同步回复失败；6-训练已提交；7-训练中止）
      */
     private static final ApiExample LIST_EXAMPLE = new ApiExample("查询问题列表", AiEnvConfig.DEFAULT_LIST_API, """
             {
@@ -938,6 +946,21 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
             {
               "code": "0",
               "message": "触发成功",
+              "data": null
+            }
+            """);
+    
+    /**
+     * 停止训练接口示例（questionIds 为勾选的问题 ID 列表，仅训练已提交 / 待训练状态的问题可停止）
+     */
+    private static final ApiExample STOP_TRAIN_EXAMPLE = new ApiExample("停止训练", AiEnvConfig.DEFAULT_STOP_TRAIN_API, """
+            {
+              "questionIds": [1001, 1002]
+            }
+            """, """
+            {
+              "code": "0",
+              "message": "停止成功",
               "data": null
             }
             """);

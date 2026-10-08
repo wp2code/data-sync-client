@@ -77,9 +77,10 @@ public class QuestionTrainingPanel {
     private static final String AUTO_TRAINING_NOT_ALLOW = "不允许";
     
     private static final String[] TRAINING_STATUS_TEXTS = {"默认", "待训练", "成功", "失败", "同步回复成功", "训练中", "超时", "同步回复失败",
-            "训练已提交"};
+            "训练已提交", "训练中止"};
     
-    private static final int[] TRAINING_STATUS_VALUES = {AiQuestion.TRAINING_STATUS_INITIAL, AiQuestion.TRAINING_STATUS_PENDING, 0, 1, 2, 3, 4, 5, 6};
+    private static final int[] TRAINING_STATUS_VALUES = {AiQuestion.TRAINING_STATUS_INITIAL, AiQuestion.TRAINING_STATUS_PENDING, 0, 1, 2, 3, 4, 5, 6,
+            AiQuestion.TRAINING_STATUS_STOPPED};
     
     private static final DateTimeFormatter TRAINING_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     
@@ -113,22 +114,22 @@ public class QuestionTrainingPanel {
     
     private static final int COL_ANSWER_ID = 8;
     
-    private static final int COL_ENABLE = 9;
-    
-    private static final int COL_TRAINING_STATUS = 10;
-    
-    private static final int COL_SUBMIT_TRAINING_TIME = 11;
-    
-    private static final int COL_START_TRAINING_TIME = 12;
-    
-    private static final int COL_LAST_TRAINING_TIME = 13;
-    
-    private static final int COL_TRAINING_COST = 14;
-    
-    private static final int COL_AUTO_TRAINING = 15;
-    
+    private static final int COL_AUTO_TRAINING = 9;
+
+    private static final int COL_TRAINING_MODEL = 10;
+
+    private static final int COL_TRAINING_STATUS = 11;
+
+    private static final int COL_SUBMIT_TRAINING_TIME = 12;
+
+    private static final int COL_START_TRAINING_TIME = 13;
+
+    private static final int COL_LAST_TRAINING_TIME = 14;
+
+    private static final int COL_TRAINING_COST = 15;
+
     private static final int COL_REMARK = 16;
-    
+
     private static final int COL_ACTION = 17;
     
     private static final int ACTION_COLUMN_WIDTH = 260;
@@ -1012,7 +1013,7 @@ public class QuestionTrainingPanel {
             statusFilterCombo.addItem(statusText);
         }
         statusFilterCombo.setPreferredSize(new Dimension(126, 26));
-        statusFilterCombo.setToolTipText("按训练状态过滤问题列表（-2-默认；-1-待训练；0-成功；1-失败；2-同步回复成功；3-训练中；4-超时；5-同步回复失败）");
+        statusFilterCombo.setToolTipText("按训练状态过滤问题列表（-2-默认；-1-待训练；0-成功；1-失败；2-同步回复成功；3-训练中；4-超时；5-同步回复失败；6-训练已提交；7-训练中止）");
         statusFilterCombo.addActionListener(e -> onTrainingStatusFilterChanged());
         filterLeft.add(statusFilterCombo);
         JButton refreshBtn = ButtonFactory.createPill("查询", UiConstants.COLOR_SUCCESS, UiConstants.COLOR_SUCCESS_LIGHT);
@@ -1026,11 +1027,11 @@ public class QuestionTrainingPanel {
         resetBtn.setToolTipText("清空关键字并恢复分类 / 项目 / 用户 / 训练状态 / 自动训练为全部，回到第一页重新查询");
         resetBtn.addActionListener(e -> resetQuestionFilters());
         filterLeft.add(resetBtn);
-        JLabel moreConditionLink = new JLabel("<html><a href=\"#\">更多条件 &#9662;</a></html>");
+        JLabel moreConditionLink = new JLabel("<html><a href=\"#\">更多条件 &#9660;</a></html>");
         moreConditionLink.setToolTipText("展开 / 收起项目、用户筛选条件");
         moreConditionLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         final String expandedText = "<html><a href=\"#\">收起条件 &#9650;</a></html>";
-        final String collapsedText = "<html><a href=\"#\">更多条件 &#9662;</a></html>";
+        final String collapsedText = "<html><a href=\"#\">更多条件 &#9660;</a></html>";
         moreConditionLink.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -1057,14 +1058,14 @@ public class QuestionTrainingPanel {
         checkedCountLabel.setForeground(Color.GRAY);
         checkedCountLabel.setFont(UiConstants.FONT_SANS_11);
         filterRight.add(checkedCountLabel);
-        JButton exportQuestionBtn = ButtonFactory.createToolbar("导出");
-        exportQuestionBtn.setToolTipText("将当前筛选后的全部问题导出为 Excel 文件");
-        exportQuestionBtn.addActionListener(e -> exportQuestionsToExcel());
-        filterRight.add(exportQuestionBtn);
         JButton trainBtn = ButtonFactory.createPill("批量训练", UiConstants.COLOR_PRIMARY, UiConstants.COLOR_PRIMARY_LIGHT);
         trainBtn.setToolTipText("触发勾选问题的训练（点击表头复选框可全选当前页）");
         trainBtn.addActionListener(e -> triggerTrainingQuestions());
         filterRight.add(trainBtn);
+        JButton stopTrainBtn = ButtonFactory.createPill("停止训练", UiConstants.COLOR_DANGER, UiConstants.COLOR_DANGER_LIGHT);
+        stopTrainBtn.setToolTipText("停止勾选已提交或待训练问题的训练，仅「训练已提交 / 待训练」状态的问题可停止（点击表头复选框可全选当前页）");
+        stopTrainBtn.addActionListener(e -> batchStopTrainingQuestions());
+        filterRight.add(stopTrainBtn);
         JButton batchUpdateBtn = ButtonFactory.createPill("批量更新", UiConstants.COLOR_PRIMARY, UiConstants.COLOR_PRIMARY_LIGHT);
         batchUpdateBtn.setToolTipText("批量更新勾选问题的所属用户、训练参数与自动训练（点击表头复选框可全选当前页）");
         batchUpdateBtn.addActionListener(e -> batchUpdateUserQuestions());
@@ -1119,7 +1120,7 @@ public class QuestionTrainingPanel {
         questionTable.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         questionTable.setRowHeight(28);
         questionTable.getTableHeader().setReorderingAllowed(false);
-        int[] columnWidths = {AiQuestionMangerDialog.CHECK_COLUMN_WIDTH, 50, 280, 90, 120, 100, 150, 150, 90, 80, 90, 140, 140, 140, 100, 80, 110,
+        int[] columnWidths = {AiQuestionMangerDialog.CHECK_COLUMN_WIDTH, 50, 280, 90, 120, 100, 150, 150, 90, 80, 90, 90, 140, 140, 140, 100, 110,
                 ACTION_COLUMN_WIDTH};
         for (int i = 0; i < columnWidths.length; i++) {
             questionTable.getColumnModel().getColumn(i).setPreferredWidth(columnWidths[i]);
@@ -1144,17 +1145,18 @@ public class QuestionTrainingPanel {
         questionTable.getColumnModel().getColumn(COL_QUESTION).setCellEditor(questionTextEditor);
         questionTable.getColumnModel().getColumn(COL_ANSWER).setCellEditor(questionTextEditor);
         questionTable.getColumnModel().getColumn(COL_ANSWER_ID).setCellRenderer(new AiQuestionMangerDialog.AnswerIdCellRenderer());
-        questionTable.getColumnModel().getColumn(COL_ENABLE).setCellRenderer((table, value, isSelected, hasFocus, row, column) -> {
-            JLabel label = new JLabel(value.toString());
-            label.setHorizontalAlignment(SwingConstants.CENTER);
-            label.setForeground("开启".equals(value.toString()) ? UiConstants.COLOR_SUCCESS : Color.GRAY);
-            return label;
-        });
         questionTable.getColumnModel().getColumn(COL_TRAINING_STATUS).setCellRenderer((table, value, isSelected, hasFocus, row, column) -> {
             Integer status = (Integer) value;
             JLabel label = new JLabel(AiQuestionMangerDialog.trainingStatusText(status));
             label.setHorizontalAlignment(SwingConstants.CENTER);
             label.setForeground(AiQuestionMangerDialog.trainingStatusColor(status));
+            return label;
+        });
+        questionTable.getColumnModel().getColumn(COL_TRAINING_MODEL).setCellRenderer((table, value, isSelected, hasFocus, row, column) -> {
+            String trainingModel = value != null ? value.toString() : null;
+            JLabel label = new JLabel(AiQuestionMangerDialog.trainingModelText(trainingModel));
+            label.setHorizontalAlignment(SwingConstants.CENTER);
+            label.setForeground(AiQuestionMangerDialog.trainingModelColor(trainingModel));
             return label;
         });
         questionTable.getColumnModel().getColumn(COL_SUBMIT_TRAINING_TIME).setCellRenderer(dialog.centeredRenderer());
@@ -1237,6 +1239,11 @@ public class QuestionTrainingPanel {
                 }
             });
         }
+        JButton exportQuestionBtn = ButtonFactory.createToolbar("导出");
+        exportQuestionBtn.setToolTipText("将当前筛选后的全部问题导出为 Excel 文件");
+        exportQuestionBtn.addActionListener(e -> exportQuestionsToExcel());
+        sizePanel.add(exportQuestionBtn);
+        sizePanel.add(Box.createHorizontalStrut(8));
         sizePanel.add(new JLabel("每页："));
         sizePanel.add(pageSizeCombo);
         sizePanel.add(new JLabel("条"));
@@ -1712,18 +1719,20 @@ public class QuestionTrainingPanel {
         dialog.addFormRow(form, gbc, 9, new JLabel("开启训练："), new JLabel(question.isTrainingEnabled() ? "开启" : "不开启"));
         dialog.addFormRow(form, gbc, 10, new JLabel("训练状态："),
                 new JLabel(AiQuestionMangerDialog.trainingStatusText(question.getTrainingStatus())));
-        dialog.addFormRow(form, gbc, 11, new JLabel("训练触发时间："),
+        dialog.addFormRow(form, gbc, 11, new JLabel("训练模式："),
+                new JLabel(AiQuestionMangerDialog.trainingModelText(question.getTrainingModel())));
+        dialog.addFormRow(form, gbc, 12, new JLabel("训练触发时间："),
                 new JLabel(AiQuestionMangerDialog.formatEpochMillis(question.getInitTrainingTime())));
-        dialog.addFormRow(form, gbc, 12, new JLabel("训练提交时间："),
+        dialog.addFormRow(form, gbc, 13, new JLabel("训练提交时间："),
                 new JLabel(AiQuestionMangerDialog.formatEpochMillis(question.getSubmitTrainingTime())));
-        dialog.addFormRow(form, gbc, 13, new JLabel("开始训练时间："),
+        dialog.addFormRow(form, gbc, 14, new JLabel("开始训练时间："),
                 new JLabel(AiQuestionMangerDialog.formatEpochMillis(question.getStartTrainingTime())));
-        dialog.addFormRow(form, gbc, 14, new JLabel("完成训练时间："),
+        dialog.addFormRow(form, gbc, 15, new JLabel("完成训练时间："),
                 new JLabel(AiQuestionMangerDialog.formatEpochMillis(question.getLastTrainingTime())));
         String trainingCost = AiQuestionMangerDialog.trainingCostText(question);
-        dialog.addFormRow(form, gbc, 15, new JLabel("训练耗时："), new JLabel(trainingCost.isEmpty() ? "" : trainingCost + " 秒"));
-        dialog.addFormRow(form, gbc, 16, new JLabel("自动训练："), new JLabel(question.isAutoTrainingAllowed() ? "允许" : "不允许"));
-        dialog.addFormRow(form, gbc, 17, new JLabel("备注："),
+        dialog.addFormRow(form, gbc, 16, new JLabel("训练耗时："), new JLabel(trainingCost.isEmpty() ? "" : trainingCost + " 秒"));
+        dialog.addFormRow(form, gbc, 17, new JLabel("自动训练："), new JLabel(question.isAutoTrainingAllowed() ? "允许" : "不允许"));
+        dialog.addFormRow(form, gbc, 18, new JLabel("备注："),
                 AiQuestionMangerDialog.readonlyArea(AiQuestionMangerDialog.nullToEmpty(question.getRemark()), 3));
         JOptionPane.showMessageDialog(dialog, form, "问题详情", JOptionPane.PLAIN_MESSAGE);
     }
@@ -2103,6 +2112,126 @@ public class QuestionTrainingPanel {
         });
     }
     
+    /**
+     * 批量停止勾选问题的训练：仅「训练已提交 / 待训练」状态的问题可停止，其余状态跳过并在确认框中提示
+     */
+    private void batchStopTrainingQuestions() {
+        if (dialog.apiBusy) {
+            JOptionPane.showMessageDialog(dialog, "请等待当前操作完成", "提示", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        List<AiQuestion> checkedQuestions = tableModel.collectChecked(allQuestions);
+        if (checkedQuestions.isEmpty()) {
+            JOptionPane.showMessageDialog(dialog, "请先在列表中勾选要停止训练的问题（点击表头复选框可全选当前页）", "提示",
+                    JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        List<AiQuestion> stoppableQuestions = new ArrayList<>();
+        List<AiQuestion> skippedQuestions = new ArrayList<>();
+        for (AiQuestion question : checkedQuestions) {
+            Integer status = question.getTrainingStatus();
+            if (status != null && (status == AiQuestion.TRAINING_STATUS_SUBMITTED || status == AiQuestion.TRAINING_STATUS_PENDING)) {
+                stoppableQuestions.add(question);
+            } else {
+                skippedQuestions.add(question);
+            }
+        }
+        if (stoppableQuestions.isEmpty()) {
+            JOptionPane.showMessageDialog(dialog, "选中的 " + checkedQuestions.size() + " 条问题均不在「训练已提交 / 待训练」状态，无需停止训练。", "提示",
+                    JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        LinkedHashMap<String, List<Long>> envIdGroups = new LinkedHashMap<>();
+        for (AiQuestion question : stoppableQuestions) {
+            envIdGroups.computeIfAbsent(question.getEnvName(), key -> new ArrayList<>()).add(question.getId());
+        }
+        List<AiEnvConfig> targets = new ArrayList<>();
+        List<String> summaryLines = new ArrayList<>();
+        for (Map.Entry<String, List<Long>> entry : envIdGroups.entrySet()) {
+            AiEnvConfig envConfig = dialog.findEnvByName(entry.getKey());
+            if (envConfig == null) {
+                JOptionPane.showMessageDialog(dialog, "未找到问题所属环境配置 [" + AiQuestionMangerDialog.nullToEmpty(entry.getKey()) + "]", "错误",
+                        JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+            targets.add(envConfig);
+            summaryLines.add(" 环境 [" + envConfig.getEnvName() + "] " + entry.getValue().size() + " 条");
+        }
+        JPanel confirmPanel = new JPanel();
+        confirmPanel.setLayout(new BoxLayout(confirmPanel, BoxLayout.Y_AXIS));
+        confirmPanel.setBorder(new EmptyBorder(8, 12, 8, 12));
+        JLabel titleLabel = new JLabel("确定停止勾选的 " + stoppableQuestions.size() + " 条问题的训练吗？");
+        titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        confirmPanel.add(titleLabel);
+        for (String line : summaryLines) {
+            JLabel envLabel = new JLabel(line);
+            envLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            confirmPanel.add(envLabel);
+        }
+        if (!skippedQuestions.isEmpty()) {
+            int maxShown = 10;
+            List<String> lines = new ArrayList<>();
+            for (int i = 0; i < skippedQuestions.size() && i < maxShown; i++) {
+                AiQuestion question = skippedQuestions.get(i);
+                lines.add(" ID " + question.getId() + "（"
+                        + AiQuestionMangerDialog.trainingStatusText(question.getTrainingStatus()) + "）："
+                        + AiQuestionMangerDialog.abbreviate(question.getQuestion(), 30));
+            }
+            if (skippedQuestions.size() > maxShown) {
+                lines.add(" …等共 " + skippedQuestions.size() + " 条");
+            }
+            JLabel skippedLabel = new JLabel("另有 " + skippedQuestions.size() + " 条不在「训练已提交 / 待训练」状态，将被跳过：");
+            skippedLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            confirmPanel.add(Box.createVerticalStrut(8));
+            confirmPanel.add(skippedLabel);
+            for (String line : lines) {
+                JLabel skipLineLabel = new JLabel(line);
+                skipLineLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+                confirmPanel.add(skipLineLabel);
+            }
+        }
+        int confirm = JOptionPane.showConfirmDialog(dialog, confirmPanel, "确认停止训练", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        if (confirm != JOptionPane.YES_OPTION) {
+            return;
+        }
+        dialog.runApiTask("停止训练", () -> {
+            List<String> successDetails = new ArrayList<>();
+            List<String> errors = new ArrayList<>();
+            int successCount = 0;
+            for (AiEnvConfig envConfig : targets) {
+                List<Long> ids = envIdGroups.get(envConfig.getEnvName());
+                try {
+                    String message = AiQuestionApiClient.getInstance().stopTraining(envConfig, ids);
+                    successCount += ids.size();
+                    successDetails.add("环境 [" + envConfig.getEnvName() + "] " + ids.size() + " 条：" + message);
+                } catch (AiQuestionApiClient.AiApiException ex) {
+                    logger.error("环境 [{}] 停止训练失败", envConfig.getEnvName(), ex);
+                    errors.add("环境 [" + envConfig.getEnvName() + "]：" + ex.getMessage());
+                }
+            }
+            int successTotal = successCount;
+            return () -> {
+                if (errors.isEmpty()) {
+                    tableModel.clearChecked();
+                }
+                updateCheckControls();
+                dialog.invalidateLoadedData();
+                refreshQuestionTable();
+                if (errors.isEmpty()) {
+                    dialog.setStatus("停止训练成功：共 " + successTotal + " 条问题（" + String.join("；", successDetails) + "）", true);
+                } else if (successTotal > 0) {
+                    dialog.setStatus("停止训练部分成功：" + successTotal + " 条成功；" + String.join("；", errors), false);
+                    JOptionPane.showMessageDialog(dialog,
+                            "已成功停止 " + successTotal + " 条问题训练。\n\n以下环境停止失败：\n" + String.join("\n", errors), "停止训练结果",
+                            JOptionPane.WARNING_MESSAGE);
+                } else {
+                    dialog.setStatus("停止训练失败：" + String.join("；", errors), false);
+                    JOptionPane.showMessageDialog(dialog, "停止训练失败：\n" + String.join("\n", errors), "错误", JOptionPane.ERROR_MESSAGE);
+                }
+            };
+        });
+    }
+    
     // ────────── 批量操作 ──────────
     
     private void batchUpdateUserQuestions() {
@@ -2320,8 +2449,8 @@ public class QuestionTrainingPanel {
     
     private class QuestionTableModel extends AbstractTableModel {
         
-        private final String[] columns = {"选择", "ID", "问题", "分类", "所属用户", "所属项目", "训练参数", "固定回复", "回复ID", "开启训练",
-                "训练状态", "训练提交时间", "开始训练时间", "完成训练时间", "训练耗时(秒)", "自动训练", "备注", "操作"};
+        private final String[] columns = {"选择", "ID", "问题", "分类", "所属用户", "所属项目", "训练参数", "固定回复", "回复ID", "自动训练",
+                "训练模式", "训练状态", "训练提交时间", "开始训练时间", "完成训练时间", "训练耗时(秒)", "备注", "操作"};
         
         private final List<AiQuestion> questions = new ArrayList<>();
         
@@ -2454,13 +2583,13 @@ public class QuestionTrainingPanel {
                 case COL_TRAINING_PARAM -> AiQuestionMangerDialog.nullToEmpty(question.getTrainingParam());
                 case COL_ANSWER -> AiQuestionMangerDialog.nullToEmpty(question.getAnswer());
                 case COL_ANSWER_ID -> question.getAnswerId();
-                case COL_ENABLE -> question.isTrainingEnabled() ? "开启" : "不开启";
+                case COL_AUTO_TRAINING -> question.isAutoTrainingAllowed() ? "允许" : "不允许";
+                case COL_TRAINING_MODEL -> question.getTrainingModel();
                 case COL_TRAINING_STATUS -> question.getTrainingStatus();
                 case COL_SUBMIT_TRAINING_TIME -> AiQuestionMangerDialog.formatEpochMillisTime(question.getSubmitTrainingTime());
                 case COL_START_TRAINING_TIME -> AiQuestionMangerDialog.formatEpochMillisTime(question.getStartTrainingTime());
                 case COL_LAST_TRAINING_TIME -> AiQuestionMangerDialog.formatEpochMillisTime(question.getLastTrainingTime());
                 case COL_TRAINING_COST -> AiQuestionMangerDialog.trainingCostText(question);
-                case COL_AUTO_TRAINING -> question.isAutoTrainingAllowed() ? "允许" : "不允许";
                 case COL_REMARK -> AiQuestionMangerDialog.nullToEmpty(question.getRemark());
                 default -> "";
             };

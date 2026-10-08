@@ -37,6 +37,16 @@ public class AiQuestion {
     public static final int AUTO_TRAINING_NOT_ALLOWED = 1;
     
     /**
+     * 训练模式：自动
+     */
+    public static final String TRAINING_MODEL_AUTO = "Auto";
+    
+    /**
+     * 训练模式：手动
+     */
+    public static final String TRAINING_MODEL_MANUAL = "Manual";
+    
+    /**
      * 训练状态：默认
      */
     public static final int TRAINING_STATUS_INITIAL = -2;
@@ -80,6 +90,11 @@ public class AiQuestion {
      * 训练状态：训练已提交
      */
     public static final int TRAINING_STATUS_SUBMITTED = 6;
+    
+    /**
+     * 训练状态：训练中止
+     */
+    public static final int TRAINING_STATUS_STOPPED = 7;
     
     private Long id;
     
@@ -135,7 +150,7 @@ public class AiQuestion {
     private String trainingParam;
     
     /**
-     * 训练状态：-2-默认；-1-待训练；0-成功；1-失败；2-成功(同步回复)；3-训练中；4-超时；5-同步回复失败；6-训练已提交（接口返回数据，客户端仅展示）
+     * 训练状态：-2-默认；-1-待训练；0-成功；1-失败；2-成功(同步回复)；3-训练中；4-超时；5-同步回复失败；6-训练已提交；7-训练中止（接口返回数据，客户端仅展示）
      */
     private Integer trainingStatus;
     
@@ -173,6 +188,11 @@ public class AiQuestion {
      * 自动训练开关：0-允许；1-不允许，默认 0（允许）
      */
     private Integer allowAutoTraining = AUTO_TRAINING_ALLOWED;
+    
+    /**
+     * 训练模式：Auto-自动；Manual-手动（接口返回数据，客户端仅展示）
+     */
+    private String trainingModel;
     
     /**
      * 优先级别，越大越优先，默认 0

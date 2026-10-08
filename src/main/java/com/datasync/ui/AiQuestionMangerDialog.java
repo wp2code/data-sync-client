@@ -114,7 +114,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
      * 训练状态筛选项文字
      */
     private static final String[] TRAINING_STATUS_TEXTS = {"默认", "待训练", "成功", "失败", "同步回复成功", "训练中", "超时", "同步回复失败",
-            "训练已提交"};
+            "训练已提交", "训练中止"};
     
     // ── 共享字段（面板通过 dialog 引用访问）──
     
@@ -483,6 +483,30 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         }
         return TRAINING_STATUS_TEXTS[index];
     }
+
+    /**
+     * 训练模式展示文案：Auto-自动；Manual-手动；其余值原样展示
+     */
+    static String trainingModelText(String trainingModel) {
+        if (trainingModel == null || trainingModel.isBlank()) {
+            return "";
+        }
+        return switch (trainingModel) {
+            case com.datasync.model.AiQuestion.TRAINING_MODEL_AUTO -> "自动";
+            case com.datasync.model.AiQuestion.TRAINING_MODEL_MANUAL -> "手动";
+            default -> trainingModel;
+        };
+    }
+
+    /**
+     * 训练模式展示颜色：自动为主题色，手动为灰色
+     */
+    static Color trainingModelColor(String trainingModel) {
+        if (com.datasync.model.AiQuestion.TRAINING_MODEL_AUTO.equals(trainingModel)) {
+            return UiConstants.COLOR_PRIMARY;
+        }
+        return Color.GRAY;
+    }
     
     static Color trainingStatusColor(Integer status) {
         if (status == null) {
@@ -497,6 +521,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
                  com.datasync.model.AiQuestion.TRAINING_STATUS_SYNC_FAILED -> UiConstants.COLOR_DANGER;
             case com.datasync.model.AiQuestion.TRAINING_STATUS_RUNNING -> UiConstants.COLOR_PRIMARY;
             case com.datasync.model.AiQuestion.TRAINING_STATUS_SUBMITTED -> UiConstants.COLOR_LINK;
+            case com.datasync.model.AiQuestion.TRAINING_STATUS_STOPPED -> UiConstants.COLOR_TRAINING;
             default -> Color.GRAY;
         };
     }

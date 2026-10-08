@@ -46,6 +46,11 @@ public class AiEnvConfig {
     public static final String DEFAULT_TRAIN_API = "/pilot/training/knowledge/runBatchTraining";
     
     /**
+     * 停止训练接口默认路径
+     */
+    public static final String DEFAULT_STOP_TRAIN_API = "/pilot/training/knowledge/stopBatchTraining";
+    
+    /**
      * 批量更新用户接口默认路径
      */
     public static final String DEFAULT_UPDATE_USER_API = "/pilot/training/knowledge/batch-update";
@@ -121,6 +126,11 @@ public class AiEnvConfig {
      * 触发训练接口路径（问题列表选中问题后批量触发训练）
      */
     private String trainApi = DEFAULT_TRAIN_API;
+    
+    /**
+     * 停止训练接口路径（问题列表勾选问题后批量停止训练）
+     */
+    private String stopTrainApi = DEFAULT_STOP_TRAIN_API;
     
     /**
      * 批量更新用户接口路径（问题列表勾选问题后批量更新用户ID、训练参数与自动训练开关）

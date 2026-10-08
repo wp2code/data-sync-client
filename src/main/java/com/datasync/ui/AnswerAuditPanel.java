@@ -203,11 +203,11 @@ public class AnswerAuditPanel {
         answerResetBtn.setToolTipText("清空问题 / 回复关键字并恢复允许修改 / 来源训练 / 项目 / 用户为全部，回到第一页重新查询");
         answerResetBtn.addActionListener(e -> resetAnswerFilters());
         answerFilterLeft.add(answerResetBtn);
-        JLabel answerMoreConditionLink = new JLabel("<html><a href=\"#\">更多条件 &#9662;</a></html>");
+        JLabel answerMoreConditionLink = new JLabel("<html><a href=\"#\">更多条件 &#9660;</a></html>");
         answerMoreConditionLink.setToolTipText("展开 / 收起项目、用户筛选条件");
         answerMoreConditionLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         final String answerExpandedText = "<html><a href=\"#\">收起条件 &#9650;</a></html>";
-        final String answerCollapsedText = "<html><a href=\"#\">更多条件 &#9662;</a></html>";
+        final String answerCollapsedText = "<html><a href=\"#\">更多条件 &#9660;</a></html>";
         answerMoreConditionLink.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -234,10 +234,6 @@ public class AnswerAuditPanel {
         answerCheckedCountLabel.setForeground(Color.GRAY);
         answerCheckedCountLabel.setFont(UiConstants.FONT_SANS_11);
         answerFilterRight.add(answerCheckedCountLabel);
-        JButton exportAnswerBtn = ButtonFactory.createToolbar("导出");
-        exportAnswerBtn.setToolTipText("将当前筛选后的全部回复导出为 Excel 文件");
-        exportAnswerBtn.addActionListener(e -> exportAnswersToExcel());
-        answerFilterRight.add(exportAnswerBtn);
         JButton answerBatchUpdateBtn = ButtonFactory.createPill("批量更新", UiConstants.COLOR_PRIMARY, UiConstants.COLOR_PRIMARY_LIGHT);
         answerBatchUpdateBtn.setToolTipText("批量更新勾选回复的是否允许修改状态（点击表头复选框可全选当前页）");
         answerBatchUpdateBtn.addActionListener(e -> batchUpdateAnswers());
@@ -403,6 +399,11 @@ public class AnswerAuditPanel {
                 }
             });
         }
+        JButton exportAnswerBtn = ButtonFactory.createToolbar("导出");
+        exportAnswerBtn.setToolTipText("将当前筛选后的全部回复导出为 Excel 文件");
+        exportAnswerBtn.addActionListener(e -> exportAnswersToExcel());
+        sizePanel.add(exportAnswerBtn);
+        sizePanel.add(Box.createHorizontalStrut(8));
         sizePanel.add(new JLabel("每页："));
         sizePanel.add(answerPageSizeCombo);
         sizePanel.add(new JLabel("条"));
