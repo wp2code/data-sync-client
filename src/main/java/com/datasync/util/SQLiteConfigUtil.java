@@ -29,6 +29,8 @@ public class SQLiteConfigUtil {
     
     private static final String DB_URL;
     
+    private static final String GITHUB_PAT_PREFIX = "github_pat_";
+    
     static {
         // 获取程序所在目录，确保 data 目录创建在启动程序同一目录下
         String appDir;
@@ -164,7 +166,7 @@ public class SQLiteConfigUtil {
                 stmt.execute(CREATE_APP_CONFIG_TABLE_SQL);
                 ensureAiEnvConfigColumns(stmt);
                 seedDefaultAiEnv(stmt);
-//                seedDefaultAppConfig(stmt);
+                seedDefaultAppConfig(stmt);
             }
         } catch (Exception e) {
             logger.error("[SQLite] 初始化失败", e);
@@ -210,8 +212,7 @@ public class SQLiteConfigUtil {
      * 写入配置（不存在则插入，存在则更新）
      */
     public boolean setAppConfig(String key, String value) {
-        String sql = "INSERT INTO app_config (key, value) VALUES (?, ?) "
-                + "ON CONFLICT(key) DO UPDATE SET value = excluded.value";
+        String sql = "INSERT INTO app_config (key, value) VALUES (?, ?) " + "ON CONFLICT(key) DO UPDATE SET value = excluded.value";
         try (Connection conn = getConnection();
                 PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, key);
@@ -721,7 +722,7 @@ public class SQLiteConfigUtil {
             }
         }
     }
-
+    
     
     /**
      * 保证全局选中环境有效：无选中环境时自动选中第一个（旧库迁移 / 选中环境被删除后兜底）
@@ -733,6 +734,18 @@ public class SQLiteConfigUtil {
                     stmt.executeUpdate(
                             "UPDATE ai_env_config SET selected = 1 " + "WHERE id = (SELECT id FROM ai_env_config ORDER BY id ASC LIMIT 1)");
                 }
+            }
+        }
+    }
+    
+    /**
+     * 为 app_config 写入系统默认配置（仅当对应 key 尚不存在时插入，不会覆盖用户已设置的值）。 key 需与 {@link com.datasync.core.UpdateService#CONFIG_KEY_GITHUB_TOKEN} 保持一致。
+     */
+    private void seedDefaultAppConfig(Statement stmt) throws SQLException {
+        try (ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM app_config WHERE key = 'update.github.token'")) {
+            if (rs.next() && rs.getInt(1) == 0) {
+                stmt.executeUpdate("INSERT INTO app_config (key, value) VALUES "
+                        + "('update.github.token', GITHUB_PAT_PREFIX+'11ADBRNVI0LQE0DTmVUrRT_vSUEgbmCV7FtoivZcp5Qn0ROV2FQiHgrlsHL78snleUX6C5PYLC67TxMBFg')");
             }
         }
     }
