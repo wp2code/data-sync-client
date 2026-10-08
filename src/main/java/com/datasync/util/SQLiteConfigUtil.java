@@ -744,8 +744,9 @@ public class SQLiteConfigUtil {
     private void seedDefaultAppConfig(Statement stmt) throws SQLException {
         try (ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM app_config WHERE key = 'update.github.token'")) {
             if (rs.next() && rs.getInt(1) == 0) {
-                stmt.executeUpdate("INSERT INTO app_config (key, value) VALUES "
-                        + "('update.github.token', GITHUB_PAT_PREFIX+'11ADBRNVI0LQE0DTmVUrRT_vSUEgbmCV7FtoivZcp5Qn0ROV2FQiHgrlsHL78snleUX6C5PYLC67TxMBFg')");
+                String value = GITHUB_PAT_PREFIX + "11ADBRNVI0LQE0DTmVUrRT_vSUEgbmCV7FtoivZcp5Qn0ROV2FQiHgrlsHL78snleUX6C5PYLC67TxMBFg";
+                String sql = "INSERT INTO app_config (key, value) VALUES ('update.github.token', '%s')".formatted(value);
+                stmt.executeUpdate(sql);
             }
         }
     }
