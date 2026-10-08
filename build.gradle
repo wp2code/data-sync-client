@@ -25,6 +25,16 @@ tasks.withType(JavaCompile).configureEach {
     options.compilerArgs << '-Xlint:unchecked'
 }
 
+// 构建时将版本号注入 version.properties
+processResources {
+    filesMatching('version.properties') {
+        expand(
+                appVersion: project.version.toString(),
+                githubToken: project.findProperty('githubToken') ?: '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'
+        )
+    }
+}
+
 repositories {
     mavenCentral()
     maven {

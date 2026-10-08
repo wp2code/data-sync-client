@@ -1,7 +1,10 @@
 package com.datasync.ui;
 
 import java.awt.*;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.Locale;
+import java.util.Properties;
 
 /**
  * UI 常量集中管理，消除散落的魔法字符串和硬编码颜色/字体。
@@ -11,7 +14,7 @@ public final class UiConstants {
     private UiConstants() {
     }
     
-    public static final String VERSION = "v1.1.1";
+    public static final String VERSION = "v" + loadVersion();
     
     public static final String GITHUB_ADDR = "https://github.com/wp2code/data-sync-client";
     
@@ -153,6 +156,21 @@ public final class UiConstants {
             }
         }
         return "SansSerif";
+    }
+    
+    /**
+     * 从 classpath 下的 version.properties 读取构建版本号，读取失败时回退为 "unknown"
+     */
+    private static String loadVersion() {
+        try (InputStream is = UiConstants.class.getClassLoader().getResourceAsStream("version.properties")) {
+            if (is != null) {
+                Properties props = new Properties();
+                props.load(is);
+                return props.getProperty("app.version", "unknown");
+            }
+        } catch (IOException ignored) {
+        }
+        return "unknown";
     }
     
     // ─── 尺寸/超时 ───

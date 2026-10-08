@@ -45,6 +45,9 @@ public final class UpdateService {
     /** 上次自动检查时间配置键（epoch 毫秒，存于 app_config 表） */
     public static final String CONFIG_KEY_LAST_CHECK_TIME = "update.check.last.time";
 
+    /** GitHub Token 配置键（存于 app_config 表） */
+    public static final String CONFIG_KEY_GITHUB_TOKEN = "update.github.token";
+
     /** 自动检查间隔默认值：24 小时 */
     public static final int DEFAULT_CHECK_INTERVAL_HOURS = 24;
 
@@ -155,6 +158,38 @@ public final class UpdateService {
     }
 
     /**
+     * 获取 GitHub Token，用于 API 认证（提高速率限制）。
+     * 优先级：启动参数 -Ddatasync.update.githubToken &gt; app_config 表 &gt; version.properties 默认值
+     */
+    public static String getGitHubToken() {
+        // 1. 启动参数优先
+        String prop = System.getProperty("datasync.update.githubToken");
+        if (prop != null && !prop.isBlank()) {
+            return prop.trim();
+        }
+        // 2. app_config 表
+        String dbToken = com.datasync.util.SQLiteConfigUtil.getInstance()
+                .getAppConfig(CONFIG_KEY_GITHUB_TOKEN, "");
+        if (!dbToken.isBlank()) {
+            return dbToken.trim();
+        }
+        // 3. version.properties 默认值（构建时注入）
+        try (java.io.InputStream is = UpdateService.class.getClassLoader()
+                .getResourceAsStream("version.properties")) {
+            if (is != null) {
+                java.util.Properties props = new java.util.Properties();
+                props.load(is);
+                String token = props.getProperty("github.token", "");
+                if (!token.isBlank() && !"${githubToken}".equals(token)) {
+                    return token.trim();
+                }
+            }
+        } catch (java.io.IOException ignored) {
+        }
+        return "";
+    }
+
+    /**
      * 记录本次检查时间（每次实际检查后调用）。
      */
     public static void markChecked() {
@@ -170,6 +205,11 @@ public final class UpdateService {
         HttpRequest.Builder requestBuilder = HttpRequest.newBuilder(URI.create(LATEST_RELEASE_API))
                 .header("Accept", "application/vnd.github+json")
                 .header("User-Agent", "DataSync-Updater");
+        // 添加 Authorization 头（如果配置了 token）
+        String token = getGitHubToken();
+        if (!token.isBlank()) {
+            requestBuilder.header("Authorization", "Bearer " + token);
+        }
         HttpResponse<String> response = sendWithRetry(requestBuilder,
                 HttpResponse.BodyHandlers.ofString(), REQUEST_TIMEOUT, "查询最新 Release");
         if (response.statusCode() == 404) {
