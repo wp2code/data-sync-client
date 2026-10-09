@@ -130,11 +130,6 @@ public class AiQuestion {
     private String userId;
     
     /**
-     * 用户session（用户会话标识，接口可能返回该字段，但客户端不再展示与编辑）
-     */
-    private String userSession;
-    
-    /**
      * 备注（接口返回数据，客户端仅展示，不提供录入与编辑入口）
      */
     private String remark;
@@ -148,6 +143,11 @@ public class AiQuestion {
      * 训练参数
      */
     private String trainingParam;
+    
+    /**
+     * 训练批次号（接口返回数据，客户端仅展示与筛选）
+     */
+    private String trainingNo;
     
     /**
      * 训练状态：-2-默认；-1-待训练；0-成功；1-失败；2-成功(同步回复)；3-训练中；4-超时；5-同步回复失败；6-训练已提交；7-训练中止（接口返回数据，客户端仅展示）
