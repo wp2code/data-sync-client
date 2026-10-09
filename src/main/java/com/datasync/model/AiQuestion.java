@@ -145,7 +145,7 @@ public class AiQuestion {
     private String trainingParam;
     
     /**
-     * 训练批次号（接口返回数据，客户端仅展示与筛选）
+     * 批次号（接口返回数据，客户端仅展示与筛选）
      */
     private String trainingNo;
     

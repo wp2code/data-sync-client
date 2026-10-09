@@ -177,8 +177,6 @@ public class QuestionTrainingPanel {
     
     private JComboBox<String> autoTrainingFilterCombo;
     
-    private CustomTextField trainingNoFilterField;
-    
     private JComboBox<String> pageSizeCombo;
     
     private JTable questionTable;
@@ -610,12 +608,10 @@ public class QuestionTrainingPanel {
         String userFilter = selectedUserFilter();
         Set<Integer> statusFilter = selectedTrainingStatusFilter();
         Integer autoTrainingFilter = selectedAutoTrainingFilter();
-        String trainingNoFilter = selectedTrainingNoFilter();
         List<AiQuestion> filtered = new ArrayList<>();
         for (AiQuestion item : allQuestions) {
             if (matchesKeyword(item, keyword) && matchesClassify(item, classifyFilter) && matchesProject(item, projectFilter) && matchesUserFilter(
-                    item, userFilter) && matchesTrainingStatus(item, statusFilter) && matchesAutoTraining(item, autoTrainingFilter) && matchesTrainingNo(
-                    item, trainingNoFilter)) {
+                    item, userFilter) && matchesTrainingStatus(item, statusFilter) && matchesAutoTraining(item, autoTrainingFilter)) {
                 filtered.add(item);
             }
         }
@@ -984,8 +980,9 @@ public class QuestionTrainingPanel {
         JPanel filterRight = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 2));
         JPanel filterRow2 = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
         filterRow2.setVisible(false);
-        searchField = new CustomTextField("输入关键字模糊查询");
+        searchField = new CustomTextField("模糊匹配问题/批次号");
         searchField.setMinWidth(200);
+        searchField.setToolTipText("按关键字模糊匹配问题、分类、批次号");
         searchField.getDocument().addDocumentListener(new DocumentListener() {
             @Override
             public void insertUpdate(DocumentEvent e) {
@@ -1038,11 +1035,11 @@ public class QuestionTrainingPanel {
         });
         filterLeft.add(refreshBtn);
         JButton resetBtn = ButtonFactory.createPill("重置", UiConstants.COLOR_NEUTRAL, UiConstants.COLOR_NEUTRAL_LIGHT);
-        resetBtn.setToolTipText("清空关键字与批次号并恢复分类 / 项目 / 用户 / 训练状态 / 自动训练为全部，回到第一页重新查询");
+        resetBtn.setToolTipText("清空关键字并恢复分类 / 项目 / 用户 / 训练状态 / 自动训练为全部，回到第一页重新查询");
         resetBtn.addActionListener(e -> resetQuestionFilters());
         filterLeft.add(resetBtn);
         JLabel moreConditionLink = new JLabel("<html><a href=\"#\">更多条件 &#9660;</a></html>");
-        moreConditionLink.setToolTipText("展开 / 收起项目、用户、自动训练与批次号筛选条件");
+        moreConditionLink.setToolTipText("展开 / 收起项目、用户、自动训练筛选条件");
         moreConditionLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         final String expandedText = "<html><a href=\"#\">收起条件 &#9650;</a></html>";
         final String collapsedText = "<html><a href=\"#\">更多条件 &#9660;</a></html>";
@@ -1125,27 +1122,6 @@ public class QuestionTrainingPanel {
             }
         });
         filterRow2.add(autoTrainingFilterCombo);
-        filterRow2.add(new JLabel("批次号："));
-        trainingNoFilterField = new CustomTextField("输入批次号");
-        trainingNoFilterField.setMinWidth(140);
-        trainingNoFilterField.setToolTipText("按训练批次号模糊过滤问题列表");
-        trainingNoFilterField.getDocument().addDocumentListener(new DocumentListener() {
-            @Override
-            public void insertUpdate(DocumentEvent e) {
-                onTrainingNoFilterChanged();
-            }
-            
-            @Override
-            public void removeUpdate(DocumentEvent e) {
-                onTrainingNoFilterChanged();
-            }
-            
-            @Override
-            public void changedUpdate(DocumentEvent e) {
-                onTrainingNoFilterChanged();
-            }
-        });
-        filterRow2.add(trainingNoFilterField);
         toolbar.add(filterRow2, BorderLayout.SOUTH);
         panel.add(toolbar, BorderLayout.NORTH);
         
@@ -1180,6 +1156,7 @@ public class QuestionTrainingPanel {
         AiQuestionMangerDialog.SelectableTextEditor questionTextEditor = new AiQuestionMangerDialog.SelectableTextEditor();
         questionTable.getColumnModel().getColumn(COL_QUESTION).setCellEditor(questionTextEditor);
         questionTable.getColumnModel().getColumn(COL_ANSWER).setCellEditor(questionTextEditor);
+        questionTable.getColumnModel().getColumn(COL_TRAINING_NO).setCellEditor(questionTextEditor);
         questionTable.getColumnModel().getColumn(COL_ANSWER_ID).setCellRenderer(new AiQuestionMangerDialog.AnswerIdCellRenderer());
         questionTable.getColumnModel().getColumn(COL_TRAINING_STATUS).setCellRenderer((table, value, isSelected, hasFocus, row, column) -> {
             Integer status = (Integer) value;
@@ -1323,7 +1300,7 @@ public class QuestionTrainingPanel {
                 deleteQuestion(question);
             }
         } else if (e.getClickCount() == 2) {
-            if (column != COL_QUESTION && column != COL_ANSWER) {
+            if (column != COL_QUESTION && column != COL_ANSWER && column != COL_TRAINING_NO) {
                 editQuestion(question);
             }
         }
@@ -1458,12 +1435,10 @@ public class QuestionTrainingPanel {
         String userFilter = selectedUserFilter();
         Set<Integer> statusFilter = selectedTrainingStatusFilter();
         Integer autoTrainingFilter = selectedAutoTrainingFilter();
-        String trainingNoFilter = selectedTrainingNoFilter();
         List<AiQuestion> filtered = new ArrayList<>();
         for (AiQuestion item : allQuestions) {
             if (matchesKeyword(item, keyword) && matchesClassify(item, classifyFilter) && matchesProject(item, projectFilter) && matchesUserFilter(
-                    item, userFilter) && matchesTrainingStatus(item, statusFilter) && matchesAutoTraining(item, autoTrainingFilter) && matchesTrainingNo(
-                    item, trainingNoFilter)) {
+                    item, userFilter) && matchesTrainingStatus(item, statusFilter) && matchesAutoTraining(item, autoTrainingFilter)) {
                 filtered.add(item);
             }
         }
@@ -1631,7 +1606,6 @@ public class QuestionTrainingPanel {
             projectFilterCombo.setSelectedItem(ALL_PROJECT);
             userFilterCombo.setSelectedItem(ALL_USER);
             autoTrainingFilterCombo.setSelectedItem(ALL_AUTO_TRAINING);
-            trainingNoFilterField.setText("");
         } finally {
             suppressClassifyEvents = false;
             suppressProjectFilterEvents = false;
@@ -1685,33 +1659,8 @@ public class QuestionTrainingPanel {
         }
         String questionText = AiQuestionMangerDialog.nullToEmpty(question.getQuestion()).toLowerCase();
         String classifyText = AiQuestionMangerDialog.nullToEmpty(question.getQuestionClassify()).toLowerCase();
-        return questionText.contains(keyword) || classifyText.contains(keyword);
-    }
-    
-    private void onTrainingNoFilterChanged() {
-        if (suppressQuestionFilterEvents) {
-            return;
-        }
-        currentPage = 1;
-        applyLocalFilterAndPaging();
-    }
-    
-    /**
-     * 当前批次号筛选关键字（未填写时返回 null，不参与筛选）
-     */
-    private String selectedTrainingNoFilter() {
-        if (trainingNoFilterField == null) {
-            return null;
-        }
-        String text = trainingNoFilterField.getText();
-        return text == null || text.trim().isEmpty() ? null : text.trim().toLowerCase();
-    }
-    
-    private boolean matchesTrainingNo(AiQuestion question, String trainingNoFilter) {
-        if (trainingNoFilter == null) {
-            return true;
-        }
-        return AiQuestionMangerDialog.nullToEmpty(question.getTrainingNo()).toLowerCase().contains(trainingNoFilter);
+        String trainingNoText = AiQuestionMangerDialog.nullToEmpty(question.getTrainingNo()).toLowerCase();
+        return questionText.contains(keyword) || classifyText.contains(keyword) || trainingNoText.contains(keyword);
     }
     
     private void gotoPage(int page) {
@@ -1785,8 +1734,8 @@ public class QuestionTrainingPanel {
         dialog.addFormRow(form, gbc, 10, new JLabel("训练状态："),
                 new JLabel(AiQuestionMangerDialog.trainingStatusText(question.getTrainingStatus())));
         dialog.addFormRow(form, gbc, 11, new JLabel("训练模式："), new JLabel(AiQuestionMangerDialog.trainingModelText(question.getTrainingModel())));
-        dialog.addFormRow(form, gbc, 12, new JLabel("训练批次号："),
-                new JLabel(AiQuestionMangerDialog.nullToEmpty(question.getTrainingNo())));
+        dialog.addFormRow(form, gbc, 12, new JLabel("批次号："), AiQuestionMangerDialog.readonlyField(
+                AiQuestionMangerDialog.nullToEmpty(question.getTrainingNo())));
         dialog.addFormRow(form, gbc, 13, new JLabel("训练触发时间："),
                 new JLabel(AiQuestionMangerDialog.formatEpochMillis(question.getInitTrainingTime())));
         dialog.addFormRow(form, gbc, 14, new JLabel("训练提交时间："),
@@ -2514,7 +2463,7 @@ public class QuestionTrainingPanel {
     
     private class QuestionTableModel extends AbstractTableModel {
         
-        private final String[] columns = {"选择", "ID", "问题", "分类", "所属用户", "所属项目", "训练参数", "训练批次号", "固定回复", "回复ID", "自动训练",
+        private final String[] columns = {"选择", "ID", "问题", "分类", "所属用户", "所属项目", "训练参数", "批次号", "固定回复", "回复ID", "自动训练",
                 "训练模式", "训练状态", "训练提交时间", "开始训练时间", "完成训练时间", "训练耗时(秒)", "备注", "操作"};
         
         private final List<AiQuestion> questions = new ArrayList<>();
@@ -2632,7 +2581,7 @@ public class QuestionTrainingPanel {
         
         @Override
         public boolean isCellEditable(int row, int column) {
-            return column == COL_QUESTION || column == COL_ANSWER;
+            return column == COL_QUESTION || column == COL_ANSWER || column == COL_TRAINING_NO;
         }
         
         @Override

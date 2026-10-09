@@ -52,7 +52,7 @@ public final class ExcelExportUtil {
     /**
      * 问题列表导出表头
      */
-    private static final String[] QUESTION_HEADERS = {"问题ID", "问题", "固定回复", "训练参数", "训练批次号", "所属用户", "所属项目", "分类", "训练开始时间",
+    private static final String[] QUESTION_HEADERS = {"问题ID", "问题", "固定回复", "训练参数", "批次号", "所属用户", "所属项目", "分类", "训练开始时间",
             "训练结束时间", "训练耗时（单位秒）", "备注", "回复ID"};
     
     /**
