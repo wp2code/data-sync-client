@@ -23,7 +23,6 @@ import java.io.File;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -86,7 +85,13 @@ public class QuestionTrainingPanel {
     
     private static final Comparator<AiQuestion> QUESTION_COMPARATOR = (a, b) -> {
         if (a.getUpdateTime() != null && b.getUpdateTime() != null) {
-            return a.getUpdateTime().compareTo(b.getUpdateTime());
+            return b.getUpdateTime().compareTo(a.getUpdateTime());
+        }
+        if (a.getUpdateTime() != null) {
+            return -1;
+        }
+        if (b.getUpdateTime() != null) {
+            return 1;
         }
         long idA = a.getId() != null ? a.getId() : 0L;
         long idB = b.getId() != null ? b.getId() : 0L;
@@ -220,6 +225,16 @@ public class QuestionTrainingPanel {
     private JButton pasteSaveBtn;
     
     private JButton importExcelBtn;
+    
+    /**
+     * 训练耗时查询弹窗（单实例复用）
+     */
+    private TrainingCastTimeDialog trainingCastTimeDialog;
+    
+    /**
+     * 分页栏实时训练耗时标签（弹窗自动刷新且批次训练进行中时展示）
+     */
+    private JLabel trainingCostLabel;
     
     // ────────── 构造 ──────────
     
@@ -678,6 +693,123 @@ public class QuestionTrainingPanel {
     
     // ────────── 上屏：批量粘贴录入 ──────────
     
+    // ────────── 训练耗时查询 ──────────
+    
+    /**
+     * 打开训练耗时查询弹窗（默认取最新批次号，按默认间隔自动开启自动刷新）
+     */
+    private void openTrainingCastTimeDialog() {
+        AiEnvConfig envConfig = dialog.envCombo.getSelectedItem() instanceof AiEnvConfig config ? config : null;
+        if (envConfig == null) {
+            JOptionPane.showMessageDialog(dialog, "请先在右上角选择环境", "提示", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        String latestTrainingNo = latestTrainingNo();
+        if (trainingCastTimeDialog == null || !trainingCastTimeDialog.isDisplayable()) {
+            trainingCastTimeDialog = new TrainingCastTimeDialog(dialog, envConfig, latestTrainingNo);
+        } else {
+            trainingCastTimeDialog.updateEnvConfig(envConfig);
+        }
+        trainingCastTimeDialog.setBatchInProgressChecker(this::isBatchTrainingInProgress);
+        trainingCastTimeDialog.setAutoRefreshListener(new TrainingCastTimeDialog.AutoRefreshListener() {
+            
+            @Override
+            public void onAutoRefreshed(String trainingNo, AiQuestionApiClient.TrainingCastTime castTime) {
+                // 训练未完成时在分页栏实时展示（finishTraining=false 表示批次仍在训练）；maxLastTime 缺失时展示统计中占位
+                if (!castTime.finishTraining()) {
+                    if (castTime.maxLastTime() > 0) {
+                        trainingCostLabel.setText("批次 [" + trainingNo + "] 训练耗时：" + formatCastTime(castTime));
+                    } else {
+                        trainingCostLabel.setText("批次 [" + trainingNo + "] 训练耗时统计中…");
+                    }
+                    trainingCostLabel.setVisible(true);
+                } else {
+                    trainingCostLabel.setVisible(false);
+                }
+            }
+            
+            @Override
+            public void onAutoRefreshStopped(String trainingNo) {
+                trainingCostLabel.setVisible(false);
+            }
+        });
+        trainingCastTimeDialog.beginAutoRefresh(latestTrainingNo);
+        trainingCastTimeDialog.setVisible(true);
+        trainingCastTimeDialog.toFront();
+    }
+    
+    /**
+     * 获取最新批次号：取已加载问题中更新时间最新（其次 ID 最大）的有批次号问题，无批次号时返回 null
+     */
+    private String latestTrainingNo() {
+        AiQuestion latest = null;
+        for (AiQuestion question : allQuestions) {
+            if (question.getTrainingNo() == null || question.getTrainingNo().isBlank()) {
+                continue;
+            }
+            if (latest == null || isNewerThan(question, latest)) {
+                latest = question;
+            }
+        }
+        return latest != null ? latest.getTrainingNo().trim() : null;
+    }
+    
+    /**
+     * 判断批次下是否存在进行中的训练（待训练 / 训练中 / 训练已提交，仅这些状态触发自动刷新）
+     */
+    private boolean isBatchTrainingInProgress(String trainingNo) {
+        for (AiQuestion question : allQuestions) {
+            if (trainingNo.equals(question.getTrainingNo() == null ? "" : question.getTrainingNo().trim()) && isTrainingInProgress(question)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    /**
+     * 判断问题训练是否进行中（待训练 / 训练中 / 训练已提交）
+     */
+    private boolean isTrainingInProgress(AiQuestion question) {
+        Integer status = question.getTrainingStatus();
+        return status != null && (status == AiQuestion.TRAINING_STATUS_PENDING || status == AiQuestion.TRAINING_STATUS_RUNNING
+                || status == AiQuestion.TRAINING_STATUS_SUBMITTED);
+    }
+    
+    /**
+     * 训练耗时格式化：毫秒差值换算为秒，超过 1 分时附加多单位换算（分 / 小时）
+     */
+    private String formatCastTime(AiQuestionApiClient.TrainingCastTime castTime) {
+        long millis = Math.max(0, castTime.maxLastTime() - castTime.minInitTime());
+        long seconds = millis / 1000;
+        if (seconds < 60) {
+            return seconds + " 秒";
+        }
+        long hours = seconds / 3600;
+        long minutes = (seconds % 3600) / 60;
+        long secs = seconds % 60;
+        StringBuilder text = new StringBuilder(seconds + " 秒（");
+        if (hours > 0) {
+            text.append(hours).append(" 小时 ");
+        }
+        if (hours > 0 || minutes > 0) {
+            text.append(minutes).append(" 分 ");
+        }
+        text.append(secs).append(" 秒）");
+        return text.toString();
+    }
+    
+    /**
+     * 判断问题 a 是否比 b 更新（更新时间优先，其次问题 ID）
+     */
+    private boolean isNewerThan(AiQuestion a, AiQuestion b) {
+        if (a.getUpdateTime() != null && b.getUpdateTime() != null) {
+            return a.getUpdateTime().isAfter(b.getUpdateTime());
+        }
+        long idA = a.getId() != null ? a.getId() : 0L;
+        long idB = b.getId() != null ? b.getId() : 0L;
+        return idA > idB;
+    }
+    
     private JComponent buildPasteEntryPanel() {
         JPanel panel = new JPanel(new BorderLayout(0, 6));
         panel.setBorder(new EmptyBorder(8, 10, 8, 10));
@@ -1035,7 +1167,7 @@ public class QuestionTrainingPanel {
         });
         filterLeft.add(refreshBtn);
         JButton resetBtn = ButtonFactory.createPill("重置", UiConstants.COLOR_NEUTRAL, UiConstants.COLOR_NEUTRAL_LIGHT);
-        resetBtn.setToolTipText("清空关键字并恢复分类 / 项目 / 用户 / 训练状态 / 自动训练为全部，回到第一页重新查询");
+        resetBtn.setToolTipText("清空关键字并恢复分类 / 项目 / 用户 / 训练状态 / 自动训练为全部，同时清空勾选，回到第一页重新查询");
         resetBtn.addActionListener(e -> resetQuestionFilters());
         filterLeft.add(resetBtn);
         JLabel moreConditionLink = new JLabel("<html><a href=\"#\">更多条件 &#9660;</a></html>");
@@ -1070,11 +1202,11 @@ public class QuestionTrainingPanel {
         checkedCountLabel.setFont(UiConstants.FONT_SANS_11);
         filterRight.add(checkedCountLabel);
         JButton trainBtn = ButtonFactory.createPill("批量训练", UiConstants.COLOR_PRIMARY, UiConstants.COLOR_PRIMARY_LIGHT);
-        trainBtn.setToolTipText("触发勾选问题的训练（点击表头复选框可全选当前页）");
+        trainBtn.setToolTipText("触发勾选问题的训练，「训练中 / 训练已提交」状态的问题不允许再次触发（点击表头复选框可全选当前页）");
         trainBtn.addActionListener(e -> triggerTrainingQuestions());
         filterRight.add(trainBtn);
         JButton stopTrainBtn = ButtonFactory.createPill("停止训练", UiConstants.COLOR_DANGER, UiConstants.COLOR_DANGER_LIGHT);
-        stopTrainBtn.setToolTipText("停止勾选已提交或待训练问题的训练，仅「训练已提交 / 待训练」状态的问题可停止（点击表头复选框可全选当前页）");
+        stopTrainBtn.setToolTipText("停止勾选问题的训练，仅「待训练 / 训练中 / 训练已提交」状态的问题可停止，其余状态自动跳过（点击表头复选框可全选当前页）");
         stopTrainBtn.addActionListener(e -> batchStopTrainingQuestions());
         filterRight.add(stopTrainBtn);
         JButton batchUpdateBtn = ButtonFactory.createPill("批量更新", UiConstants.COLOR_PRIMARY, UiConstants.COLOR_PRIMARY_LIGHT);
@@ -1106,6 +1238,7 @@ public class QuestionTrainingPanel {
         userFilterCombo.setToolTipText("按用户过滤问题列表，选项来自当前环境用户列表");
         userFilterCombo.addActionListener(e -> {
             if (!suppressUserFilterEvents) {
+                resetCheckedForListRefresh();
                 currentPage = 1;
                 applyLocalFilterAndPaging();
             }
@@ -1117,6 +1250,7 @@ public class QuestionTrainingPanel {
         autoTrainingFilterCombo.setToolTipText("按自动训练状态过滤问题列表");
         autoTrainingFilterCombo.addActionListener(e -> {
             if (!suppressQuestionFilterEvents) {
+                resetCheckedForListRefresh();
                 currentPage = 1;
                 applyLocalFilterAndPaging();
             }
@@ -1236,6 +1370,11 @@ public class QuestionTrainingPanel {
         pageButtonsPanel.add(Box.createHorizontalStrut(12));
         pageButtonsPanel.add(totalLabel);
         pagePanel.add(pageButtonsPanel, BorderLayout.CENTER);
+        trainingCostLabel = new JLabel();
+        trainingCostLabel.setFont(UiConstants.FONT_SANS_11);
+        trainingCostLabel.setForeground(UiConstants.COLOR_PENDING);
+        trainingCostLabel.setVisible(false);
+        pagePanel.add(trainingCostLabel, BorderLayout.WEST);
         JPanel sizePanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 2));
         pageSizeCombo = new JComboBox<>(AiQuestionMangerDialog.DEFAULT_PAGE_SCOPE);
         pageSizeCombo.setEditable(true);
@@ -1252,6 +1391,11 @@ public class QuestionTrainingPanel {
                 }
             });
         }
+        JButton castTimeBtn = ButtonFactory.createToolbar("训练耗时");
+        castTimeBtn.setToolTipText("按批次号实时查询训练耗时（支持手动查询与自动刷新）");
+        castTimeBtn.addActionListener(e -> openTrainingCastTimeDialog());
+        sizePanel.add(castTimeBtn);
+        sizePanel.add(Box.createHorizontalStrut(8));
         JButton exportQuestionBtn = ButtonFactory.createToolbar("导出");
         exportQuestionBtn.setToolTipText("将当前筛选后的全部问题导出为 Excel 文件");
         exportQuestionBtn.addActionListener(e -> exportQuestionsToExcel());
@@ -1406,7 +1550,8 @@ public class QuestionTrainingPanel {
                 loadedStatusFilter = selectedTrainingStatusFilter();
                 allQuestions.clear();
                 allQuestions.addAll(loaded);
-                tableModel.retainChecked(allQuestions);
+                // 只要重新查询（重新加载列表），勾选状态一律重置
+                tableModel.clearChecked();
                 dialog.classifySuggestions = extractClassifies(allQuestions);
                 refreshPasteClassifySuggestions();
                 refreshClassifyFilterOptions();
@@ -1469,10 +1614,19 @@ public class QuestionTrainingPanel {
         return new ArrayList<>(classifies);
     }
     
+    /**
+     * 触发查询或筛选过滤列表时重置勾选状态（翻页 / 每页条数变化除外）
+     */
+    private void resetCheckedForListRefresh() {
+        tableModel.clearChecked();
+        updateCheckControls();
+    }
+    
     private void onClassifyFilterChanged() {
         if (suppressClassifyEvents) {
             return;
         }
+        resetCheckedForListRefresh();
         currentPage = 1;
         refreshQuestionTable();
     }
@@ -1545,6 +1699,7 @@ public class QuestionTrainingPanel {
         if (suppressProjectFilterEvents) {
             return;
         }
+        resetCheckedForListRefresh();
         currentPage = 1;
         refreshQuestionTable();
     }
@@ -1582,6 +1737,7 @@ public class QuestionTrainingPanel {
         if (suppressQuestionFilterEvents) {
             return;
         }
+        resetCheckedForListRefresh();
         currentPage = 1;
         refreshQuestionTable();
     }
@@ -1590,6 +1746,7 @@ public class QuestionTrainingPanel {
         if (suppressQuestionFilterEvents) {
             return;
         }
+        resetCheckedForListRefresh();
         currentPage = 1;
         refreshQuestionTable();
     }
@@ -1612,6 +1769,9 @@ public class QuestionTrainingPanel {
             suppressUserFilterEvents = false;
             suppressQuestionFilterEvents = false;
         }
+        // 筛选条件重置后，勾选的行（已选 N 条）也应一并清空
+        tableModel.clearChecked();
+        updateCheckControls();
         currentPage = 1;
         dialog.invalidateLoadedData();
         refreshQuestionTable();
@@ -1695,6 +1855,7 @@ public class QuestionTrainingPanel {
             return;
         }
         pageSize = size;
+        resetCheckedForListRefresh();
         currentPage = 1;
         refreshQuestionTable();
     }
@@ -1969,6 +2130,15 @@ public class QuestionTrainingPanel {
                     JOptionPane.WARNING_MESSAGE);
             return;
         }
+        // 训练中 / 训练已提交状态的问题不能再次触发训练
+        Integer trainingStatus = question.getTrainingStatus();
+        if (trainingStatus != null && (trainingStatus == AiQuestion.TRAINING_STATUS_RUNNING
+                || trainingStatus == AiQuestion.TRAINING_STATUS_SUBMITTED)) {
+            JOptionPane.showMessageDialog(dialog,
+                    "该问题处于「" + AiQuestionMangerDialog.trainingStatusText(trainingStatus) + "」状态，不允许再次触发训练（如需中止请使用「停止训练」）。",
+                    "提示", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
         AiEnvConfig envConfig = dialog.findEnvByName(question.getEnvName());
         if (envConfig == null) {
             JOptionPane.showMessageDialog(dialog, "未找到问题所属环境配置 [" + AiQuestionMangerDialog.nullToEmpty(question.getEnvName()) + "]",
@@ -2017,6 +2187,9 @@ public class QuestionTrainingPanel {
         });
     }
     
+    /**
+     * 批量触发勾选问题的训练：「训练中 / 训练已提交」状态的问题不允许再次触发，缺少所属用户的问题不允许触发
+     */
     private void triggerTrainingQuestions() {
         if (dialog.apiBusy) {
             JOptionPane.showMessageDialog(dialog, "请等待当前操作完成", "提示", JOptionPane.WARNING_MESSAGE);
@@ -2025,6 +2198,32 @@ public class QuestionTrainingPanel {
         List<AiQuestion> checkedQuestions = tableModel.collectChecked(allQuestions);
         if (checkedQuestions.isEmpty()) {
             JOptionPane.showMessageDialog(dialog, "请先在列表中勾选要触发训练的问题（点击表头复选框可全选当前页）", "提示",
+                    JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        // 训练中 / 训练已提交状态的问题不能再次触发训练
+        List<AiQuestion> trainingBusyQuestions = new ArrayList<>();
+        for (AiQuestion question : checkedQuestions) {
+            Integer status = question.getTrainingStatus();
+            if (status != null && (status == AiQuestion.TRAINING_STATUS_RUNNING || status == AiQuestion.TRAINING_STATUS_SUBMITTED)) {
+                trainingBusyQuestions.add(question);
+            }
+        }
+        if (!trainingBusyQuestions.isEmpty()) {
+            int maxShown = 10;
+            List<String> lines = new ArrayList<>();
+            for (int i = 0; i < trainingBusyQuestions.size() && i < maxShown; i++) {
+                AiQuestion question = trainingBusyQuestions.get(i);
+                lines.add(" ID " + question.getId() + "（" + AiQuestionMangerDialog.trainingStatusText(question.getTrainingStatus()) + "）："
+                        + AiQuestionMangerDialog.abbreviate(question.getQuestion(), 30));
+            }
+            if (trainingBusyQuestions.size() > maxShown) {
+                lines.add(" …等共 " + trainingBusyQuestions.size() + " 条");
+            }
+            JOptionPane.showMessageDialog(dialog,
+                    "选中的 " + checkedQuestions.size() + " 条问题中有 " + trainingBusyQuestions.size()
+                            + " 条处于「训练中 / 训练已提交」状态，不允许再次触发训练：\n"
+                            + String.join("\n", lines) + "\n\n请取消勾选这些问题（如需中止请先使用「停止训练」）后再触发训练。", "提示",
                     JOptionPane.WARNING_MESSAGE);
             return;
         }
@@ -2162,7 +2361,7 @@ public class QuestionTrainingPanel {
     }
     
     /**
-     * 批量停止勾选问题的训练：仅「训练已提交 / 待训练」状态的问题可停止，其余状态跳过并在确认框中提示
+     * 批量停止勾选问题的训练：仅「待训练 / 训练中 / 训练已提交」状态的问题可停止，其余状态跳过并在确认框中提示
      */
     private void batchStopTrainingQuestions() {
         if (dialog.apiBusy) {
@@ -2179,14 +2378,15 @@ public class QuestionTrainingPanel {
         List<AiQuestion> skippedQuestions = new ArrayList<>();
         for (AiQuestion question : checkedQuestions) {
             Integer status = question.getTrainingStatus();
-            if (status != null && (status == AiQuestion.TRAINING_STATUS_SUBMITTED || status == AiQuestion.TRAINING_STATUS_PENDING)) {
+            if (status != null && (status == AiQuestion.TRAINING_STATUS_PENDING || status == AiQuestion.TRAINING_STATUS_RUNNING
+                    || status == AiQuestion.TRAINING_STATUS_SUBMITTED)) {
                 stoppableQuestions.add(question);
             } else {
                 skippedQuestions.add(question);
             }
         }
         if (stoppableQuestions.isEmpty()) {
-            JOptionPane.showMessageDialog(dialog, "选中的 " + checkedQuestions.size() + " 条问题均不在「训练已提交 / 待训练」状态，无需停止训练。",
+            JOptionPane.showMessageDialog(dialog, "选中的 " + checkedQuestions.size() + " 条问题均不在「待训练 / 训练中 / 训练已提交」状态，无需停止训练。",
                     "提示", JOptionPane.WARNING_MESSAGE);
             return;
         }
@@ -2227,7 +2427,7 @@ public class QuestionTrainingPanel {
             if (skippedQuestions.size() > maxShown) {
                 lines.add(" …等共 " + skippedQuestions.size() + " 条");
             }
-            JLabel skippedLabel = new JLabel("另有 " + skippedQuestions.size() + " 条不在「训练已提交 / 待训练」状态，将被跳过：");
+            JLabel skippedLabel = new JLabel("另有 " + skippedQuestions.size() + " 条不在「待训练 / 训练中 / 训练已提交」状态，将被跳过：");
             skippedLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
             confirmPanel.add(Box.createVerticalStrut(8));
             confirmPanel.add(skippedLabel);
@@ -2500,16 +2700,6 @@ public class QuestionTrainingPanel {
                 }
             }
             return result;
-        }
-        
-        void retainChecked(Collection<AiQuestion> validQuestions) {
-            Set<String> validKeys = new HashSet<>();
-            for (AiQuestion question : validQuestions) {
-                if (question.getId() != null) {
-                    validKeys.add(checkKey(question));
-                }
-            }
-            checkedKeys.retainAll(validKeys);
         }
         
         void clearChecked() {

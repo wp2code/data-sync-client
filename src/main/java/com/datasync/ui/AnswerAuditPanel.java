@@ -19,7 +19,6 @@ import java.io.File;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -200,7 +199,7 @@ public class AnswerAuditPanel {
         answerSearchBtn.addActionListener(e -> triggerAnswerSearch());
         answerFilterLeft.add(answerSearchBtn);
         JButton answerResetBtn = ButtonFactory.createPill("重置", UiConstants.COLOR_NEUTRAL, UiConstants.COLOR_NEUTRAL_LIGHT);
-        answerResetBtn.setToolTipText("清空问题 / 回复关键字并恢复允许修改 / 来源训练 / 项目 / 用户为全部，回到第一页重新查询");
+        answerResetBtn.setToolTipText("清空问题 / 回复关键字并恢复允许修改 / 来源训练 / 项目 / 用户为全部，同时清空勾选，回到第一页重新查询");
         answerResetBtn.addActionListener(e -> resetAnswerFilters());
         answerFilterLeft.add(answerResetBtn);
         JLabel answerMoreConditionLink = new JLabel("<html><a href=\"#\">更多条件 &#9660;</a></html>");
@@ -253,6 +252,7 @@ public class AnswerAuditPanel {
         answerProjectFilterCombo.setToolTipText("按项目过滤回复列表，选项来自当前环境回复列表的项目名称");
         answerProjectFilterCombo.addActionListener(e -> {
             if (!suppressAnswerFilterEvents) {
+                resetAnswerCheckedForListRefresh();
                 answerCurrentPage = 1;
                 applyAnswerPaging();
             }
@@ -268,6 +268,7 @@ public class AnswerAuditPanel {
         answerUserFilterCombo.setToolTipText("按用户过滤回复列表，选项来自当前环境用户列表");
         answerUserFilterCombo.addActionListener(e -> {
             if (!suppressAnswerFilterEvents) {
+                resetAnswerCheckedForListRefresh();
                 answerCurrentPage = 1;
                 applyAnswerPaging();
             }
@@ -513,7 +514,8 @@ public class AnswerAuditPanel {
                 answersLoaded = true;
                 loadedAnswers.clear();
                 loadedAnswers.addAll(loaded);
-                answerTableModel.retainChecked(loadedAnswers);
+                // 只要重新查询（重新加载列表），勾选状态一律重置
+                answerTableModel.clearChecked();
                 refreshAnswerProjectFilterOptions();
                 if (loadError != null) {
                     dialog.setStatus(loadError, false);
@@ -587,6 +589,7 @@ public class AnswerAuditPanel {
             return;
         }
         answerPageSize = size;
+        resetAnswerCheckedForListRefresh();
         answerCurrentPage = 1;
         refreshAnswerTable();
     }
@@ -605,6 +608,14 @@ public class AnswerAuditPanel {
         if (answerCheckedCountLabel != null) {
             answerCheckedCountLabel.setText("已选 " + answerTableModel.getCheckedCount() + " 条");
         }
+    }
+    
+    /**
+     * 触发查询或筛选过滤列表时重置勾选状态（翻页 / 每页条数变化除外）
+     */
+    private void resetAnswerCheckedForListRefresh() {
+        answerTableModel.clearChecked();
+        updateAnswerCheckControls();
     }
     
     // ────────── 筛选项 ──────────
@@ -1283,16 +1294,6 @@ public class AnswerAuditPanel {
                 }
             }
             return result;
-        }
-        
-        void retainChecked(Collection<AiAnswer> validAnswers) {
-            Set<String> validKeys = new HashSet<>();
-            for (AiAnswer answer : validAnswers) {
-                if (answer.getId() != null) {
-                    validKeys.add(checkKey(answer));
-                }
-            }
-            checkedKeys.retainAll(validKeys);
         }
         
         void clearChecked() {

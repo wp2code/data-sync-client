@@ -56,6 +56,11 @@ public class AiEnvConfig {
     public static final String DEFAULT_UPDATE_USER_API = "/pilot/training/knowledge/batch-update";
     
     /**
+     * 训练耗时查询接口默认路径（按批次号 GET 查询训练开始 / 最新时间）
+     */
+    public static final String DEFAULT_TRAINING_CAST_TIME_API = "/pilot/training/knowledge/training-cast-time";
+    
+    /**
      * 问题回复详情查询接口默认路径（问题列表点击回复ID查询回复详情）
      */
     public static final String DEFAULT_ANSWER_INFO_API = "/pilot/training/knowledge/answer/info";
@@ -137,6 +142,11 @@ public class AiEnvConfig {
      */
     private String updateUserApi = DEFAULT_UPDATE_USER_API;
     
+    /**
+     * 训练耗时查询接口路径（问题列表按批次号查询训练耗时）
+     */
+    private String trainingCastTimeApi = DEFAULT_TRAINING_CAST_TIME_API;
+
     /**
      * 问题回复详情查询接口路径（问题列表点击回复ID查询回复详情）
      */

@@ -15,6 +15,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -198,7 +199,7 @@ public final class AiQuestionApiClient {
     }
     
     /**
-     * 批量停止勾选问题的训练（按问题 ID 列表提交，仅训练已提交 / 待训练状态的问题可停止）
+     * 批量停止勾选问题的训练（按问题 ID 列表提交，仅训练已提交 / 待训练状态的问题可停止，训练中不可中止）
      *
      * @return 成功时返回接口 message，失败时抛出异常
      */
@@ -380,6 +381,65 @@ public final class AiQuestionApiClient {
     // ────────── 私有方法 ──────────
     
     /**
+     * 按批次号查询训练耗时（GET 请求，trainingNo 以 URL 查询参数提交）
+     * <p>
+     * 响应为 {minInitTime, maxLastTime} 时间戳对象（兼容标准 {code, message, data} 包装响应，包装时取 data）。
+     *
+     * @param trainingNo 训练批次号
+     */
+    public TrainingCastTime getTrainingCastTime(AiEnvConfig env, String trainingNo) throws AiApiException {
+        String url = buildUrl(env, env.getTrainingCastTimeApi());
+        url += "?trainingNo=" + URLEncoder.encode(trainingNo, StandardCharsets.UTF_8);
+        String responseText = executeGet(env, url);
+        JsonNode root;
+        try {
+            logger.info("[AiApi] getTrainingCastTime responseText: {}", responseText);
+            root = objectMapper.readTree(responseText == null || responseText.isBlank() ? "{}" : responseText);
+        } catch (Exception e) {
+            throw new AiApiException("解析响应失败: " + abbreviate(responseText, 120));
+        }
+        // 兼容两种响应：标准包装（含 code 字段，校验后取 data）与裸对象（直接取根节点）
+        JsonNode payload = root.has("code") ? parseResponse(url, responseText).path("data") : root;
+        if (payload == null || !payload.isObject()) {
+            throw new AiApiException("响应数据格式异常: " + abbreviate(responseText, 120));
+        }
+        return new TrainingCastTime(payload.path("minInitTime").asLong(0), payload.path("maxLastTime").asLong(0),
+                payload.path("finishTraining").asBoolean(false));
+    }
+    
+    /**
+     * 执行 GET 请求，返回响应体文本（附加环境通用请求头）
+     */
+    private String executeGet(AiEnvConfig env, String url) throws AiApiException {
+        logger.debug("[AiApi] GET {}", url);
+        try {
+            HttpRequest.Builder requestBuilder = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(60)).GET();
+            applyEnvHeaders(requestBuilder, env);
+            HttpResponse<String> response = httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (response.statusCode() != 200) {
+                throw new AiApiException("HTTP " + response.statusCode() + " " + abbreviate(response.body(), 120));
+            }
+            return response.body();
+        } catch (AiApiException e) {
+            throw e;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AiApiException("请求被中断: " + url);
+        } catch (Exception e) {
+            throw new AiApiException("连接失败: " + e.getMessage() + " (" + url + ")");
+        }
+    }
+    
+    /**
+     * 训练耗时查询结果（时间戳，单位由接口约定；耗时 = maxLastTime - minInitTime）
+     *
+     * @param finishTraining 训练完成状态（true-完成；false-未完成，未完成时客户端自动开启自动刷新）
+     */
+    public record TrainingCastTime(long minInitTime, long maxLastTime, boolean finishTraining) {
+    
+    }
+    
+    /**
      * POST 请求并校验响应 code，成功返回 message（附加环境通用请求头）
      */
     private String postForMessage(AiEnvConfig env, String url, Object body) throws AiApiException {
@@ -405,17 +465,7 @@ public final class AiQuestionApiClient {
             HttpRequest.Builder requestBuilder = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(60))
                     .header("Content-Type", "application/json; charset=UTF-8")
                     .POST(HttpRequest.BodyPublishers.ofString(json, StandardCharsets.UTF_8));
-            // 附加环境通用请求头（Content-Type 系统已维护，跳过避免被覆盖）
-            Map<String, String> envHeaders = env != null ? env.parseHeaders() : Collections.emptyMap();
-            // WAF 会拦截 JDK 默认 User-Agent 导致连接被直接断开，显式声明默认值；环境已配置 User-Agent 时以环境配置为准
-            if (envHeaders.keySet().stream().noneMatch("User-Agent"::equalsIgnoreCase)) {
-                requestBuilder.header("User-Agent", DEFAULT_USER_AGENT);
-            }
-            for (Map.Entry<String, String> entry : envHeaders.entrySet()) {
-                if (!"Content-Type".equalsIgnoreCase(entry.getKey())) {
-                    requestBuilder.header(entry.getKey(), entry.getValue());
-                }
-            }
+            applyEnvHeaders(requestBuilder, env);
             HttpResponse<String> response = httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             if (response.statusCode() != 200) {
                 throw new AiApiException("HTTP " + response.statusCode() + " " + abbreviate(response.body(), 120));
@@ -428,6 +478,22 @@ public final class AiQuestionApiClient {
             throw new AiApiException("请求被中断: " + url);
         } catch (Exception e) {
             throw new AiApiException("连接失败: " + e.getMessage() + " (" + url + ")");
+        }
+    }
+    
+    /**
+     * 附加环境通用请求头（Content-Type 系统已维护，跳过避免被覆盖）
+     */
+    private void applyEnvHeaders(HttpRequest.Builder requestBuilder, AiEnvConfig env) {
+        Map<String, String> envHeaders = env != null ? env.parseHeaders() : Collections.emptyMap();
+        // WAF 会拦截 JDK 默认 User-Agent 导致连接被直接断开，显式声明默认值；环境已配置 User-Agent 时以环境配置为准
+        if (envHeaders.keySet().stream().noneMatch("User-Agent"::equalsIgnoreCase)) {
+            requestBuilder.header("User-Agent", DEFAULT_USER_AGENT);
+        }
+        for (Map.Entry<String, String> entry : envHeaders.entrySet()) {
+            if (!"Content-Type".equalsIgnoreCase(entry.getKey())) {
+                requestBuilder.header(entry.getKey(), entry.getValue());
+            }
         }
     }
     

@@ -118,6 +118,7 @@ public class SQLiteConfigUtil {
                 list_api    VARCHAR(256) DEFAULT '/pilot/training/knowledge/all-list',
                 train_api   VARCHAR(256) DEFAULT '/pilot/training/knowledge/runBatchTraining',
                 stop_train_api VARCHAR(256) DEFAULT '/pilot/training/knowledge/stopBatchTraining',
+                training_cast_time_api VARCHAR(256) DEFAULT '/pilot/training/knowledge/training-cast-time',
                 update_user_api VARCHAR(256) DEFAULT '/pilot/training/knowledge/batch-update',
                 answer_info_api VARCHAR(256) DEFAULT '/pilot/training/knowledge/answer/info',
                 answer_list_api VARCHAR(256) DEFAULT '/pilot/training/knowledge/answer/list',
@@ -593,7 +594,7 @@ public class SQLiteConfigUtil {
      * 新增 AI 问题保存环境配置（env_name 唯一）
      */
     public boolean saveAiEnvConfig(AiEnvConfig config) {
-        String sql = "INSERT INTO ai_env_config (env_name, host, save_api, update_api, delete_api, list_api, train_api, stop_train_api, update_user_api, answer_info_api, answer_list_api, answer_update_api, answer_delete_api, answer_source_info_api, user_list_api, project_list_api, headers, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO ai_env_config (env_name, host, save_api, update_api, delete_api, list_api, train_api, stop_train_api, training_cast_time_api, update_user_api, answer_info_api, answer_list_api, answer_update_api, answer_delete_api, answer_source_info_api, user_list_api, project_list_api, headers, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (Connection conn = getConnection();
                 PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, config.getEnvName());
@@ -604,16 +605,17 @@ public class SQLiteConfigUtil {
             ps.setString(6, valueOrDefault(config.getListApi(), AiEnvConfig.DEFAULT_LIST_API));
             ps.setString(7, valueOrDefault(config.getTrainApi(), AiEnvConfig.DEFAULT_TRAIN_API));
             ps.setString(8, valueOrDefault(config.getStopTrainApi(), AiEnvConfig.DEFAULT_STOP_TRAIN_API));
-            ps.setString(9, valueOrDefault(config.getUpdateUserApi(), AiEnvConfig.DEFAULT_UPDATE_USER_API));
-            ps.setString(10, valueOrDefault(config.getAnswerInfoApi(), AiEnvConfig.DEFAULT_ANSWER_INFO_API));
-            ps.setString(11, valueOrDefault(config.getAnswerListApi(), AiEnvConfig.DEFAULT_ANSWER_LIST_API));
-            ps.setString(12, valueOrDefault(config.getAnswerUpdateApi(), AiEnvConfig.DEFAULT_ANSWER_UPDATE_API));
-            ps.setString(13, valueOrDefault(config.getAnswerDeleteApi(), AiEnvConfig.DEFAULT_ANSWER_DELETE_API));
-            ps.setString(14, valueOrDefault(config.getAnswerSourceInfoApi(), AiEnvConfig.DEFAULT_ANSWER_SOURCE_INFO_API));
-            ps.setString(15, valueOrDefault(config.getUserListApi(), AiEnvConfig.DEFAULT_USER_LIST_API));
-            ps.setString(16, valueOrDefault(config.getProjectListApi(), AiEnvConfig.DEFAULT_PROJECT_LIST_API));
-            ps.setString(17, config.getHeaders());
-            ps.setString(18, config.getRemark());
+            ps.setString(9, valueOrDefault(config.getTrainingCastTimeApi(), AiEnvConfig.DEFAULT_TRAINING_CAST_TIME_API));
+            ps.setString(10, valueOrDefault(config.getUpdateUserApi(), AiEnvConfig.DEFAULT_UPDATE_USER_API));
+            ps.setString(11, valueOrDefault(config.getAnswerInfoApi(), AiEnvConfig.DEFAULT_ANSWER_INFO_API));
+            ps.setString(12, valueOrDefault(config.getAnswerListApi(), AiEnvConfig.DEFAULT_ANSWER_LIST_API));
+            ps.setString(13, valueOrDefault(config.getAnswerUpdateApi(), AiEnvConfig.DEFAULT_ANSWER_UPDATE_API));
+            ps.setString(14, valueOrDefault(config.getAnswerDeleteApi(), AiEnvConfig.DEFAULT_ANSWER_DELETE_API));
+            ps.setString(15, valueOrDefault(config.getAnswerSourceInfoApi(), AiEnvConfig.DEFAULT_ANSWER_SOURCE_INFO_API));
+            ps.setString(16, valueOrDefault(config.getUserListApi(), AiEnvConfig.DEFAULT_USER_LIST_API));
+            ps.setString(17, valueOrDefault(config.getProjectListApi(), AiEnvConfig.DEFAULT_PROJECT_LIST_API));
+            ps.setString(18, config.getHeaders());
+            ps.setString(19, config.getRemark());
             return ps.executeUpdate() > 0;
         } catch (SQLException e) {
             logger.error("[SQLite] 保存 AI 问题环境失败", e);
@@ -626,7 +628,7 @@ public class SQLiteConfigUtil {
      */
     public boolean updateAiEnvConfig(AiEnvConfig config) {
         String sql =
-                "UPDATE ai_env_config SET env_name = ?, host = ?, save_api = ?, update_api = ?, delete_api = ?, list_api = ?, train_api = ?, stop_train_api = ?, update_user_api = ?, "
+                "UPDATE ai_env_config SET env_name = ?, host = ?, save_api = ?, update_api = ?, delete_api = ?, list_api = ?, train_api = ?, stop_train_api = ?, training_cast_time_api = ?, update_user_api = ?, "
                         + "answer_info_api = ?, answer_list_api = ?, answer_update_api = ?, answer_delete_api = ?, answer_source_info_api = ?, user_list_api = ?, project_list_api = ?, headers = ?, remark = ?, update_time = CURRENT_TIMESTAMP WHERE id = ?";
         try (Connection conn = getConnection();
                 PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -638,17 +640,18 @@ public class SQLiteConfigUtil {
             ps.setString(6, valueOrDefault(config.getListApi(), AiEnvConfig.DEFAULT_LIST_API));
             ps.setString(7, valueOrDefault(config.getTrainApi(), AiEnvConfig.DEFAULT_TRAIN_API));
             ps.setString(8, valueOrDefault(config.getStopTrainApi(), AiEnvConfig.DEFAULT_STOP_TRAIN_API));
-            ps.setString(9, valueOrDefault(config.getUpdateUserApi(), AiEnvConfig.DEFAULT_UPDATE_USER_API));
-            ps.setString(10, valueOrDefault(config.getAnswerInfoApi(), AiEnvConfig.DEFAULT_ANSWER_INFO_API));
-            ps.setString(11, valueOrDefault(config.getAnswerListApi(), AiEnvConfig.DEFAULT_ANSWER_LIST_API));
-            ps.setString(12, valueOrDefault(config.getAnswerUpdateApi(), AiEnvConfig.DEFAULT_ANSWER_UPDATE_API));
-            ps.setString(13, valueOrDefault(config.getAnswerDeleteApi(), AiEnvConfig.DEFAULT_ANSWER_DELETE_API));
-            ps.setString(14, valueOrDefault(config.getAnswerSourceInfoApi(), AiEnvConfig.DEFAULT_ANSWER_SOURCE_INFO_API));
-            ps.setString(15, valueOrDefault(config.getUserListApi(), AiEnvConfig.DEFAULT_USER_LIST_API));
-            ps.setString(16, valueOrDefault(config.getProjectListApi(), AiEnvConfig.DEFAULT_PROJECT_LIST_API));
-            ps.setString(17, config.getHeaders());
-            ps.setString(18, config.getRemark());
-            ps.setLong(19, config.getId());
+            ps.setString(9, valueOrDefault(config.getTrainingCastTimeApi(), AiEnvConfig.DEFAULT_TRAINING_CAST_TIME_API));
+            ps.setString(10, valueOrDefault(config.getUpdateUserApi(), AiEnvConfig.DEFAULT_UPDATE_USER_API));
+            ps.setString(11, valueOrDefault(config.getAnswerInfoApi(), AiEnvConfig.DEFAULT_ANSWER_INFO_API));
+            ps.setString(12, valueOrDefault(config.getAnswerListApi(), AiEnvConfig.DEFAULT_ANSWER_LIST_API));
+            ps.setString(13, valueOrDefault(config.getAnswerUpdateApi(), AiEnvConfig.DEFAULT_ANSWER_UPDATE_API));
+            ps.setString(14, valueOrDefault(config.getAnswerDeleteApi(), AiEnvConfig.DEFAULT_ANSWER_DELETE_API));
+            ps.setString(15, valueOrDefault(config.getAnswerSourceInfoApi(), AiEnvConfig.DEFAULT_ANSWER_SOURCE_INFO_API));
+            ps.setString(16, valueOrDefault(config.getUserListApi(), AiEnvConfig.DEFAULT_USER_LIST_API));
+            ps.setString(17, valueOrDefault(config.getProjectListApi(), AiEnvConfig.DEFAULT_PROJECT_LIST_API));
+            ps.setString(18, config.getHeaders());
+            ps.setString(19, config.getRemark());
+            ps.setLong(20, config.getId());
             return ps.executeUpdate() > 0;
         } catch (SQLException e) {
             logger.error("[SQLite] 更新 AI 问题环境失败", e);
@@ -687,6 +690,8 @@ public class SQLiteConfigUtil {
         addColumnIfAbsent(stmt, "ai_env_config", "list_api", "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_LIST_API + "'");
         addColumnIfAbsent(stmt, "ai_env_config", "train_api", "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_TRAIN_API + "'");
         addColumnIfAbsent(stmt, "ai_env_config", "stop_train_api", "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_STOP_TRAIN_API + "'");
+        addColumnIfAbsent(stmt, "ai_env_config", "training_cast_time_api",
+                "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_TRAINING_CAST_TIME_API + "'");
         addColumnIfAbsent(stmt, "ai_env_config", "update_user_api", "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_UPDATE_USER_API + "'");
         addColumnIfAbsent(stmt, "ai_env_config", "answer_info_api", "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_ANSWER_INFO_API + "'");
         addColumnIfAbsent(stmt, "ai_env_config", "answer_list_api", "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_ANSWER_LIST_API + "'");
@@ -835,6 +840,7 @@ public class SQLiteConfigUtil {
         config.setListApi(valueOrDefault(rs.getString("list_api"), AiEnvConfig.DEFAULT_LIST_API));
         config.setTrainApi(valueOrDefault(rs.getString("train_api"), AiEnvConfig.DEFAULT_TRAIN_API));
         config.setStopTrainApi(valueOrDefault(rs.getString("stop_train_api"), AiEnvConfig.DEFAULT_STOP_TRAIN_API));
+        config.setTrainingCastTimeApi(valueOrDefault(rs.getString("training_cast_time_api"), AiEnvConfig.DEFAULT_TRAINING_CAST_TIME_API));
         config.setUpdateUserApi(valueOrDefault(rs.getString("update_user_api"), AiEnvConfig.DEFAULT_UPDATE_USER_API));
         config.setAnswerInfoApi(valueOrDefault(rs.getString("answer_info_api"), AiEnvConfig.DEFAULT_ANSWER_INFO_API));
         config.setAnswerListApi(valueOrDefault(rs.getString("answer_list_api"), AiEnvConfig.DEFAULT_ANSWER_LIST_API));

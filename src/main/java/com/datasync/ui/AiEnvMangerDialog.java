@@ -65,6 +65,8 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
     
     private JTextField stopTrainApiField;
     
+    private JTextField trainingCastTimeApiField;
+    
     private JTextField updateUserApiField;
     
     private JTextField answerInfoApiField;
@@ -203,6 +205,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         listApiField = new JTextField(28);
         trainApiField = new JTextField(28);
         stopTrainApiField = new JTextField(28);
+        trainingCastTimeApiField = new JTextField(28);
         updateUserApiField = new JTextField(28);
         answerInfoApiField = new JTextField(28);
         answerListApiField = new JTextField(28);
@@ -220,6 +223,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         listApiField.setFont(UiConstants.FONT_SANS_12);
         trainApiField.setFont(UiConstants.FONT_SANS_12);
         stopTrainApiField.setFont(UiConstants.FONT_SANS_12);
+        trainingCastTimeApiField.setFont(UiConstants.FONT_SANS_12);
         updateUserApiField.setFont(UiConstants.FONT_SANS_12);
         answerInfoApiField.setFont(UiConstants.FONT_SANS_12);
         answerListApiField.setFont(UiConstants.FONT_SANS_12);
@@ -288,18 +292,20 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         addFormRow(formPanel, gbc, 8, new JLabel("查询："), listApiField, exampleLink(LIST_EXAMPLE, listApiField));
         addFormRow(formPanel, gbc, 9, new JLabel("触发训练："), trainApiField, exampleLink(TRAIN_EXAMPLE, trainApiField));
         addFormRow(formPanel, gbc, 10, new JLabel("停止训练："), stopTrainApiField, exampleLink(STOP_TRAIN_EXAMPLE, stopTrainApiField));
-        addFormRow(formPanel, gbc, 11, new JLabel("批量更新接口："), updateUserApiField, exampleLink(UPDATE_USER_EXAMPLE, updateUserApiField));
-        addFormRow(formPanel, gbc, 12, new JLabel("回复详情查询："), answerInfoApiField, exampleLink(ANSWER_INFO_EXAMPLE, answerInfoApiField));
-        addFormGroupTitle(formPanel, gbc, 13, "公共接口");
-        addFormRow(formPanel, gbc, 14, new JLabel("获取用户列表："), userListApiField, exampleLink(USER_LIST_EXAMPLE, userListApiField));
-        addFormRow(formPanel, gbc, 15, new JLabel("获取项目列表："), projectListApiField, exampleLink(PROJECT_LIST_EXAMPLE, projectListApiField));
-        addFormGroupTitle(formPanel, gbc, 16, "回复审计接口");
-        addFormRow(formPanel, gbc, 17, new JLabel("回复列表："), answerListApiField, exampleLink(ANSWER_LIST_EXAMPLE, answerListApiField));
-        addFormRow(formPanel, gbc, 18, new JLabel("回复更新："), answerUpdateApiField, exampleLink(ANSWER_UPDATE_EXAMPLE, answerUpdateApiField));
-        addFormRow(formPanel, gbc, 19, new JLabel("回复删除："), answerDeleteApiField, exampleLink(ANSWER_DELETE_EXAMPLE, answerDeleteApiField));
-        addFormRow(formPanel, gbc, 20, new JLabel("问题来源查询："), answerSourceInfoApiField,
+        addFormRow(formPanel, gbc, 11, new JLabel("训练耗时查询："), trainingCastTimeApiField,
+                exampleLink(TRAINING_CAST_TIME_EXAMPLE, trainingCastTimeApiField));
+        addFormRow(formPanel, gbc, 12, new JLabel("批量更新："), updateUserApiField, exampleLink(UPDATE_USER_EXAMPLE, updateUserApiField));
+        addFormRow(formPanel, gbc, 13, new JLabel("回复详情查询："), answerInfoApiField, exampleLink(ANSWER_INFO_EXAMPLE, answerInfoApiField));
+        addFormGroupTitle(formPanel, gbc, 14, "公共接口");
+        addFormRow(formPanel, gbc, 15, new JLabel("获取用户列表："), userListApiField, exampleLink(USER_LIST_EXAMPLE, userListApiField));
+        addFormRow(formPanel, gbc, 16, new JLabel("获取项目列表："), projectListApiField, exampleLink(PROJECT_LIST_EXAMPLE, projectListApiField));
+        addFormGroupTitle(formPanel, gbc, 17, "回复审计接口");
+        addFormRow(formPanel, gbc, 18, new JLabel("回复列表："), answerListApiField, exampleLink(ANSWER_LIST_EXAMPLE, answerListApiField));
+        addFormRow(formPanel, gbc, 19, new JLabel("回复更新："), answerUpdateApiField, exampleLink(ANSWER_UPDATE_EXAMPLE, answerUpdateApiField));
+        addFormRow(formPanel, gbc, 20, new JLabel("回复删除："), answerDeleteApiField, exampleLink(ANSWER_DELETE_EXAMPLE, answerDeleteApiField));
+        addFormRow(formPanel, gbc, 21, new JLabel("问题来源查询："), answerSourceInfoApiField,
                 exampleLink(ANSWER_SOURCE_INFO_EXAMPLE, answerSourceInfoApiField));
-        addFormRow(formPanel, gbc, 21, new JLabel("备注："), remarkField);
+        addFormRow(formPanel, gbc, 22, new JLabel("备注："), remarkField);
         
         // 表单整体放入滚动面板：窗口高度不足时出现滚动条，内容与表格高度不被压缩
         JScrollPane formScrollPane = new JScrollPane(formPanel);
@@ -340,6 +346,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         listApiField.setText(valueOrDefault(env.getListApi()));
         trainApiField.setText(valueOrDefault(env.getTrainApi()));
         stopTrainApiField.setText(valueOrDefault(env.getStopTrainApi()));
+        trainingCastTimeApiField.setText(valueOrDefault(env.getTrainingCastTimeApi()));
         updateUserApiField.setText(valueOrDefault(env.getUpdateUserApi()));
         answerInfoApiField.setText(valueOrDefault(env.getAnswerInfoApi()));
         answerListApiField.setText(valueOrDefault(env.getAnswerListApi()));
@@ -371,6 +378,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         listApiField.setText(AiEnvConfig.DEFAULT_LIST_API);
         trainApiField.setText(AiEnvConfig.DEFAULT_TRAIN_API);
         stopTrainApiField.setText(AiEnvConfig.DEFAULT_STOP_TRAIN_API);
+        trainingCastTimeApiField.setText(AiEnvConfig.DEFAULT_TRAINING_CAST_TIME_API);
         updateUserApiField.setText(AiEnvConfig.DEFAULT_UPDATE_USER_API);
         answerInfoApiField.setText(AiEnvConfig.DEFAULT_ANSWER_INFO_API);
         answerListApiField.setText(AiEnvConfig.DEFAULT_ANSWER_LIST_API);
@@ -450,6 +458,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         config.setListApi(listApiField.getText().trim());
         config.setTrainApi(trainApiField.getText().trim());
         config.setStopTrainApi(stopTrainApiField.getText().trim());
+        config.setTrainingCastTimeApi(trainingCastTimeApiField.getText().trim());
         config.setUpdateUserApi(updateUserApiField.getText().trim());
         config.setAnswerInfoApi(answerInfoApiField.getText().trim());
         config.setAnswerListApi(answerListApiField.getText().trim());
@@ -952,7 +961,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
             """);
     
     /**
-     * 停止训练接口示例（questionIds 为勾选的问题 ID 列表，仅训练已提交 / 待训练状态的问题可停止）
+     * 停止训练接口示例（questionIds 为勾选的问题 ID 列表，仅待训练 / 训练中 / 训练已提交状态的问题可停止）
      */
     private static final ApiExample STOP_TRAIN_EXAMPLE = new ApiExample("停止训练", AiEnvConfig.DEFAULT_STOP_TRAIN_API, """
             {
@@ -965,6 +974,19 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
               "data": null
             }
             """);
+    
+    /**
+     * 训练耗时查询接口示例（trainingNo 以 URL 查询参数提交，响应返回该批次训练开始 / 最新时间戳）
+     */
+    private static final ApiExample TRAINING_CAST_TIME_EXAMPLE = new ApiExample("训练耗时查询", AiEnvConfig.DEFAULT_TRAINING_CAST_TIME_API, """
+            无请求体（GET 请求）
+            """, """
+            {
+              "minInitTime": 1791799342000,
+              "maxLastTime": 1791799347000,
+              "finishTraining": false
+            }
+            """, "?trainingNo=TR20261012001");
     
     /**
      * 批量更新问题接口示例（ids 为勾选的问题 ID 列表，userId / trainingParam 均可选，留空字段不提交保持原值）
