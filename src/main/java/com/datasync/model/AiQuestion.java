@@ -155,7 +155,7 @@ public class AiQuestion {
     private Integer trainingStatus;
     
     /**
-     * 开始训练时间（毫秒时间戳，接口返回数据，客户端展示时格式化为 yyyy-MM-dd HH:mm:ss）
+     * 训练开始时间（毫秒时间戳，接口返回数据，客户端展示时格式化为 yyyy-MM-dd HH:mm:ss）
      */
     private Long startTrainingTime;
     
@@ -170,7 +170,7 @@ public class AiQuestion {
     private Long initTrainingTime;
     
     /**
-     * 最近完成训练时间（毫秒时间戳，接口返回数据，客户端展示时格式化为 yyyy-MM-dd HH:mm:ss）
+     * 训练完成时间（毫秒时间戳，接口返回数据，客户端展示时格式化为 yyyy-MM-dd HH:mm:ss）
      */
     private Long lastTrainingTime;
     

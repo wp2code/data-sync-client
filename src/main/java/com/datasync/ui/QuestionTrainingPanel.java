@@ -1131,8 +1131,8 @@ public class QuestionTrainingPanel {
         questionTable.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         questionTable.setRowHeight(28);
         questionTable.getTableHeader().setReorderingAllowed(false);
-        int[] columnWidths = {AiQuestionMangerDialog.CHECK_COLUMN_WIDTH, 50, 280, 90, 120, 100, 150, 110, 150, 90, 80, 90, 90, 140, 140, 140, 100, 110,
-                ACTION_COLUMN_WIDTH};
+        int[] columnWidths = {AiQuestionMangerDialog.CHECK_COLUMN_WIDTH, 50, 280, 90, 120, 100, 150, 110, 150, 90, 80, 90, 90, 140, 140, 140, 100,
+                110, ACTION_COLUMN_WIDTH};
         for (int i = 0; i < columnWidths.length; i++) {
             questionTable.getColumnModel().getColumn(i).setPreferredWidth(columnWidths[i]);
         }
@@ -1734,15 +1734,15 @@ public class QuestionTrainingPanel {
         dialog.addFormRow(form, gbc, 10, new JLabel("训练状态："),
                 new JLabel(AiQuestionMangerDialog.trainingStatusText(question.getTrainingStatus())));
         dialog.addFormRow(form, gbc, 11, new JLabel("训练模式："), new JLabel(AiQuestionMangerDialog.trainingModelText(question.getTrainingModel())));
-        dialog.addFormRow(form, gbc, 12, new JLabel("批次号："), AiQuestionMangerDialog.readonlyField(
-                AiQuestionMangerDialog.nullToEmpty(question.getTrainingNo())));
+        dialog.addFormRow(form, gbc, 12, new JLabel("批次号："),
+                AiQuestionMangerDialog.readonlyField(AiQuestionMangerDialog.nullToEmpty(question.getTrainingNo())));
         dialog.addFormRow(form, gbc, 13, new JLabel("训练触发时间："),
                 new JLabel(AiQuestionMangerDialog.formatEpochMillis(question.getInitTrainingTime())));
         dialog.addFormRow(form, gbc, 14, new JLabel("训练提交时间："),
                 new JLabel(AiQuestionMangerDialog.formatEpochMillis(question.getSubmitTrainingTime())));
-        dialog.addFormRow(form, gbc, 15, new JLabel("开始训练时间："),
+        dialog.addFormRow(form, gbc, 15, new JLabel("训练开始时间："),
                 new JLabel(AiQuestionMangerDialog.formatEpochMillis(question.getStartTrainingTime())));
-        dialog.addFormRow(form, gbc, 16, new JLabel("完成训练时间："),
+        dialog.addFormRow(form, gbc, 16, new JLabel("训练完成时间："),
                 new JLabel(AiQuestionMangerDialog.formatEpochMillis(question.getLastTrainingTime())));
         String trainingCost = AiQuestionMangerDialog.trainingCostText(question);
         dialog.addFormRow(form, gbc, 17, new JLabel("训练耗时："), new JLabel(trainingCost.isEmpty() ? "" : trainingCost + " 秒"));
@@ -1984,27 +1984,31 @@ public class QuestionTrainingPanel {
         JLabel titleLabel = new JLabel("确定对该问题触发训练吗？");
         titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         confirmPanel.add(titleLabel);
-        JLabel envLabel = new JLabel("环境 [" + envConfig.getEnvName() + "] 问题ID " + question.getId());
+        JLabel envLabel = new JLabel("问题ID " + question.getId());
         envLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         confirmPanel.add(envLabel);
         JLabel questionCaptionLabel = new JLabel("问题：" + AiQuestionMangerDialog.nullToEmpty(question.getQuestion()));
         questionCaptionLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         confirmPanel.add(questionCaptionLabel);
-        JPanel agentPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
-        agentPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        agentPanel.add(new JLabel("智能体类型："));
-        agentPanel.add(agentTypeCombo);
+        // 仅展示智能体类型：单问题训练并发数固定为 1，不开放编辑
+        JPanel singleParamPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        singleParamPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        singleParamPanel.add(new JLabel("智能体类型："));
+        singleParamPanel.add(agentTypeCombo);
         confirmPanel.add(Box.createVerticalStrut(8));
-        confirmPanel.add(agentPanel);
-        int confirm = JOptionPane.showConfirmDialog(dialog, confirmPanel, "确认触发训练", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        confirmPanel.add(singleParamPanel);
+        int confirm = JOptionPane.showConfirmDialog(dialog, confirmPanel, "确认触发训练，环境 [" + envConfig.getEnvName() + "]",
+                JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
         if (confirm != JOptionPane.YES_OPTION) {
             return;
         }
+        // 单问题训练：并发数固定为 1，直接提交
+        final Integer concurrency = 1;
         String agentType = (String) agentTypeCombo.getSelectedItem();
         Long questionId = question.getId();
         String questionText = question.getQuestion();
         dialog.runApiTask("触发训练", () -> {
-            String message = AiQuestionApiClient.getInstance().triggerTraining(envConfig, List.of(questionId), agentType);
+            String message = AiQuestionApiClient.getInstance().triggerTraining(envConfig, List.of(questionId), agentType, concurrency);
             return () -> {
                 dialog.invalidateLoadedData();
                 refreshQuestionTable();
@@ -2050,19 +2054,21 @@ public class QuestionTrainingPanel {
         for (AiQuestion question : checkedQuestions) {
             envIdGroups.computeIfAbsent(question.getEnvName(), key -> new ArrayList<>()).add(question.getId());
         }
-        List<AiEnvConfig> targets = new ArrayList<>();
-        List<String> summaryLines = new ArrayList<>();
-        int selectedTotal = 0;
-        for (Map.Entry<String, List<Long>> entry : envIdGroups.entrySet()) {
-            AiEnvConfig envConfig = dialog.findEnvByName(entry.getKey());
-            if (envConfig == null) {
-                JOptionPane.showMessageDialog(dialog, "未找到问题所属环境配置 [" + AiQuestionMangerDialog.nullToEmpty(entry.getKey()) + "]", "错误",
-                        JOptionPane.ERROR_MESSAGE);
-                return;
-            }
-            targets.add(envConfig);
-            selectedTotal += entry.getValue().size();
-            summaryLines.add(" 环境 [" + envConfig.getEnvName() + "] " + entry.getValue().size() + " 条");
+        // 批量触发训练只支持单一环境：跨环境时拒绝并提示用户重新勾选
+        if (envIdGroups.size() > 1) {
+            JOptionPane.showMessageDialog(dialog, "选中的 " + checkedQuestions.size() + " 条问题跨 " + envIdGroups.size() + " 个环境，暂不支持同时触发。\n\n"
+                            + "请重新勾选，只保留同一环境的问题再触发训练。\n\n当前选中环境：\n" + String.join("、", envIdGroups.keySet()), "提示",
+                    JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        Map.Entry<String, List<Long>> onlyEntry = envIdGroups.entrySet().iterator().next();
+        String envName = onlyEntry.getKey();
+        List<Long> ids = onlyEntry.getValue();
+        AiEnvConfig envConfig = dialog.findEnvByName(envName);
+        if (envConfig == null) {
+            JOptionPane.showMessageDialog(dialog, "未找到问题所属环境配置 [" + AiQuestionMangerDialog.nullToEmpty(envName) + "]", "错误",
+                    JOptionPane.ERROR_MESSAGE);
+            return;
         }
         JComboBox<String> agentTypeCombo = new JComboBox<>(AGENT_TYPES);
         agentTypeCombo.setSelectedItem(DEFAULT_AGENT_TYPE);
@@ -2070,59 +2076,87 @@ public class QuestionTrainingPanel {
         JPanel confirmPanel = new JPanel();
         confirmPanel.setLayout(new BoxLayout(confirmPanel, BoxLayout.Y_AXIS));
         confirmPanel.setBorder(new EmptyBorder(8, 12, 8, 12));
-        JLabel titleLabel = new JLabel("确定触发训练勾选的 " + selectedTotal + " 条问题吗？");
+        JLabel titleLabel = new JLabel("确定触发" + ids.size() + " 条问题吗？");
         titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         confirmPanel.add(titleLabel);
-        for (String line : summaryLines) {
-            JLabel envLabel = new JLabel(line);
-            envLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-            confirmPanel.add(envLabel);
-        }
-        JPanel agentPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
-        agentPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        agentPanel.add(new JLabel("智能体类型："));
-        agentPanel.add(agentTypeCombo);
+        CustomTextField concurrencyField = new CustomTextField("留空走服务端默认");
+        concurrencyField.setToolTipText("请输入 ≥ 1 的整数；留空则不提交该字段。单条问题默认设为 1，其他情况由服务端决定");
+        // 数字框紧凑：默认 4 位整数够用，避免与下拉框宽度悬殊
+        concurrencyField.setMinWidth(80);
+        // 限制只允许输入数字（粘贴也会被过滤），提交时再校验 >= 1
+        ((javax.swing.text.AbstractDocument) concurrencyField.getDocument()).setDocumentFilter(new javax.swing.text.DocumentFilter() {
+            @Override
+            public void insertString(FilterBypass fb, int offset, String string, javax.swing.text.AttributeSet attr)
+                    throws javax.swing.text.BadLocationException {
+                if (string != null && string.matches("\\d*")) {
+                    super.insertString(fb, offset, string, attr);
+                }
+            }
+            
+            @Override
+            public void replace(FilterBypass fb, int offset, int length, String text, javax.swing.text.AttributeSet attrs)
+                    throws javax.swing.text.BadLocationException {
+                if (text == null || text.matches("\\d*")) {
+                    super.replace(fb, offset, length, text, attrs);
+                }
+            }
+        });
+        JPanel paramsPanel = new JPanel(new GridBagLayout());
+        paramsPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        GridBagConstraints pgbc = new GridBagConstraints();
+        pgbc.insets = new Insets(3, 2, 3, 6);
+        pgbc.anchor = GridBagConstraints.WEST;
+        // 第 1 行：智能体类型
+        pgbc.gridx = 0;
+        pgbc.gridy = 0;
+        pgbc.weightx = 0;
+        pgbc.fill = GridBagConstraints.NONE;
+        paramsPanel.add(new JLabel("智能体类型："), pgbc);
+        pgbc.gridx = 1;
+        pgbc.weightx = 1;
+        pgbc.fill = GridBagConstraints.HORIZONTAL;
+        paramsPanel.add(agentTypeCombo, pgbc);
+        // 第 2 行：训练并发数
+        pgbc.gridx = 0;
+        pgbc.gridy = 1;
+        pgbc.weightx = 0;
+        pgbc.fill = GridBagConstraints.NONE;
+        paramsPanel.add(new JLabel("训练并发数："), pgbc);
+        pgbc.gridx = 1;
+        pgbc.weightx = 1;
+        pgbc.fill = GridBagConstraints.HORIZONTAL;
+        paramsPanel.add(concurrencyField, pgbc);
         confirmPanel.add(Box.createVerticalStrut(8));
-        confirmPanel.add(agentPanel);
-        int confirm = JOptionPane.showConfirmDialog(dialog, confirmPanel, "确认触发训练", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        confirmPanel.add(paramsPanel);
+        int confirm = JOptionPane.showConfirmDialog(dialog, confirmPanel, "确认触发训练 - 环境 [" + envName + "]", JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE);
         if (confirm != JOptionPane.YES_OPTION) {
             return;
         }
+        // 解析训练并发数：空值走服务端默认；非空必须是 >= 1 的整数
+        // 必须用 if/else 各赋一次值，让 concurrency 是 effectively final，可被下方 lambda 捕获
+        final Integer concurrency;
+        String concurrencyText = concurrencyField.getText() == null ? "" : concurrencyField.getText().trim();
+        if (concurrencyText.isEmpty()) {
+            concurrency = null;
+        } else {
+            int parsed = Integer.parseInt(concurrencyText);
+            if (parsed < 1) {
+                JOptionPane.showMessageDialog(dialog, "训练并发数必须 >= 1", "提示", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            concurrency = parsed;
+        }
         String agentType = (String) agentTypeCombo.getSelectedItem();
         dialog.runApiTask("触发训练", () -> {
-            List<String> successDetails = new ArrayList<>();
-            List<String> errors = new ArrayList<>();
-            int successCount = 0;
-            for (AiEnvConfig envConfig : targets) {
-                List<Long> ids = envIdGroups.get(envConfig.getEnvName());
-                try {
-                    String message = AiQuestionApiClient.getInstance().triggerTraining(envConfig, ids, agentType);
-                    successCount += ids.size();
-                    successDetails.add("环境 [" + envConfig.getEnvName() + "] " + ids.size() + " 条：" + message);
-                } catch (AiQuestionApiClient.AiApiException ex) {
-                    logger.error("环境 [{}] 触发训练失败", envConfig.getEnvName(), ex);
-                    errors.add("环境 [" + envConfig.getEnvName() + "]：" + ex.getMessage());
-                }
-            }
-            int successTotal = successCount;
+            String message = AiQuestionApiClient.getInstance().triggerTraining(envConfig, ids, agentType, concurrency);
+            int successCount = ids.size();
             return () -> {
-                if (errors.isEmpty()) {
-                    tableModel.clearChecked();
-                }
+                tableModel.clearChecked();
                 updateCheckControls();
                 dialog.invalidateLoadedData();
                 refreshQuestionTable();
-                if (errors.isEmpty()) {
-                    dialog.setStatus("触发训练成功：共 " + successTotal + " 条问题（" + String.join("；", successDetails) + "）", true);
-                } else if (successTotal > 0) {
-                    dialog.setStatus("触发训练部分成功：" + successTotal + " 条成功；" + String.join("；", errors), false);
-                    JOptionPane.showMessageDialog(dialog,
-                            "已成功触发 " + successTotal + " 条问题训练。\n\n以下环境触发失败：\n" + String.join("\n", errors), "触发训练结果",
-                            JOptionPane.WARNING_MESSAGE);
-                } else {
-                    dialog.setStatus("触发训练失败：" + String.join("；", errors), false);
-                    JOptionPane.showMessageDialog(dialog, "触发训练失败：\n" + String.join("\n", errors), "错误", JOptionPane.ERROR_MESSAGE);
-                }
+                dialog.setStatus("触发训练成功：环境 [" + envName + "] 共 " + successCount + " 条问题（" + message + "）", true);
             };
         });
     }
@@ -2160,29 +2194,28 @@ public class QuestionTrainingPanel {
         for (AiQuestion question : stoppableQuestions) {
             envIdGroups.computeIfAbsent(question.getEnvName(), key -> new ArrayList<>()).add(question.getId());
         }
-        List<AiEnvConfig> targets = new ArrayList<>();
-        List<String> summaryLines = new ArrayList<>();
-        for (Map.Entry<String, List<Long>> entry : envIdGroups.entrySet()) {
-            AiEnvConfig envConfig = dialog.findEnvByName(entry.getKey());
-            if (envConfig == null) {
-                JOptionPane.showMessageDialog(dialog, "未找到问题所属环境配置 [" + AiQuestionMangerDialog.nullToEmpty(entry.getKey()) + "]", "错误",
-                        JOptionPane.ERROR_MESSAGE);
-                return;
-            }
-            targets.add(envConfig);
-            summaryLines.add(" 环境 [" + envConfig.getEnvName() + "] " + entry.getValue().size() + " 条");
+        // 停止训练只支持单一环境：跨环境时拒绝并提示用户重新勾选
+        if (envIdGroups.size() > 1) {
+            JOptionPane.showMessageDialog(dialog, "选中的 " + stoppableQuestions.size() + " 条问题跨 " + envIdGroups.size() + " 个环境，暂不支持同时停止。\n\n"
+                            + "请重新勾选，只保留同一环境的问题再停止训练。\n\n当前选中环境：\n" + String.join("、", envIdGroups.keySet()), "提示",
+                    JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        Map.Entry<String, List<Long>> onlyEntry = envIdGroups.entrySet().iterator().next();
+        String envName = onlyEntry.getKey();
+        List<Long> ids = onlyEntry.getValue();
+        AiEnvConfig envConfig = dialog.findEnvByName(envName);
+        if (envConfig == null) {
+            JOptionPane.showMessageDialog(dialog, "未找到问题所属环境配置 [" + AiQuestionMangerDialog.nullToEmpty(envName) + "]", "错误",
+                    JOptionPane.ERROR_MESSAGE);
+            return;
         }
         JPanel confirmPanel = new JPanel();
         confirmPanel.setLayout(new BoxLayout(confirmPanel, BoxLayout.Y_AXIS));
         confirmPanel.setBorder(new EmptyBorder(8, 12, 8, 12));
-        JLabel titleLabel = new JLabel("确定停止勾选的 " + stoppableQuestions.size() + " 条问题的训练吗？");
+        JLabel titleLabel = new JLabel("确定停止" + stoppableQuestions.size() + " 条问题的训练吗？");
         titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         confirmPanel.add(titleLabel);
-        for (String line : summaryLines) {
-            JLabel envLabel = new JLabel(line);
-            envLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-            confirmPanel.add(envLabel);
-        }
         if (!skippedQuestions.isEmpty()) {
             int maxShown = 10;
             List<String> lines = new ArrayList<>();
@@ -2204,44 +2237,20 @@ public class QuestionTrainingPanel {
                 confirmPanel.add(skipLineLabel);
             }
         }
-        int confirm = JOptionPane.showConfirmDialog(dialog, confirmPanel, "确认停止训练", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        int confirm = JOptionPane.showConfirmDialog(dialog, confirmPanel, "确认停止训练 - 环境 [" + envName + "]", JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE);
         if (confirm != JOptionPane.YES_OPTION) {
             return;
         }
         dialog.runApiTask("停止训练", () -> {
-            List<String> successDetails = new ArrayList<>();
-            List<String> errors = new ArrayList<>();
-            int successCount = 0;
-            for (AiEnvConfig envConfig : targets) {
-                List<Long> ids = envIdGroups.get(envConfig.getEnvName());
-                try {
-                    String message = AiQuestionApiClient.getInstance().stopTraining(envConfig, ids);
-                    successCount += ids.size();
-                    successDetails.add("环境 [" + envConfig.getEnvName() + "] " + ids.size() + " 条：" + message);
-                } catch (AiQuestionApiClient.AiApiException ex) {
-                    logger.error("环境 [{}] 停止训练失败", envConfig.getEnvName(), ex);
-                    errors.add("环境 [" + envConfig.getEnvName() + "]：" + ex.getMessage());
-                }
-            }
-            int successTotal = successCount;
+            String message = AiQuestionApiClient.getInstance().stopTraining(envConfig, ids);
+            int successCount = ids.size();
             return () -> {
-                if (errors.isEmpty()) {
-                    tableModel.clearChecked();
-                }
+                tableModel.clearChecked();
                 updateCheckControls();
                 dialog.invalidateLoadedData();
                 refreshQuestionTable();
-                if (errors.isEmpty()) {
-                    dialog.setStatus("停止训练成功：共 " + successTotal + " 条问题（" + String.join("；", successDetails) + "）", true);
-                } else if (successTotal > 0) {
-                    dialog.setStatus("停止训练部分成功：" + successTotal + " 条成功；" + String.join("；", errors), false);
-                    JOptionPane.showMessageDialog(dialog,
-                            "已成功停止 " + successTotal + " 条问题训练。\n\n以下环境停止失败：\n" + String.join("\n", errors), "停止训练结果",
-                            JOptionPane.WARNING_MESSAGE);
-                } else {
-                    dialog.setStatus("停止训练失败：" + String.join("；", errors), false);
-                    JOptionPane.showMessageDialog(dialog, "停止训练失败：\n" + String.join("\n", errors), "错误", JOptionPane.ERROR_MESSAGE);
-                }
+                dialog.setStatus("停止训练成功：环境 [" + envName + "] 共 " + successCount + " 条问题（" + message + "）", true);
             };
         });
     }
@@ -2263,19 +2272,21 @@ public class QuestionTrainingPanel {
         for (AiQuestion question : checkedQuestions) {
             envIdGroups.computeIfAbsent(question.getEnvName(), key -> new ArrayList<>()).add(question.getId());
         }
-        List<AiEnvConfig> targets = new ArrayList<>();
-        List<String> summaryLines = new ArrayList<>();
-        int selectedTotal = 0;
-        for (Map.Entry<String, List<Long>> entry : envIdGroups.entrySet()) {
-            AiEnvConfig envConfig = dialog.findEnvByName(entry.getKey());
-            if (envConfig == null) {
-                JOptionPane.showMessageDialog(dialog, "未找到问题所属环境配置 [" + AiQuestionMangerDialog.nullToEmpty(entry.getKey()) + "]", "错误",
-                        JOptionPane.ERROR_MESSAGE);
-                return;
-            }
-            targets.add(envConfig);
-            selectedTotal += entry.getValue().size();
-            summaryLines.add(" 环境 [" + envConfig.getEnvName() + "] " + entry.getValue().size() + " 条");
+        // 批量更新只支持单一环境：跨环境时拒绝并提示用户重新勾选
+        if (envIdGroups.size() > 1) {
+            JOptionPane.showMessageDialog(dialog, "选中的 " + checkedQuestions.size() + " 条问题跨 " + envIdGroups.size() + " 个环境，暂不支持同时批量更新。\n\n"
+                            + "请重新勾选，只保留同一环境的问题再批量更新。\n\n当前选中环境：\n" + String.join("、", envIdGroups.keySet()), "提示",
+                    JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        Map.Entry<String, List<Long>> onlyEntry = envIdGroups.entrySet().iterator().next();
+        String envName = onlyEntry.getKey();
+        List<Long> ids = onlyEntry.getValue();
+        AiEnvConfig envConfig = dialog.findEnvByName(envName);
+        if (envConfig == null) {
+            JOptionPane.showMessageDialog(dialog, "未找到问题所属环境配置 [" + AiQuestionMangerDialog.nullToEmpty(envName) + "]", "错误",
+                    JOptionPane.ERROR_MESSAGE);
+            return;
         }
         FilterComboBox<String> userIdCombo = new FilterComboBox<>();
         for (String userOption : dialog.userOptions) {
@@ -2301,14 +2312,9 @@ public class QuestionTrainingPanel {
         JPanel confirmPanel = new JPanel();
         confirmPanel.setLayout(new BoxLayout(confirmPanel, BoxLayout.Y_AXIS));
         confirmPanel.setBorder(new EmptyBorder(8, 12, 8, 12));
-        JLabel titleLabel = new JLabel("确定批量更新勾选的 " + selectedTotal + " 条问题吗？");
+        JLabel titleLabel = new JLabel("确定批量更新" + checkedQuestions.size() + " 条问题吗？");
         titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         confirmPanel.add(titleLabel);
-        for (String line : summaryLines) {
-            JLabel envLabel = new JLabel(line);
-            envLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-            confirmPanel.add(envLabel);
-        }
         confirmPanel.add(Box.createVerticalStrut(8));
         confirmPanel.add(inputForm);
         confirmPanel.add(Box.createVerticalStrut(4));
@@ -2317,7 +2323,8 @@ public class QuestionTrainingPanel {
         String trainingParam;
         int autoTrainingIndex;
         while (true) {
-            int confirm = JOptionPane.showConfirmDialog(dialog, confirmPanel, "确认批量更新", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+            int confirm = JOptionPane.showConfirmDialog(dialog, confirmPanel, "确认批量更新 - 环境 [" + envName + "]", JOptionPane.YES_NO_OPTION,
+                    JOptionPane.WARNING_MESSAGE);
             if (confirm != JOptionPane.YES_OPTION) {
                 return;
             }
@@ -2334,40 +2341,15 @@ public class QuestionTrainingPanel {
         Integer targetAllowAutoTraining = autoTrainingCombo.getSelectedIndex() == 0 ? null
                 : (autoTrainingCombo.getSelectedIndex() == 1 ? AiQuestion.AUTO_TRAINING_ALLOWED : AiQuestion.AUTO_TRAINING_NOT_ALLOWED);
         dialog.runApiTask("批量更新", () -> {
-            List<String> successDetails = new ArrayList<>();
-            List<String> errors = new ArrayList<>();
-            int successCount = 0;
-            for (AiEnvConfig envConfig : targets) {
-                List<Long> ids = envIdGroups.get(envConfig.getEnvName());
-                try {
-                    String message = AiQuestionApiClient.getInstance()
-                            .batchUpdateUser(envConfig, ids, targetUserId, targetTrainingParam, targetAllowAutoTraining);
-                    successCount += ids.size();
-                    successDetails.add("环境 [" + envConfig.getEnvName() + "] " + ids.size() + " 条：" + message);
-                } catch (AiQuestionApiClient.AiApiException ex) {
-                    logger.error("环境 [{}] 批量更新失败", envConfig.getEnvName(), ex);
-                    errors.add("环境 [" + envConfig.getEnvName() + "]：" + ex.getMessage());
-                }
-            }
-            int successTotal = successCount;
+            String message = AiQuestionApiClient.getInstance()
+                    .batchUpdateUser(envConfig, ids, targetUserId, targetTrainingParam, targetAllowAutoTraining);
+            int successCount = ids.size();
             return () -> {
-                if (errors.isEmpty()) {
-                    tableModel.clearChecked();
-                }
+                tableModel.clearChecked();
                 updateCheckControls();
                 dialog.invalidateLoadedData();
                 refreshQuestionTable();
-                if (errors.isEmpty()) {
-                    dialog.setStatus("批量更新成功：共 " + successTotal + " 条问题（" + String.join("；", successDetails) + "）", true);
-                } else if (successTotal > 0) {
-                    dialog.setStatus("批量更新部分成功：" + successTotal + " 条成功；" + String.join("；", errors), false);
-                    JOptionPane.showMessageDialog(dialog,
-                            "已成功更新 " + successTotal + " 条问题。\n\n以下环境更新失败：\n" + String.join("\n", errors), "批量更新结果",
-                            JOptionPane.WARNING_MESSAGE);
-                } else {
-                    dialog.setStatus("批量更新失败：" + String.join("；", errors), false);
-                    JOptionPane.showMessageDialog(dialog, "批量更新失败：\n" + String.join("\n", errors), "错误", JOptionPane.ERROR_MESSAGE);
-                }
+                dialog.setStatus("批量更新成功：环境 [" + envName + "] 共 " + successCount + " 条问题（" + message + "）", true);
             };
         });
     }
@@ -2387,74 +2369,47 @@ public class QuestionTrainingPanel {
         for (AiQuestion question : checkedQuestions) {
             envIdGroups.computeIfAbsent(question.getEnvName(), key -> new ArrayList<>()).add(question.getId());
         }
-        List<AiEnvConfig> targets = new ArrayList<>();
-        List<String> summaryLines = new ArrayList<>();
-        int selectedTotal = 0;
-        for (Map.Entry<String, List<Long>> entry : envIdGroups.entrySet()) {
-            AiEnvConfig envConfig = dialog.findEnvByName(entry.getKey());
-            if (envConfig == null) {
-                JOptionPane.showMessageDialog(dialog, "未找到问题所属环境配置 [" + AiQuestionMangerDialog.nullToEmpty(entry.getKey()) + "]", "错误",
-                        JOptionPane.ERROR_MESSAGE);
-                return;
-            }
-            targets.add(envConfig);
-            selectedTotal += entry.getValue().size();
-            summaryLines.add(" 环境 [" + envConfig.getEnvName() + "] " + entry.getValue().size() + " 条");
+        // 批量删除只支持单一环境：跨环境时拒绝并提示用户重新勾选
+        if (envIdGroups.size() > 1) {
+            JOptionPane.showMessageDialog(dialog, "选中的 " + checkedQuestions.size() + " 条问题跨 " + envIdGroups.size() + " 个环境，暂不支持同时批量删除。\n\n"
+                            + "请重新勾选，只保留同一环境的问题再批量删除。\n\n当前选中环境：\n" + String.join("、", envIdGroups.keySet()), "提示",
+                    JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        Map.Entry<String, List<Long>> onlyEntry = envIdGroups.entrySet().iterator().next();
+        String envName = onlyEntry.getKey();
+        List<Long> ids = onlyEntry.getValue();
+        AiEnvConfig envConfig = dialog.findEnvByName(envName);
+        if (envConfig == null) {
+            JOptionPane.showMessageDialog(dialog, "未找到问题所属环境配置 [" + AiQuestionMangerDialog.nullToEmpty(envName) + "]", "错误",
+                    JOptionPane.ERROR_MESSAGE);
+            return;
         }
         JPanel confirmPanel = new JPanel();
         confirmPanel.setLayout(new BoxLayout(confirmPanel, BoxLayout.Y_AXIS));
         confirmPanel.setBorder(new EmptyBorder(8, 12, 8, 12));
-        JLabel titleLabel = new JLabel("确定批量删除勾选的 " + selectedTotal + " 条问题吗？");
+        JLabel titleLabel = new JLabel("确定批量删除" + checkedQuestions.size() + " 条问题吗？");
         titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         confirmPanel.add(titleLabel);
-        for (String line : summaryLines) {
-            JLabel envLabel = new JLabel(line);
-            envLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-            confirmPanel.add(envLabel);
-        }
         JLabel warningLabel = new JLabel("删除后不可恢复，请谨慎操作");
         warningLabel.setForeground(UiConstants.COLOR_DANGER_LIGHT);
         warningLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         confirmPanel.add(Box.createVerticalStrut(6));
         confirmPanel.add(warningLabel);
-        int confirm = JOptionPane.showConfirmDialog(dialog, confirmPanel, "确认批量删除", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        int confirm = JOptionPane.showConfirmDialog(dialog, confirmPanel, "确认批量删除 - 环境 [" + envName + "]", JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE);
         if (confirm != JOptionPane.YES_OPTION) {
             return;
         }
         dialog.runApiTask("批量删除", () -> {
-            List<String> successDetails = new ArrayList<>();
-            List<String> errors = new ArrayList<>();
-            int successCount = 0;
-            for (AiEnvConfig envConfig : targets) {
-                List<Long> ids = envIdGroups.get(envConfig.getEnvName());
-                try {
-                    String message = AiQuestionApiClient.getInstance().deleteQuestions(envConfig, ids);
-                    successCount += ids.size();
-                    successDetails.add("环境 [" + envConfig.getEnvName() + "] " + ids.size() + " 条：" + message);
-                } catch (AiQuestionApiClient.AiApiException ex) {
-                    logger.error("环境 [{}] 批量删除失败", envConfig.getEnvName(), ex);
-                    errors.add("环境 [" + envConfig.getEnvName() + "]：" + ex.getMessage());
-                }
-            }
-            int successTotal = successCount;
+            String message = AiQuestionApiClient.getInstance().deleteQuestions(envConfig, ids);
+            int successCount = ids.size();
             return () -> {
-                if (errors.isEmpty()) {
-                    tableModel.clearChecked();
-                }
+                tableModel.clearChecked();
                 updateCheckControls();
                 dialog.invalidateLoadedData();
                 refreshQuestionTable();
-                if (errors.isEmpty()) {
-                    dialog.setStatus("批量删除成功：共 " + successTotal + " 条问题（" + String.join("；", successDetails) + "）", true);
-                } else if (successTotal > 0) {
-                    dialog.setStatus("批量删除部分成功：" + successTotal + " 条成功；" + String.join("；", errors), false);
-                    JOptionPane.showMessageDialog(dialog,
-                            "已成功删除 " + successTotal + " 条问题。\n\n以下环境删除失败：\n" + String.join("\n", errors), "批量删除结果",
-                            JOptionPane.WARNING_MESSAGE);
-                } else {
-                    dialog.setStatus("批量删除失败：" + String.join("；", errors), false);
-                    JOptionPane.showMessageDialog(dialog, "批量删除失败：\n" + String.join("\n", errors), "错误", JOptionPane.ERROR_MESSAGE);
-                }
+                dialog.setStatus("批量删除成功：环境 [" + envName + "] 共 " + successCount + " 条问题（" + message + "）", true);
             };
         });
     }
@@ -2463,8 +2418,8 @@ public class QuestionTrainingPanel {
     
     private class QuestionTableModel extends AbstractTableModel {
         
-        private final String[] columns = {"选择", "ID", "问题", "分类", "所属用户", "所属项目", "训练参数", "批次号", "固定回复", "回复ID", "自动训练",
-                "训练模式", "训练状态", "训练提交时间", "开始训练时间", "完成训练时间", "训练耗时(秒)", "备注", "操作"};
+        private final String[] columns = {"选择", "ID", "问题", "分类", "所属用户", "所属项目", "训练参数", "批次号", "固定回复", "回复ID",
+                "自动训练", "训练模式", "训练状态", "训练提交时间", "训练开始时间", "训练完成时间", "训练耗时(秒)", "备注", "操作"};
         
         private final List<AiQuestion> questions = new ArrayList<>();
         

@@ -52,8 +52,14 @@ public final class ExcelExportUtil {
     /**
      * 问题列表导出表头
      */
-    private static final String[] QUESTION_HEADERS = {"问题ID", "问题", "固定回复", "训练参数", "批次号", "所属用户", "所属项目", "分类", "训练开始时间",
-            "训练结束时间", "训练耗时（单位秒）", "备注", "回复ID"};
+    private static final String[] QUESTION_HEADERS = {"问题ID", "问题", "固定回复", "训练参数", "所属用户", "所属项目", "分类", "回复ID", "自动训练", "训练模式",
+            "训练状态", "训练提交时间", "训练开始时间", "训练结束时间", "训练耗时（单位秒）", "备注"};
+
+    /**
+     * 训练状态展示文案：下标 = 状态值 + 2
+     */
+    private static final String[] TRAINING_STATUS_TEXTS = {"默认", "待训练", "成功", "失败", "同步回复成功", "训练中", "超时", "同步回复失败",
+            "训练已提交", "训练中止"};
     
     /**
      * 问题回复列表导出表头
@@ -94,15 +100,18 @@ public final class ExcelExportUtil {
                 row.createCell(1).setCellValue(nullSafe(q.getQuestion()));
                 row.createCell(2).setCellValue(nullSafe(q.getAnswer()));
                 row.createCell(3).setCellValue(nullSafe(q.getTrainingParam()));
-                row.createCell(4).setCellValue(nullSafe(q.getTrainingNo()));
-                row.createCell(5).setCellValue(formatUserId(q.getUserId(), userIdDisplay));
-                row.createCell(6).setCellValue(nullSafe(q.getProjectName()));
-                row.createCell(7).setCellValue(nullSafe(q.getQuestionClassify()));
-                row.createCell(8).setCellValue(formatTimestamp(q.getStartTrainingTime()));
-                row.createCell(9).setCellValue(formatTimestamp(q.getLastTrainingTime()));
-                row.createCell(10).setCellValue(calcTrainingCostSeconds(q.getStartTrainingTime(), q.getLastTrainingTime()));
-                row.createCell(11).setCellValue(nullSafe(q.getRemark()));
-                row.createCell(12).setCellValue(q.getAnswerId() != null ? String.valueOf(q.getAnswerId()) : "");
+                row.createCell(4).setCellValue(formatUserId(q.getUserId(), userIdDisplay));
+                row.createCell(5).setCellValue(nullSafe(q.getProjectName()));
+                row.createCell(6).setCellValue(nullSafe(q.getQuestionClassify()));
+                row.createCell(7).setCellValue(q.getAnswerId() != null ? String.valueOf(q.getAnswerId()) : "");
+                row.createCell(8).setCellValue(q.isAutoTrainingAllowed() ? "允许" : "不允许");
+                row.createCell(9).setCellValue(formatTrainingModel(q.getTrainingModel()));
+                row.createCell(10).setCellValue(formatTrainingStatus(q.getTrainingStatus()));
+                row.createCell(11).setCellValue(formatTimestamp(q.getSubmitTrainingTime()));
+                row.createCell(12).setCellValue(formatTimestamp(q.getStartTrainingTime()));
+                row.createCell(13).setCellValue(formatTimestamp(q.getLastTrainingTime()));
+                row.createCell(14).setCellValue(calcTrainingCostSeconds(q.getStartTrainingTime(), q.getLastTrainingTime()));
+                row.createCell(15).setCellValue(nullSafe(q.getRemark()));
             }
             
             autoSizeColumns(sheet, QUESTION_HEADERS.length);
@@ -237,5 +246,35 @@ public final class ExcelExportUtil {
             return userIdDisplay.get(userId);
         }
         return userId;
+    }
+
+    /**
+     * 训练模式展示文案：Auto-自动；Manual-手动；其余值原样展示
+     */
+    private static String formatTrainingModel(String trainingModel) {
+        if (trainingModel == null || trainingModel.isBlank()) {
+            return "";
+        }
+        if (AiQuestion.TRAINING_MODEL_AUTO.equals(trainingModel)) {
+            return "自动";
+        }
+        if (AiQuestion.TRAINING_MODEL_MANUAL.equals(trainingModel)) {
+            return "手动";
+        }
+        return trainingModel;
+    }
+
+    /**
+     * 训练状态展示文案：-2-默认；-1-待训练；0-成功；1-失败；2-成功(同步回复)；3-训练中；4-超时；5-同步回复失败；6-训练已提交；7-训练中止
+     */
+    private static String formatTrainingStatus(Integer status) {
+        if (status == null) {
+            return "";
+        }
+        int index = status + 2;
+        if (index < 0 || index >= TRAINING_STATUS_TEXTS.length) {
+            return "";
+        }
+        return TRAINING_STATUS_TEXTS[index];
     }
 }

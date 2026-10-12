@@ -178,14 +178,22 @@ public final class AiQuestionApiClient {
     /**
      * 触发训练选中的问题（按问题 ID 列表批量提交，agentType 指定训练的智能体类型）
      *
-     * @param agentType 智能体类型（safety / system / ops / auto）
+     * @param agentType   智能体类型（safety / system / ops / auto）
+     * @param concurrency 并发数量（null 或 <= 0 表示不提交该字段，由服务端决定；> 0并且ids 数量 > 1 时写入请求体 concurrency 字段）
      * @return 成功时返回接口 message，失败时抛出异常
      */
-    public String triggerTraining(AiEnvConfig env, List<Long> ids, String agentType) throws AiApiException {
+    public String triggerTraining(AiEnvConfig env, List<Long> ids, String agentType, Integer concurrency) throws AiApiException {
         String url = buildUrl(env, env.getTrainApi());
         ObjectNode body = objectMapper.createObjectNode();
         body.set("questionIds", objectMapper.valueToTree(ids));
         body.put("agentType", agentType);
+        if (ids.size() == 1) {
+            body.put("concurrency", 1);
+        } else {
+            if (concurrency != null && concurrency > 0) {
+                body.put("concurrency", concurrency);
+            }
+        }
         return postForMessage(env, url, body);
     }
     

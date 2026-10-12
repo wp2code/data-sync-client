@@ -935,12 +935,13 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
             """);
     
     /**
-     * 触发训练接口示例（questionIds 为勾选的问题 ID 列表，agentType：safety / system / ops / auto）
+     * 触发训练接口示例（questionIds 为勾选的问题 ID 列表，agentType：safety / system / ops / auto；concurrency 为并发数量，>= 1，缺省由服务端决定）
      */
     private static final ApiExample TRAIN_EXAMPLE = new ApiExample("触发训练", AiEnvConfig.DEFAULT_TRAIN_API, """
             {
               "questionIds": [1001, 1002],
-              "agentType": "auto"
+              "agentType": "auto",
+              "concurrency": 1
             }
             """, """
             {
