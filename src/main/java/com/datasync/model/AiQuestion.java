@@ -150,6 +150,11 @@ public class AiQuestion {
     private String trainingNo;
     
     /**
+     * 训练任务ID
+     */
+    private String trainingTaskId;
+    
+    /**
      * 训练状态：-2-默认；-1-待训练；0-成功；1-失败；2-成功(同步回复)；3-训练中；4-超时；5-同步回复失败；6-训练已提交；7-训练中止（接口返回数据，客户端仅展示）
      */
     private Integer trainingStatus;

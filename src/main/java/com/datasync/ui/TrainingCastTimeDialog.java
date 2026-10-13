@@ -105,11 +105,16 @@ public class TrainingCastTimeDialog extends JDialog {
      * 耗时（maxLastTime - minInitTime，秒）展示
      */
     private JLabel costValueLabel;
-    
+
     /**
      * 耗时多单位换算展示（分 / 小时）
      */
     private JLabel costDetailLabel;
+
+    /**
+     * 训练数量（totalCount）展示
+     */
+    private JLabel totalCountValueLabel;
     
     /**
      * 自动刷新定时器（Swing Timer，EDT 触发，查询本身在后台线程执行）
@@ -173,7 +178,7 @@ public class TrainingCastTimeDialog extends JDialog {
     public TrainingCastTimeDialog(Dialog owner, AiEnvConfig envConfig, String initialTrainingNo) {
         super(owner, "训练耗时查询", false);
         this.envConfig = envConfig;
-        setSize(560, 410);
+        setSize(560, 445);
         setResizable(false);
         setLocationRelativeTo(owner);
         setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
@@ -290,6 +295,16 @@ public class TrainingCastTimeDialog extends JDialog {
         
         gbc.gridx = 0;
         gbc.gridy = 0;
+        gbc.weightx = 0;
+        panel.add(createLabel("训练数量："), gbc);
+        totalCountValueLabel = createValueLabel();
+        gbc.gridx = 1;
+        gbc.weightx = 0;
+        panel.add(totalCountValueLabel, gbc);
+        
+        
+        gbc.gridx = 0;
+        gbc.gridy = 1;
         panel.add(createLabel("最后刷新："), gbc);
         lastRefreshLabel = createValueLabel();
         gbc.gridx = 1;
@@ -297,7 +312,7 @@ public class TrainingCastTimeDialog extends JDialog {
         panel.add(lastRefreshLabel, gbc);
         
         gbc.gridx = 0;
-        gbc.gridy = 1;
+        gbc.gridy = 2;
         gbc.weightx = 0;
         panel.add(createLabel("开始时间："), gbc);
         startValueLabel = createValueLabel();
@@ -306,7 +321,7 @@ public class TrainingCastTimeDialog extends JDialog {
         panel.add(startValueLabel, gbc);
         
         gbc.gridx = 0;
-        gbc.gridy = 2;
+        gbc.gridy = 3;
         gbc.weightx = 0;
         panel.add(createLabel("最新时间："), gbc);
         lastValueLabel = createValueLabel();
@@ -315,7 +330,7 @@ public class TrainingCastTimeDialog extends JDialog {
         panel.add(lastValueLabel, gbc);
         
         gbc.gridx = 0;
-        gbc.gridy = 3;
+        gbc.gridy = 4;
         gbc.weightx = 0;
         panel.add(createLabel("       耗时："), gbc);
         costValueLabel = new JLabel("—");
@@ -326,11 +341,13 @@ public class TrainingCastTimeDialog extends JDialog {
         panel.add(costValueLabel, gbc);
         
         gbc.gridx = 1;
-        gbc.gridy = 4;
+        gbc.gridy = 5;
         costDetailLabel = new JLabel(" ");
         costDetailLabel.setFont(UiConstants.FONT_SANS_11);
         costDetailLabel.setForeground(Color.GRAY);
         panel.add(costDetailLabel, gbc);
+
+      
         return panel;
     }
     
@@ -449,6 +466,7 @@ public class TrainingCastTimeDialog extends JDialog {
             lastValueLabel.setText("—");
             costValueLabel.setText("—");
             costDetailLabel.setText(" ");
+            totalCountValueLabel.setText("—");
             return;
         }
         startValueLabel.setText(castTime.minInitTime() + "（" + formatEpoch(castTime.minInitTime()) + "）");
@@ -463,6 +481,7 @@ public class TrainingCastTimeDialog extends JDialog {
             costValueLabel.setText("—");
             costDetailLabel.setText(" ");
         }
+        totalCountValueLabel.setText(castTime.totalCount() > 0 ? String.valueOf(castTime.totalCount()) : "—");
     }
     
     /**
@@ -491,9 +510,7 @@ public class TrainingCastTimeDialog extends JDialog {
         if (hours > 0) {
             text.append(hours).append(" 小时 ");
         }
-        if (hours > 0 || minutes > 0) {
-            text.append(minutes).append(" 分 ");
-        }
+        text.append(minutes).append(" 分 ");
         text.append(secs).append(" 秒");
         return text.toString();
     }

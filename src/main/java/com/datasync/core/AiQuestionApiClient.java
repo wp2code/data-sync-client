@@ -21,6 +21,11 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -53,6 +58,12 @@ public final class AiQuestionApiClient {
      * 默认 User-Agent（部分环境 WAF 拦截 JDK 默认的 Java-http-client 标识，导致连接被直接断开且无响应）
      */
     private static final String DEFAULT_USER_AGENT = "DataSync-Client/1.0.0";
+    
+    /**
+     * 接口返回时间字符串兼容解析格式（毫秒时间戳另行单独处理）
+     */
+    private static final DateTimeFormatter[] API_TIME_FORMATTERS = {DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss[.SSS]"),
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")};
     
     private final HttpClient httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
     
@@ -124,7 +135,10 @@ public final class AiQuestionApiClient {
         if (data != null && data.isArray()) {
             for (JsonNode item : data) {
                 try {
-                    questions.add(objectMapper.treeToValue(item, AiQuestion.class));
+                    AiQuestion question = objectMapper.treeToValue(item, AiQuestion.class);
+                    // AiQuestion.updateTime 标注 @JsonIgnore，此处手动解析接口返回的更新时间，供列表按更新时间降序排序
+                    question.setUpdateTime(parseApiTime(item.get("updateTime")));
+                    questions.add(question);
                 } catch (Exception e) {
                     logger.error("[AiApi] 解析问题数据失败: {}", item);
                     throw new AiApiException("解析问题数据失败: " + e.getMessage());
@@ -132,6 +146,41 @@ public final class AiQuestionApiClient {
             }
         }
         return questions;
+    }
+    
+    /**
+     * 解析接口返回的更新时间（兼容 yyyy-MM-dd HH:mm:ss[.SSS]、yyyy-MM-dd HH:mm 与毫秒时间戳，解析失败返回 null）
+     */
+    private static LocalDateTime parseApiTime(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        return parseApiTime(node.isNumber() ? String.valueOf(node.asLong(0L)) : node.asText(""));
+    }
+    
+    /**
+     * 解析接口返回的时间字符串（兼容 yyyy-MM-dd HH:mm:ss[.SSS]、yyyy-MM-dd HH:mm（含 ISO 'T' 分隔符）与毫秒时间戳，解析失败返回 null）
+     */
+    public static LocalDateTime parseApiTime(String text) {
+        if (text == null) {
+            return null;
+        }
+        text = text.trim();
+        if (text.isEmpty()) {
+            return null;
+        }
+        if (text.matches("\\d{10,}")) {
+            long millis = Long.parseLong(text);
+            return millis > 0 ? LocalDateTime.ofInstant(Instant.ofEpochMilli(millis), ZoneId.systemDefault()) : null;
+        }
+        String normalized = text.replace('T', ' ');
+        for (DateTimeFormatter formatter : API_TIME_FORMATTERS) {
+            try {
+                return LocalDateTime.parse(normalized, formatter);
+            } catch (DateTimeParseException ignored) {
+            }
+        }
+        return null;
     }
     
     /**
@@ -393,7 +442,7 @@ public final class AiQuestionApiClient {
         String responseText = executeGet(env, url);
         JsonNode root;
         try {
-            logger.info("[AiApi] getTrainingCastTime responseText: {}", responseText);
+            logger.debug("[AiApi] getTrainingCastTime responseText: {}", responseText);
             root = objectMapper.readTree(responseText == null || responseText.isBlank() ? "{}" : responseText);
         } catch (Exception e) {
             throw new AiApiException("解析响应失败: " + abbreviate(responseText, 120));
@@ -404,7 +453,7 @@ public final class AiQuestionApiClient {
             throw new AiApiException("响应数据格式异常: " + abbreviate(responseText, 120));
         }
         return new TrainingCastTime(payload.path("minInitTime").asLong(0), payload.path("maxLastTime").asLong(0),
-                payload.path("finishTraining").asBoolean(false));
+                payload.path("totalCount").asLong(0), payload.path("finishTraining").asBoolean(false));
     }
     
     /**
@@ -435,7 +484,7 @@ public final class AiQuestionApiClient {
      *
      * @param finishTraining 训练完成状态（true-完成；false-未完成，未完成时客户端自动开启自动刷新）
      */
-    public record TrainingCastTime(long minInitTime, long maxLastTime, boolean finishTraining) {
+    public record TrainingCastTime(long minInitTime, long maxLastTime, long totalCount, boolean finishTraining) {
     
     }
     

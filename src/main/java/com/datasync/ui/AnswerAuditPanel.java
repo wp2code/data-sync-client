@@ -62,6 +62,17 @@ public class AnswerAuditPanel {
     private static final String SOURCE_TRAINING_NO = "不是";
     
     private static final Comparator<AiAnswer> ANSWER_COMPARATOR = (a, b) -> {
+        LocalDateTime timeA = AiQuestionApiClient.parseApiTime(a.getUpdateTime());
+        LocalDateTime timeB = AiQuestionApiClient.parseApiTime(b.getUpdateTime());
+        if (timeA != null && timeB != null) {
+            return timeB.compareTo(timeA);
+        }
+        if (timeA != null) {
+            return -1;
+        }
+        if (timeB != null) {
+            return 1;
+        }
         long idA = a.getId() != null ? a.getId() : 0L;
         long idB = b.getId() != null ? b.getId() : 0L;
         return Long.compare(idB, idA);
@@ -365,7 +376,15 @@ public class AnswerAuditPanel {
         
         // 分页栏
         JPanel pagePanel = new JPanel(new BorderLayout(8, 2));
-        JPanel pageButtonsPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 4, 2));
+        // 左侧：操作按钮（导出）
+        JPanel actionPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        JButton exportAnswerBtn = ButtonFactory.createToolbar("导出");
+        exportAnswerBtn.setToolTipText("将当前筛选后的全部回复导出为 Excel 文件");
+        exportAnswerBtn.addActionListener(e -> exportAnswersToExcel());
+        actionPanel.add(exportAnswerBtn);
+        pagePanel.add(actionPanel, BorderLayout.WEST);
+        // 右侧：分页按钮 + 每页组件（统一靠右）
+        JPanel pageRightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 2));
         answerFirstPageBtn = ButtonFactory.createToolbar("首页");
         answerPrevPageBtn = ButtonFactory.createToolbar("上一页");
         answerNextPageBtn = ButtonFactory.createToolbar("下一页");
@@ -376,15 +395,15 @@ public class AnswerAuditPanel {
         answerPrevPageBtn.addActionListener(e -> gotoAnswerPage(answerCurrentPage - 1));
         answerNextPageBtn.addActionListener(e -> gotoAnswerPage(answerCurrentPage + 1));
         answerLastPageBtn.addActionListener(e -> gotoAnswerPage(answerTotalPages));
-        pageButtonsPanel.add(answerFirstPageBtn);
-        pageButtonsPanel.add(answerPrevPageBtn);
-        pageButtonsPanel.add(answerPageInfoLabel);
-        pageButtonsPanel.add(answerNextPageBtn);
-        pageButtonsPanel.add(answerLastPageBtn);
-        pageButtonsPanel.add(Box.createHorizontalStrut(12));
-        pageButtonsPanel.add(answerTotalLabel);
-        pagePanel.add(pageButtonsPanel, BorderLayout.CENTER);
-        JPanel sizePanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 2));
+        pageRightPanel.add(answerFirstPageBtn);
+        pageRightPanel.add(answerPrevPageBtn);
+        pageRightPanel.add(answerPageInfoLabel);
+        pageRightPanel.add(answerNextPageBtn);
+        pageRightPanel.add(answerLastPageBtn);
+        pageRightPanel.add(Box.createHorizontalStrut(12));
+        pageRightPanel.add(answerTotalLabel);
+        pageRightPanel.add(Box.createHorizontalStrut(12));
+        pageRightPanel.add(new JLabel("每页："));
         answerPageSizeCombo = new JComboBox<>(AiQuestionMangerDialog.DEFAULT_PAGE_SCOPE);
         answerPageSizeCombo.setEditable(true);
         answerPageSizeCombo.setPreferredSize(new Dimension(76, 26));
@@ -400,15 +419,9 @@ public class AnswerAuditPanel {
                 }
             });
         }
-        JButton exportAnswerBtn = ButtonFactory.createToolbar("导出");
-        exportAnswerBtn.setToolTipText("将当前筛选后的全部回复导出为 Excel 文件");
-        exportAnswerBtn.addActionListener(e -> exportAnswersToExcel());
-        sizePanel.add(exportAnswerBtn);
-        sizePanel.add(Box.createHorizontalStrut(8));
-        sizePanel.add(new JLabel("每页："));
-        sizePanel.add(answerPageSizeCombo);
-        sizePanel.add(new JLabel("条"));
-        pagePanel.add(sizePanel, BorderLayout.EAST);
+        pageRightPanel.add(answerPageSizeCombo);
+        pageRightPanel.add(new JLabel("条"));
+        pagePanel.add(pageRightPanel, BorderLayout.EAST);
         panel.add(pagePanel, BorderLayout.SOUTH);
         
         return panel;

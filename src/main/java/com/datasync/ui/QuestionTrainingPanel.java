@@ -704,7 +704,7 @@ public class QuestionTrainingPanel {
             JOptionPane.showMessageDialog(dialog, "请先在右上角选择环境", "提示", JOptionPane.WARNING_MESSAGE);
             return;
         }
-        String latestTrainingNo = latestTrainingNo();
+        String latestTrainingNo = latestTrainingNo(envConfig);
         if (trainingCastTimeDialog == null || !trainingCastTimeDialog.isDisplayable()) {
             trainingCastTimeDialog = new TrainingCastTimeDialog(dialog, envConfig, latestTrainingNo);
         } else {
@@ -741,9 +741,15 @@ public class QuestionTrainingPanel {
     /**
      * 获取最新批次号：取已加载问题中更新时间最新（其次 ID 最大）的有批次号问题，无批次号时返回 null
      */
-    private String latestTrainingNo() {
+    private String latestTrainingNo(AiEnvConfig envConfig) {
+        List<AiQuestion> aiQuestions = new ArrayList<>();
         AiQuestion latest = null;
-        for (AiQuestion question : allQuestions) {
+        try {
+            aiQuestions = AiQuestionApiClient.getInstance().listQuestions(envConfig, null);
+        } catch (Exception ex) {
+            logger.error("[latestTrainingNo] query questions error", ex);
+        }
+        for (AiQuestion question : aiQuestions) {
             if (question.getTrainingNo() == null || question.getTrainingNo().isBlank()) {
                 continue;
             }
@@ -799,9 +805,16 @@ public class QuestionTrainingPanel {
     }
     
     /**
-     * 判断问题 a 是否比 b 更新（更新时间优先，其次问题 ID）
+     * 判断问题 a 是否比 b 更新（训练触发时间优先，其次更新时间，最后问题 ID）
      */
     private boolean isNewerThan(AiQuestion a, AiQuestion b) {
+        Long initA = a.getInitTrainingTime();
+        Long initB = b.getInitTrainingTime();
+        if (initA != null && initB != null) {
+            if (!initA.equals(initB)) {
+                return initA > initB;
+            }
+        }
         if (a.getUpdateTime() != null && b.getUpdateTime() != null) {
             return a.getUpdateTime().isAfter(b.getUpdateTime());
         }
@@ -1112,9 +1125,9 @@ public class QuestionTrainingPanel {
         JPanel filterRight = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 2));
         JPanel filterRow2 = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
         filterRow2.setVisible(false);
-        searchField = new CustomTextField("模糊匹配问题/批次号");
+        searchField = new CustomTextField("模糊匹配问题/固定回复/批次号");
         searchField.setMinWidth(200);
-        searchField.setToolTipText("按关键字模糊匹配问题、分类、批次号");
+        searchField.setToolTipText("按关键字模糊匹配问题、固定回复、批次号");
         searchField.getDocument().addDocumentListener(new DocumentListener() {
             @Override
             public void insertUpdate(DocumentEvent e) {
@@ -1206,7 +1219,8 @@ public class QuestionTrainingPanel {
         trainBtn.addActionListener(e -> triggerTrainingQuestions());
         filterRight.add(trainBtn);
         JButton stopTrainBtn = ButtonFactory.createPill("停止训练", UiConstants.COLOR_DANGER, UiConstants.COLOR_DANGER_LIGHT);
-        stopTrainBtn.setToolTipText("停止勾选问题的训练，仅「待训练 / 训练中 / 训练已提交」状态的问题可停止，其余状态自动跳过（点击表头复选框可全选当前页）");
+        stopTrainBtn.setToolTipText(
+                "停止勾选问题的训练，仅「待训练 / 训练中 / 训练已提交」状态的问题可停止，其余状态自动跳过（点击表头复选框可全选当前页）");
         stopTrainBtn.addActionListener(e -> batchStopTrainingQuestions());
         filterRight.add(stopTrainBtn);
         JButton batchUpdateBtn = ButtonFactory.createPill("批量更新", UiConstants.COLOR_PRIMARY, UiConstants.COLOR_PRIMARY_LIGHT);
@@ -1351,7 +1365,26 @@ public class QuestionTrainingPanel {
         
         // 分页栏
         JPanel pagePanel = new JPanel(new BorderLayout(8, 2));
-        JPanel pageButtonsPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 4, 2));
+        // 左侧：操作按钮（导出 + 训练耗时  + 训练耗时实时标签）
+        JPanel actionPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        JButton exportQuestionBtn = ButtonFactory.createToolbar("导出");
+        exportQuestionBtn.setToolTipText("将当前筛选后的全部问题导出为 Excel 文件");
+        exportQuestionBtn.addActionListener(e -> exportQuestionsToExcel());
+        actionPanel.add(exportQuestionBtn);
+        actionPanel.add(Box.createHorizontalStrut(8));
+        JButton castTimeBtn = ButtonFactory.createToolbar("训练耗时");
+        castTimeBtn.setToolTipText("按批次号实时查询训练耗时（支持手动查询与自动刷新）");
+        castTimeBtn.addActionListener(e -> openTrainingCastTimeDialog());
+        actionPanel.add(castTimeBtn);
+        actionPanel.add(Box.createHorizontalStrut(8));
+        trainingCostLabel = new JLabel();
+        trainingCostLabel.setFont(UiConstants.FONT_SANS_11);
+        trainingCostLabel.setForeground(UiConstants.COLOR_NEUTRAL_LIGHT);
+        trainingCostLabel.setVisible(false);
+        actionPanel.add(trainingCostLabel);
+        pagePanel.add(actionPanel, BorderLayout.WEST);
+        // 右侧：分页按钮 + 每页组件（统一靠右）
+        JPanel pageRightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 2));
         firstPageBtn = ButtonFactory.createToolbar("首页");
         prevPageBtn = ButtonFactory.createToolbar("上一页");
         nextPageBtn = ButtonFactory.createToolbar("下一页");
@@ -1362,20 +1395,15 @@ public class QuestionTrainingPanel {
         prevPageBtn.addActionListener(e -> gotoPage(currentPage - 1));
         nextPageBtn.addActionListener(e -> gotoPage(currentPage + 1));
         lastPageBtn.addActionListener(e -> gotoPage(totalPages));
-        pageButtonsPanel.add(firstPageBtn);
-        pageButtonsPanel.add(prevPageBtn);
-        pageButtonsPanel.add(pageInfoLabel);
-        pageButtonsPanel.add(nextPageBtn);
-        pageButtonsPanel.add(lastPageBtn);
-        pageButtonsPanel.add(Box.createHorizontalStrut(12));
-        pageButtonsPanel.add(totalLabel);
-        pagePanel.add(pageButtonsPanel, BorderLayout.CENTER);
-        trainingCostLabel = new JLabel();
-        trainingCostLabel.setFont(UiConstants.FONT_SANS_11);
-        trainingCostLabel.setForeground(UiConstants.COLOR_PENDING);
-        trainingCostLabel.setVisible(false);
-        pagePanel.add(trainingCostLabel, BorderLayout.WEST);
-        JPanel sizePanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 2));
+        pageRightPanel.add(firstPageBtn);
+        pageRightPanel.add(prevPageBtn);
+        pageRightPanel.add(pageInfoLabel);
+        pageRightPanel.add(nextPageBtn);
+        pageRightPanel.add(lastPageBtn);
+        pageRightPanel.add(Box.createHorizontalStrut(12));
+        pageRightPanel.add(totalLabel);
+        pageRightPanel.add(Box.createHorizontalStrut(12));
+        pageRightPanel.add(new JLabel("每页："));
         pageSizeCombo = new JComboBox<>(AiQuestionMangerDialog.DEFAULT_PAGE_SCOPE);
         pageSizeCombo.setEditable(true);
         pageSizeCombo.setPreferredSize(new Dimension(76, 26));
@@ -1391,20 +1419,9 @@ public class QuestionTrainingPanel {
                 }
             });
         }
-        JButton castTimeBtn = ButtonFactory.createToolbar("训练耗时");
-        castTimeBtn.setToolTipText("按批次号实时查询训练耗时（支持手动查询与自动刷新）");
-        castTimeBtn.addActionListener(e -> openTrainingCastTimeDialog());
-        sizePanel.add(castTimeBtn);
-        sizePanel.add(Box.createHorizontalStrut(8));
-        JButton exportQuestionBtn = ButtonFactory.createToolbar("导出");
-        exportQuestionBtn.setToolTipText("将当前筛选后的全部问题导出为 Excel 文件");
-        exportQuestionBtn.addActionListener(e -> exportQuestionsToExcel());
-        sizePanel.add(exportQuestionBtn);
-        sizePanel.add(Box.createHorizontalStrut(8));
-        sizePanel.add(new JLabel("每页："));
-        sizePanel.add(pageSizeCombo);
-        sizePanel.add(new JLabel("条"));
-        pagePanel.add(sizePanel, BorderLayout.EAST);
+        pageRightPanel.add(pageSizeCombo);
+        pageRightPanel.add(new JLabel("条"));
+        pagePanel.add(pageRightPanel, BorderLayout.EAST);
         panel.add(pagePanel, BorderLayout.SOUTH);
         
         return panel;
@@ -1818,9 +1835,9 @@ public class QuestionTrainingPanel {
             return true;
         }
         String questionText = AiQuestionMangerDialog.nullToEmpty(question.getQuestion()).toLowerCase();
-        String classifyText = AiQuestionMangerDialog.nullToEmpty(question.getQuestionClassify()).toLowerCase();
+        String answerText = AiQuestionMangerDialog.nullToEmpty(question.getAnswer()).toLowerCase();
         String trainingNoText = AiQuestionMangerDialog.nullToEmpty(question.getTrainingNo()).toLowerCase();
-        return questionText.contains(keyword) || classifyText.contains(keyword) || trainingNoText.contains(keyword);
+        return questionText.contains(keyword) || answerText.contains(keyword) || trainingNoText.contains(keyword);
     }
     
     private void gotoPage(int page) {
@@ -1872,45 +1889,144 @@ public class QuestionTrainingPanel {
     // ────────── 问题 CRUD ──────────
     
     private void showQuestionDetail(AiQuestion question) {
-        JPanel form = new JPanel(new GridBagLayout());
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(6, 6, 6, 6);
-        gbc.anchor = GridBagConstraints.WEST;
-        dialog.addFormRow(form, gbc, 0, new JLabel("环境："), new JLabel(AiQuestionMangerDialog.nullToEmpty(question.getEnvName())));
-        dialog.addFormRow(form, gbc, 1, new JLabel("ID："), new JLabel(question.getId() != null ? String.valueOf(question.getId()) : ""));
-        dialog.addFormRow(form, gbc, 2, new JLabel("所属项目："), new JLabel(AiQuestionMangerDialog.nullToEmpty(question.getProjectName())));
-        dialog.addFormRow(form, gbc, 3, new JLabel("问题："),
-                AiQuestionMangerDialog.readonlyArea(AiQuestionMangerDialog.nullToEmpty(question.getQuestion()), 2));
-        dialog.addFormRow(form, gbc, 4, new JLabel("所属用户："), AiQuestionMangerDialog.readonlyField(
-                AiQuestionMangerDialog.formatUserIdDisplay(AiQuestionMangerDialog.nullToEmpty(question.getUserId()), dialog.userOptions)));
-        dialog.addFormRow(form, gbc, 5, new JLabel("分类："),
-                AiQuestionMangerDialog.readonlyField(AiQuestionMangerDialog.nullToEmpty(question.getQuestionClassify())));
-        dialog.addFormRow(form, gbc, 6, new JLabel("训练参数："),
+        // ── 上栏：上下流式布局（核心信息：可复制字段） ──
+        JPanel upperPanel = new JPanel();
+        upperPanel.setLayout(new BoxLayout(upperPanel, BoxLayout.Y_AXIS));
+        upperPanel.setBorder(BorderFactory.createEmptyBorder(4, 4, 4, 4));
+        
+        JPanel questionRow = buildLabeledDetailField("问题：",
+                buildBorderlessCopyableField(AiQuestionMangerDialog.nullToEmpty(question.getQuestion())));
+        JPanel answerRow = buildLabeledDetailField("固定回复：",
+                AiQuestionMangerDialog.readonlyArea(AiQuestionMangerDialog.nullToEmpty(question.getAnswer()), 8));
+        JPanel paramRow = buildLabeledDetailField("训练参数：",
                 AiQuestionMangerDialog.readonlyArea(AiQuestionMangerDialog.nullToEmpty(question.getTrainingParam()), 4));
-        dialog.addFormRow(form, gbc, 7, new JLabel("固定回复："),
-                AiQuestionMangerDialog.readonlyArea(AiQuestionMangerDialog.nullToEmpty(question.getAnswer()), 10));
-        dialog.addFormRow(form, gbc, 8, new JLabel("回复ID："),
-                new JLabel(question.getAnswerId() != null ? String.valueOf(question.getAnswerId()) : ""));
-        dialog.addFormRow(form, gbc, 9, new JLabel("开启训练："), new JLabel(question.isTrainingEnabled() ? "开启" : "不开启"));
-        dialog.addFormRow(form, gbc, 10, new JLabel("训练状态："),
-                new JLabel(AiQuestionMangerDialog.trainingStatusText(question.getTrainingStatus())));
-        dialog.addFormRow(form, gbc, 11, new JLabel("训练模式："), new JLabel(AiQuestionMangerDialog.trainingModelText(question.getTrainingModel())));
-        dialog.addFormRow(form, gbc, 12, new JLabel("批次号："),
-                AiQuestionMangerDialog.readonlyField(AiQuestionMangerDialog.nullToEmpty(question.getTrainingNo())));
-        dialog.addFormRow(form, gbc, 13, new JLabel("训练触发时间："),
-                new JLabel(AiQuestionMangerDialog.formatEpochMillis(question.getInitTrainingTime())));
-        dialog.addFormRow(form, gbc, 14, new JLabel("训练提交时间："),
-                new JLabel(AiQuestionMangerDialog.formatEpochMillis(question.getSubmitTrainingTime())));
-        dialog.addFormRow(form, gbc, 15, new JLabel("训练开始时间："),
-                new JLabel(AiQuestionMangerDialog.formatEpochMillis(question.getStartTrainingTime())));
-        dialog.addFormRow(form, gbc, 16, new JLabel("训练完成时间："),
-                new JLabel(AiQuestionMangerDialog.formatEpochMillis(question.getLastTrainingTime())));
+        JPanel remarkRow = buildLabeledDetailField("备注：",
+                AiQuestionMangerDialog.readonlyArea(AiQuestionMangerDialog.nullToEmpty(question.getRemark()), 2));
+        // 纵向对齐所有 label（取最大宽度统一设置 preferredSize）
+        alignDetailFieldLabels(questionRow, answerRow, paramRow, remarkRow);
+        
+        upperPanel.add(questionRow);
+        upperPanel.add(Box.createVerticalStrut(3));
+        upperPanel.add(answerRow);
+        upperPanel.add(Box.createVerticalStrut(3));
+        upperPanel.add(paramRow);
+        upperPanel.add(Box.createVerticalStrut(3));
+        upperPanel.add(remarkRow);
+        
+        // ── 下栏：网格布局（一行 2 个值）其它基本信息 ──
+        JPanel lowerPanel = new JPanel(new GridLayout(0, 2, 8, 4));
+        lowerPanel.setBorder(BorderFactory.createEmptyBorder(4, 4, 4, 4));
+        
+        addDetailInfoRow(lowerPanel, "ID：", question.getId() != null ? String.valueOf(question.getId()) : "");
+        addDetailInfoRow(lowerPanel, "所属项目：", AiQuestionMangerDialog.nullToEmpty(question.getProjectName()));
+        addDetailInfoRow(lowerPanel, "所属用户：",
+                AiQuestionMangerDialog.formatUserIdDisplay(AiQuestionMangerDialog.nullToEmpty(question.getUserId()), dialog.userOptions));
+        addDetailInfoRow(lowerPanel, "分类：", AiQuestionMangerDialog.nullToEmpty(question.getQuestionClassify()));
+        addDetailInfoRow(lowerPanel, "回复ID：", question.getAnswerId() != null ? String.valueOf(question.getAnswerId()) : "");
+        addDetailInfoRow(lowerPanel, "开启训练：", question.isTrainingEnabled() ? "开启" : "不开启");
+        addDetailInfoRow(lowerPanel, "训练状态：", AiQuestionMangerDialog.trainingStatusText(question.getTrainingStatus()));
+        addDetailInfoRow(lowerPanel, "训练模式：", AiQuestionMangerDialog.trainingModelText(question.getTrainingModel()));
+        addDetailInfoRow(lowerPanel, "训练触发时间：", AiQuestionMangerDialog.formatEpochMillis(question.getInitTrainingTime()));
+        addDetailInfoRow(lowerPanel, "训练提交时间：", AiQuestionMangerDialog.formatEpochMillis(question.getSubmitTrainingTime()));
+        addDetailInfoRow(lowerPanel, "训练开始时间：", AiQuestionMangerDialog.formatEpochMillis(question.getStartTrainingTime()));
+        addDetailInfoRow(lowerPanel, "训练完成时间：", AiQuestionMangerDialog.formatEpochMillis(question.getLastTrainingTime()));
         String trainingCost = AiQuestionMangerDialog.trainingCostText(question);
-        dialog.addFormRow(form, gbc, 17, new JLabel("训练耗时："), new JLabel(trainingCost.isEmpty() ? "" : trainingCost + " 秒"));
-        dialog.addFormRow(form, gbc, 18, new JLabel("自动训练："), new JLabel(question.isAutoTrainingAllowed() ? "允许" : "不允许"));
-        dialog.addFormRow(form, gbc, 19, new JLabel("备注："),
-                AiQuestionMangerDialog.readonlyArea(AiQuestionMangerDialog.nullToEmpty(question.getRemark()), 3));
-        JOptionPane.showMessageDialog(dialog, form, "问题详情", JOptionPane.PLAIN_MESSAGE);
+        addDetailInfoRow(lowerPanel, "训练耗时：", trainingCost.isEmpty() ? "" : trainingCost + " 秒");
+        addDetailInfoRow(lowerPanel, "批次号：", AiQuestionMangerDialog.nullToEmpty(question.getTrainingNo()));
+        addDetailInfoRow(lowerPanel, "任务ID：", AiQuestionMangerDialog.nullToEmpty(question.getTrainingTaskId()));
+        addDetailInfoRow(lowerPanel, "自动训练：", question.isAutoTrainingAllowed() ? "允许" : "不允许");
+        
+        // ── 上下分割条：用户可拖拽调节上下栏高度 ──
+        JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, upperPanel, new JScrollPane(lowerPanel));
+        splitPane.setResizeWeight(0.55);
+        splitPane.setContinuousLayout(true);
+        splitPane.setBorder(null);
+        
+        JPanel root = new JPanel(new BorderLayout());
+        root.setBorder(new EmptyBorder(8, 8, 8, 8));
+        root.add(splitPane, BorderLayout.CENTER);
+        root.setPreferredSize(new Dimension(820, 640));
+        JOptionPane.showMessageDialog(dialog, root, "问题详情-环境[" + question.getEnvName() + "]", JOptionPane.PLAIN_MESSAGE);
+    }
+    
+    /**
+     * 上栏使用：标签在左（顶部对齐），字段在右，使用 GridBagLayout 严格控制列宽
+     */
+    private JPanel buildLabeledDetailField(String labelText, JComponent field) {
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.anchor = GridBagConstraints.NORTHWEST;
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.weightx = 0;
+        gbc.insets = new Insets(0, 0, 0, 8);
+        JLabel label = new JLabel(labelText);
+        label.setVerticalAlignment(SwingConstants.TOP);
+        label.setHorizontalAlignment(SwingConstants.LEFT);
+        panel.add(label, gbc);
+        gbc.gridx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.weightx = 1.0;
+        panel.add(field, gbc);
+        return panel;
+    }
+    
+    /**
+     * 上栏使用：对齐多个"标签 + 字段"行中 label 的宽度，使所有 label 纵向对齐
+     */
+    private void alignDetailFieldLabels(JPanel... rows) {
+        int maxWidth = 0;
+        for (JPanel row : rows) {
+            Component[] components = row.getComponents();
+            if (components.length == 0 || !(components[0] instanceof JLabel label)) {
+                continue;
+            }
+            maxWidth = Math.max(maxWidth, label.getPreferredSize().width);
+        }
+        for (JPanel row : rows) {
+            Component[] components = row.getComponents();
+            if (components.length == 0 || !(components[0] instanceof JLabel label)) {
+                continue;
+            }
+            Dimension d = new Dimension(maxWidth, label.getPreferredSize().height);
+            // preferredSize / minimumSize / maximumSize 三者统一，避免被布局拉伸或压缩
+            label.setPreferredSize(d);
+            label.setMinimumSize(d);
+            label.setMaximumSize(d);
+        }
+        // 强制所有 row 重新布局，确保 label 新尺寸生效
+        for (JPanel row : rows) {
+            row.invalidate();
+            row.validate();
+            row.repaint();
+        }
+    }
+    
+    /**
+     * 批次号使用：无边框但仍可选中复制（Ctrl+C / 拖选复制）
+     */
+    private JTextField buildBorderlessCopyableField(String text) {
+        JTextField field = new JTextField(text);
+        field.setEditable(false);
+        field.setBorder(null);
+        field.setOpaque(false);
+        field.setToolTipText("可拖选文字复制，或按 Ctrl+C");
+        return field;
+    }
+    
+    /**
+     * 下栏使用：标签（灰色）+ 值，组成一个网格单元
+     */
+    private void addDetailInfoRow(JPanel panel, String labelText, String value) {
+        JPanel row = new JPanel(new BorderLayout(6, 0));
+        JLabel label = new JLabel(labelText);
+        label.setForeground(Color.GRAY);
+        row.add(label, BorderLayout.WEST);
+        JLabel valueLabel = new JLabel(value);
+        row.add(valueLabel, BorderLayout.CENTER);
+        panel.add(row);
     }
     
     private void viewAnswerInfo(AiQuestion question) {
@@ -2027,16 +2143,17 @@ public class QuestionTrainingPanel {
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(6, 6, 6, 6);
         gbc.anchor = GridBagConstraints.WEST;
-        dialog.addFormRow(form, gbc, 0, new JLabel("环境："), new JLabel(AiQuestionMangerDialog.nullToEmpty(question.getEnvName())));
-        dialog.addFormRow(form, gbc, 1, new JLabel("问题："), dialog.dialogScroll(questionArea, 2));
-        dialog.addFormRow(form, gbc, 2, new JLabel("所属用户："), userIdCombo);
-        dialog.addFormRow(form, gbc, 3, new JLabel("分类："), classifyCombo);
-        dialog.addFormRow(form, gbc, 4, new JLabel("训练参数："), dialog.dialogScroll(trainingParamArea, 5));
-        dialog.addFormRow(form, gbc, 5, new JLabel("固定回复："), dialog.dialogScroll(answerArea, 10));
-        dialog.addFormRow(form, gbc, 6, new JLabel("开启训练："), enableCombo);
-        dialog.addFormRow(form, gbc, 7, new JLabel("自动训练："), autoTrainingEditCombo);
+        //        dialog.addFormRow(form, gbc, 0, new JLabel("环境："), new JLabel(AiQuestionMangerDialog.nullToEmpty(question.getEnvName())));
+        dialog.addFormRow(form, gbc, 0, new JLabel("问题："), AiQuestionMangerDialog.dialogScroll(questionArea, 2));
+        dialog.addFormRow(form, gbc, 1, new JLabel("所属用户："), userIdCombo);
+        dialog.addFormRow(form, gbc, 2, new JLabel("分类："), classifyCombo);
+        dialog.addFormRow(form, gbc, 3, new JLabel("训练参数："), AiQuestionMangerDialog.dialogScroll(trainingParamArea, 5));
+        dialog.addFormRow(form, gbc, 4, new JLabel("固定回复："), AiQuestionMangerDialog.dialogScroll(answerArea, 10));
+        dialog.addFormRow(form, gbc, 5, new JLabel("开启训练："), enableCombo);
+        dialog.addFormRow(form, gbc, 6, new JLabel("自动训练："), autoTrainingEditCombo);
         
-        int option = JOptionPane.showConfirmDialog(dialog, form, "编辑问题", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        int option = JOptionPane.showConfirmDialog(dialog, form, "编辑问题-环境[" + question.getEnvName() + "]", JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.PLAIN_MESSAGE);
         if (option != JOptionPane.OK_OPTION) {
             return;
         }
@@ -2099,8 +2216,8 @@ public class QuestionTrainingPanel {
             return;
         }
         int confirm = JOptionPane.showConfirmDialog(dialog,
-                "确定删除环境 [" + envConfig.getEnvName() + "] 的问题 [" + AiQuestionMangerDialog.abbreviate(question.getQuestion(), 30) + "] 吗？",
-                "确认删除", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+                "确定删除问题 [" + AiQuestionMangerDialog.abbreviate(question.getQuestion(), 30) + "] 吗？",
+                "确认删除-环境 [" + envConfig.getEnvName() + "]", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
         if (confirm != JOptionPane.YES_OPTION) {
             return;
         }
@@ -2167,7 +2284,7 @@ public class QuestionTrainingPanel {
         singleParamPanel.add(agentTypeCombo);
         confirmPanel.add(Box.createVerticalStrut(8));
         confirmPanel.add(singleParamPanel);
-        int confirm = JOptionPane.showConfirmDialog(dialog, confirmPanel, "确认触发训练，环境 [" + envConfig.getEnvName() + "]",
+        int confirm = JOptionPane.showConfirmDialog(dialog, confirmPanel, "确认触发训练-环境 [" + envConfig.getEnvName() + "]",
                 JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
         if (confirm != JOptionPane.YES_OPTION) {
             return;
@@ -2221,8 +2338,7 @@ public class QuestionTrainingPanel {
                 lines.add(" …等共 " + trainingBusyQuestions.size() + " 条");
             }
             JOptionPane.showMessageDialog(dialog,
-                    "选中的 " + checkedQuestions.size() + " 条问题中有 " + trainingBusyQuestions.size()
-                            + " 条处于「训练中 / 训练已提交」状态，不允许再次触发训练：\n"
+                    "选中的 " + checkedQuestions.size() + " 条问题中有 " + trainingBusyQuestions.size() + " 条处于「训练中 / 训练已提交」状态，不允许再次触发训练：\n"
                             + String.join("\n", lines) + "\n\n请取消勾选这些问题（如需中止请先使用「停止训练」）后再触发训练。", "提示",
                     JOptionPane.WARNING_MESSAGE);
             return;
@@ -2386,8 +2502,9 @@ public class QuestionTrainingPanel {
             }
         }
         if (stoppableQuestions.isEmpty()) {
-            JOptionPane.showMessageDialog(dialog, "选中的 " + checkedQuestions.size() + " 条问题均不在「待训练 / 训练中 / 训练已提交」状态，无需停止训练。",
-                    "提示", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(dialog,
+                    "选中的 " + checkedQuestions.size() + " 条问题均不在「待训练 / 训练中 / 训练已提交」状态，无需停止训练。", "提示",
+                    JOptionPane.WARNING_MESSAGE);
             return;
         }
         LinkedHashMap<String, List<Long>> envIdGroups = new LinkedHashMap<>();
