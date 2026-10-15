@@ -14,6 +14,7 @@ import com.datasync.components.CustomTextField;
 import com.datasync.components.FilterComboBox;
 import com.datasync.core.AiQuestionApiClient;
 import com.datasync.model.AiEnvConfig;
+import com.datasync.model.AiMetaConfig;
 import com.datasync.model.AiQuestion;
 import com.datasync.util.ExcelExportUtil;
 import com.datasync.util.ExcelQuestionUtil;
@@ -61,6 +62,22 @@ public class QuestionTrainingPanel {
     private static final String[] AGENT_TYPES = {"safety", "system", "ops", "auto"};
     
     private static final String DEFAULT_AGENT_TYPE = "auto";
+    
+    /**
+     * 触发训练弹窗训练模型 / 意图分析模型下拉的首项：表示不由客户端指定该参数（整体清空输入框时不提交该字段）
+     */
+    private static final String AUTO_META_OPTION = "auto";
+    
+    /**
+     * 触发训练弹窗 AI 元数据下拉宽度（避免选项异步回填前弹窗被压缩得过窄）
+     */
+    private static final int META_COMBO_WIDTH = 240;
+    
+    private static final String AGENT_TYPE_TIP = "下拉选择或手动输入智能体类型（首项 auto 为默认，选项取自获取AI元数据接口 agentList，展示「名称（描述）」，接口未返回时回退内置类型）；不允许为空";
+    
+    private static final String CORE_LLM_TIP = "下拉选择或手动输入训练模型名称（首项 auto 为默认，选项取自获取AI元数据接口 coreLlmNameList）；不允许为空";
+    
+    private static final String INTENTION_LLM_TIP = "下拉选择或手动输入意图分析模型名称（首项 auto 为默认，选项取自获取AI元数据接口 intentionLlmNameList）；不允许为空";
     
     private static final String ALL_CLASSIFY = "全部分类";
     
@@ -235,6 +252,11 @@ public class QuestionTrainingPanel {
      * 分页栏实时训练耗时标签（弹窗自动刷新且批次训练进行中时展示）
      */
     private JLabel trainingCostLabel;
+    
+    /**
+     * 触发训练弹窗打开时构建的 AI 元数据下拉组（元数据异步返回后回填选项，避免弹窗先于接口返回弹出时下拉为空）
+     */
+    private MetaComboGroup openMetaComboGroup;
     
     // ────────── 构造 ──────────
     
@@ -1071,6 +1093,214 @@ public class QuestionTrainingPanel {
         for (QuestionEntryRow row : entryRows) {
             row.selectedProjectCodes.clear();
             row.projectBtn.setText(AiQuestionMangerDialog.projectButtonLabel(row.selectedProjectCodes));
+        }
+    }
+    
+    // ────────── AI 元数据下拉（触发训练弹窗） ──────────
+    
+    /**
+     * 用当前环境的 AI 元数据回填触发训练弹窗下拉选项（弹窗打开期间异步加载完成时调用；未打开弹窗时忽略）
+     */
+    void refreshAiMetaOptionsInPanel() {
+        MetaComboGroup group = openMetaComboGroup;
+        if (group == null) {
+            return;
+        }
+        AiMetaConfig config = dialog.aiMetaConfig;
+        fillAgentTypeCombo(group.agentTypeCombo, config.agentOptions());
+        fillMetaCombo(group.coreLlmCombo, config.coreLlmNameOptions());
+        fillMetaCombo(group.intentionLlmCombo, config.intentionLlmNameOptions());
+    }
+    
+    /**
+     * 构建智能体类型可编辑下拉（支持下拉选中与手动输入，选项取自 AI 元数据接口 agentList，选中项展示 name（desc））
+     */
+    private static JComboBox<AgentOption> createAgentTypeCombo(List<AiMetaConfig.Agent> agents) {
+        JComboBox<AgentOption> combo = new JComboBox<>();
+        combo.setEditable(true);
+        combo.setPreferredSize(new Dimension(META_COMBO_WIDTH, 26));
+        combo.setToolTipText(AGENT_TYPE_TIP);
+        fillAgentTypeCombo(combo, agents);
+        return combo;
+    }
+    
+    /**
+     * 回填智能体类型下拉选项（始终以 auto 为首项；接口未返回 agentList 时回退内置类型；保留用户主动选择 / 手动输入内容）
+     */
+    private static void fillAgentTypeCombo(JComboBox<AgentOption> combo, List<AiMetaConfig.Agent> agents) {
+        String typed = agentTypeText(combo);
+        combo.removeAllItems();
+        for (AgentOption option : toAgentOptions(agents)) {
+            combo.addItem(option);
+        }
+        // 默认 / 清空 → 始终回落 auto（首项）
+        if (typed.isEmpty() || DEFAULT_AGENT_TYPE.equals(typed)) {
+            combo.setSelectedIndex(0);
+            return;
+        }
+        // 用户主动选择或手动输入了非 auto 的值：按名称匹配选项
+        for (int i = 0; i < combo.getItemCount(); i++) {
+            if (combo.getItemAt(i).name().equals(typed)) {
+                combo.setSelectedIndex(i);
+                return;
+            }
+        }
+        // 手动输入未匹配到任何选项：保留输入内容（提交时若为空仍会回退为 auto）
+        if (combo.getItemCount() > 0) {
+            combo.setSelectedIndex(0);
+        }
+        combo.getEditor().setItem(typed);
+    }
+    
+    /**
+     * 转换接口 agentList 为智能体类型下拉项（始终将 auto 作为首项，重复 name 去重；无有效项时回退内置类型）
+     */
+    private static List<AgentOption> toAgentOptions(List<AiMetaConfig.Agent> agents) {
+        List<AgentOption> options = new ArrayList<>();
+        // 首项固定为 auto（默认智能体类型）
+        options.add(new AgentOption(DEFAULT_AGENT_TYPE, null));
+        if (agents != null) {
+            for (AiMetaConfig.Agent agent : agents) {
+                if (agent == null || agent.getName() == null || agent.getName().isBlank()) {
+                    continue;
+                }
+                String name = agent.getName().trim();
+                if (DEFAULT_AGENT_TYPE.equals(name)) {
+                    continue;
+                }
+                boolean exists = options.stream().anyMatch(option -> option.name().equals(name));
+                if (!exists) {
+                    options.add(new AgentOption(name, agent.getDesc()));
+                }
+            }
+        }
+        if (options.size() == 1) {
+            // 接口无有效数据时回退内置类型（auto 已加入，去重）
+            for (String type : AGENT_TYPES) {
+                if (DEFAULT_AGENT_TYPE.equals(type)) {
+                    continue;
+                }
+                options.add(new AgentOption(type, null));
+            }
+        }
+        return options;
+    }
+    
+    /**
+     * 读取智能体类型下拉的提交值（下拉选中取选项 name，手动输入取输入文本；展示文本含描述时回退为 name）
+     */
+    private static String agentTypeText(JComboBox<AgentOption> combo) {
+        Object value = combo.isEditable() ? combo.getEditor().getItem() : combo.getSelectedItem();
+        if (value instanceof AgentOption option) {
+            return option.name();
+        }
+        String text = value == null ? "" : value.toString().trim();
+        for (int i = 0; i < combo.getItemCount(); i++) {
+            AgentOption option = combo.getItemAt(i);
+            if (option != null && option.displayText().equals(text)) {
+                return option.name();
+            }
+        }
+        return text;
+    }
+    
+    /**
+     * 构建 AI 元数据可编辑下拉（支持下拉选中与手动输入，首项 auto 为默认；提交时不允许为空，自动回退为 auto）
+     */
+    private static JComboBox<String> createMetaCombo(List<String> options, String toolTip) {
+        JComboBox<String> combo = new JComboBox<>();
+        combo.setEditable(true);
+        combo.setPreferredSize(new Dimension(META_COMBO_WIDTH, 26));
+        combo.setToolTipText(toolTip);
+        fillMetaCombo(combo, options);
+        return combo;
+    }
+    
+    /**
+     * 回填可编辑下拉选项（首项 auto 为默认；空值 / 显式选中 auto 一律回落到 auto；保留用户主动下拉选中 / 手动输入的其他值）
+     */
+    private static void fillMetaCombo(JComboBox<String> combo, List<String> options) {
+        String current = comboText(combo);
+        combo.removeAllItems();
+        combo.addItem(AUTO_META_OPTION);
+        if (options != null) {
+            for (String option : options) {
+                if (option != null && !option.isBlank()) {
+                    combo.addItem(option);
+                }
+            }
+        }
+        if (current.isEmpty() || AUTO_META_OPTION.equals(current)) {
+            // 默认 / 清空 / 显式回到 auto：始终默认选中 auto
+            combo.setSelectedIndex(0);
+        } else {
+            combo.getEditor().setItem(current);
+        }
+    }
+    
+    /**
+     * 读取可编辑下拉的当前文本（下拉选中与手动输入均取编辑器内容；空值返回空串）
+     */
+    private static String comboText(JComboBox<String> combo) {
+        Object value = combo.isEditable() ? combo.getEditor().getItem() : combo.getSelectedItem();
+        return value == null ? "" : value.toString().trim();
+    }
+    
+    /**
+     * 兜底为 auto（智能体类型 / 训练模型 / 意图分析模型提交时不允许为空）
+     */
+    private static String requireAuto(String value) {
+        return value == null || value.isBlank() ? AUTO_META_OPTION : value.trim();
+    }
+    
+    /**
+     * 触发训练参数表单行（标签 + 输入组件）
+     */
+    private static void addParamRow(JPanel panel, GridBagConstraints gbc, int row, String labelText, JComponent field) {
+        gbc.gridx = 0;
+        gbc.gridy = row;
+        gbc.weightx = 0;
+        gbc.fill = GridBagConstraints.NONE;
+        panel.add(new JLabel(labelText), gbc);
+        gbc.gridx = 1;
+        gbc.weightx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        panel.add(field, gbc);
+    }
+    
+    /**
+     * 触发训练弹窗 AI 元数据下拉组（智能体类型 / 训练模型 / 意图分析模型）
+     */
+    private static final class MetaComboGroup {
+        
+        private final JComboBox<AgentOption> agentTypeCombo;
+        
+        private final JComboBox<String> coreLlmCombo;
+        
+        private final JComboBox<String> intentionLlmCombo;
+        
+        MetaComboGroup(JComboBox<AgentOption> agentTypeCombo, JComboBox<String> coreLlmCombo, JComboBox<String> intentionLlmCombo) {
+            this.agentTypeCombo = agentTypeCombo;
+            this.coreLlmCombo = coreLlmCombo;
+            this.intentionLlmCombo = intentionLlmCombo;
+        }
+    }
+    
+    /**
+     * 智能体类型下拉项（name：提交的智能体类型；desc：下拉展示的智能体描述）
+     */
+    private record AgentOption(String name, String desc) {
+        
+        /**
+         * 下拉展示文本（描述为空时仅展示智能体名称）
+         */
+        String displayText() {
+            return desc == null || desc.isBlank() ? name : name + "（" + desc.trim() + "）";
+        }
+        
+        @Override
+        public String toString() {
+            return displayText();
         }
     }
     
@@ -1926,6 +2156,10 @@ public class QuestionTrainingPanel {
         addDetailInfoRow(lowerPanel, "开启训练：", question.isTrainingEnabled() ? "开启" : "不开启");
         addDetailInfoRow(lowerPanel, "训练状态：", AiQuestionMangerDialog.trainingStatusText(question.getTrainingStatus()));
         addDetailInfoRow(lowerPanel, "训练模式：", AiQuestionMangerDialog.trainingModelText(question.getTrainingModel()));
+        addDetailInfoRow(lowerPanel, "智能体类型：", AiQuestionMangerDialog.nullToEmpty(question.getAgentType()));
+        addDetailInfoRow(lowerPanel, "训练模型：", AiQuestionMangerDialog.nullToEmpty(question.getCoreLlmName()));
+        addDetailInfoRow(lowerPanel, "意图识别模型：", AiQuestionMangerDialog.nullToEmpty(question.getIntentionLlmName()));
+        addDetailInfoRow(lowerPanel, "重试次数：", question.getRetryCount() == null ? "" : String.valueOf(question.getRetryCount()));
         addDetailInfoRow(lowerPanel, "训练触发时间：", AiQuestionMangerDialog.formatEpochMillis(question.getInitTrainingTime()));
         addDetailInfoRow(lowerPanel, "训练提交时间：", AiQuestionMangerDialog.formatEpochMillis(question.getSubmitTrainingTime()));
         addDetailInfoRow(lowerPanel, "训练开始时间：", AiQuestionMangerDialog.formatEpochMillis(question.getStartTrainingTime()));
@@ -2262,9 +2496,12 @@ public class QuestionTrainingPanel {
                     "错误", JOptionPane.ERROR_MESSAGE);
             return;
         }
-        JComboBox<String> agentTypeCombo = new JComboBox<>(AGENT_TYPES);
-        agentTypeCombo.setSelectedItem(DEFAULT_AGENT_TYPE);
-        agentTypeCombo.setToolTipText("训练请求 agentType 字段值");
+        // AI 元数据下拉（智能体类型 / 训练模型 / 意图分析模型）：支持下拉选中与手动输入，训练模型与意图分析模型允许留空
+        dialog.refreshAiMetaConfigIfNeeded();
+        AiMetaConfig metaConfig = dialog.aiMetaConfig;
+        JComboBox<AgentOption> agentTypeCombo = createAgentTypeCombo(metaConfig.agentOptions());
+        JComboBox<String> coreLlmCombo = createMetaCombo(metaConfig.coreLlmNameOptions(), CORE_LLM_TIP);
+        JComboBox<String> intentionLlmCombo = createMetaCombo(metaConfig.intentionLlmNameOptions(), INTENTION_LLM_TIP);
         JPanel confirmPanel = new JPanel();
         confirmPanel.setLayout(new BoxLayout(confirmPanel, BoxLayout.Y_AXIS));
         confirmPanel.setBorder(new EmptyBorder(8, 12, 8, 12));
@@ -2277,25 +2514,39 @@ public class QuestionTrainingPanel {
         JLabel questionCaptionLabel = new JLabel("问题：" + AiQuestionMangerDialog.nullToEmpty(question.getQuestion()));
         questionCaptionLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         confirmPanel.add(questionCaptionLabel);
-        // 仅展示智能体类型：单问题训练并发数固定为 1，不开放编辑
-        JPanel singleParamPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        // 单问题训练并发数固定为 1，不开放编辑
+        JPanel singleParamPanel = new JPanel(new GridBagLayout());
         singleParamPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        singleParamPanel.add(new JLabel("智能体类型："));
-        singleParamPanel.add(agentTypeCombo);
+        GridBagConstraints pgbc = new GridBagConstraints();
+        pgbc.insets = new Insets(3, 2, 3, 6);
+        pgbc.anchor = GridBagConstraints.WEST;
+        addParamRow(singleParamPanel, pgbc, 0, "智能体类型：", agentTypeCombo);
+        addParamRow(singleParamPanel, pgbc, 1, "训练模型：", coreLlmCombo);
+        addParamRow(singleParamPanel, pgbc, 2, "意图分析模型：", intentionLlmCombo);
         confirmPanel.add(Box.createVerticalStrut(8));
         confirmPanel.add(singleParamPanel);
-        int confirm = JOptionPane.showConfirmDialog(dialog, confirmPanel, "确认触发训练-环境 [" + envConfig.getEnvName() + "]",
-                JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        // 弹窗展示期间元数据若尚未返回，异步加载完成后回填下拉选项
+        openMetaComboGroup = new MetaComboGroup(agentTypeCombo, coreLlmCombo, intentionLlmCombo);
+        int confirm;
+        try {
+            confirm = JOptionPane.showConfirmDialog(dialog, confirmPanel, "确认触发训练-环境 [" + envConfig.getEnvName() + "]",
+                    JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        } finally {
+            openMetaComboGroup = null;
+        }
         if (confirm != JOptionPane.YES_OPTION) {
             return;
         }
         // 单问题训练：并发数固定为 1，直接提交
         final Integer concurrency = 1;
-        String agentType = (String) agentTypeCombo.getSelectedItem();
+        String agentType = requireAuto(agentTypeText(agentTypeCombo));
+        String coreLlmName = requireAuto(comboText(coreLlmCombo));
+        String intentionLlmName = requireAuto(comboText(intentionLlmCombo));
         Long questionId = question.getId();
         String questionText = question.getQuestion();
         dialog.runApiTask("触发训练", () -> {
-            String message = AiQuestionApiClient.getInstance().triggerTraining(envConfig, List.of(questionId), agentType, concurrency);
+            String message = AiQuestionApiClient.getInstance().triggerTraining(envConfig, List.of(questionId), agentType, concurrency, coreLlmName,
+                    intentionLlmName);
             return () -> {
                 dialog.invalidateLoadedData();
                 refreshQuestionTable();
@@ -2385,9 +2636,12 @@ public class QuestionTrainingPanel {
                     JOptionPane.ERROR_MESSAGE);
             return;
         }
-        JComboBox<String> agentTypeCombo = new JComboBox<>(AGENT_TYPES);
-        agentTypeCombo.setSelectedItem(DEFAULT_AGENT_TYPE);
-        agentTypeCombo.setToolTipText("训练请求 agentType 字段值");
+        // AI 元数据下拉（智能体类型 / 训练模型 / 意图分析模型）：支持下拉选中与手动输入，训练模型与意图分析模型允许留空
+        dialog.refreshAiMetaConfigIfNeeded();
+        AiMetaConfig metaConfig = dialog.aiMetaConfig;
+        JComboBox<AgentOption> agentTypeCombo = createAgentTypeCombo(metaConfig.agentOptions());
+        JComboBox<String> coreLlmCombo = createMetaCombo(metaConfig.coreLlmNameOptions(), CORE_LLM_TIP);
+        JComboBox<String> intentionLlmCombo = createMetaCombo(metaConfig.intentionLlmNameOptions(), INTENTION_LLM_TIP);
         JPanel confirmPanel = new JPanel();
         confirmPanel.setLayout(new BoxLayout(confirmPanel, BoxLayout.Y_AXIS));
         confirmPanel.setBorder(new EmptyBorder(8, 12, 8, 12));
@@ -2421,30 +2675,22 @@ public class QuestionTrainingPanel {
         GridBagConstraints pgbc = new GridBagConstraints();
         pgbc.insets = new Insets(3, 2, 3, 6);
         pgbc.anchor = GridBagConstraints.WEST;
-        // 第 1 行：智能体类型
-        pgbc.gridx = 0;
-        pgbc.gridy = 0;
-        pgbc.weightx = 0;
-        pgbc.fill = GridBagConstraints.NONE;
-        paramsPanel.add(new JLabel("智能体类型："), pgbc);
-        pgbc.gridx = 1;
-        pgbc.weightx = 1;
-        pgbc.fill = GridBagConstraints.HORIZONTAL;
-        paramsPanel.add(agentTypeCombo, pgbc);
-        // 第 2 行：训练并发数
-        pgbc.gridx = 0;
-        pgbc.gridy = 1;
-        pgbc.weightx = 0;
-        pgbc.fill = GridBagConstraints.NONE;
-        paramsPanel.add(new JLabel("训练并发数："), pgbc);
-        pgbc.gridx = 1;
-        pgbc.weightx = 1;
-        pgbc.fill = GridBagConstraints.HORIZONTAL;
-        paramsPanel.add(concurrencyField, pgbc);
+        // 第 1 行：智能体类型；第 2-4 行：智能体对象 / 训练模型 / 意图分析模型（取自 AI 元数据接口，允许留空）；第 5 行：训练并发数
+        addParamRow(paramsPanel, pgbc, 0, "智能体类型：", agentTypeCombo);
+        addParamRow(paramsPanel, pgbc, 1, "训练模型：", coreLlmCombo);
+        addParamRow(paramsPanel, pgbc, 2, "意图分析模型：", intentionLlmCombo);
+        addParamRow(paramsPanel, pgbc, 3, "训练并发数：", concurrencyField);
         confirmPanel.add(Box.createVerticalStrut(8));
         confirmPanel.add(paramsPanel);
-        int confirm = JOptionPane.showConfirmDialog(dialog, confirmPanel, "确认触发训练 - 环境 [" + envName + "]", JOptionPane.YES_NO_OPTION,
-                JOptionPane.WARNING_MESSAGE);
+        // 弹窗展示期间元数据若尚未返回，异步加载完成后回填下拉选项
+        openMetaComboGroup = new MetaComboGroup(agentTypeCombo, coreLlmCombo, intentionLlmCombo);
+        int confirm;
+        try {
+            confirm = JOptionPane.showConfirmDialog(dialog, confirmPanel, "确认触发训练 - 环境 [" + envName + "]", JOptionPane.YES_NO_OPTION,
+                    JOptionPane.WARNING_MESSAGE);
+        } finally {
+            openMetaComboGroup = null;
+        }
         if (confirm != JOptionPane.YES_OPTION) {
             return;
         }
@@ -2462,9 +2708,11 @@ public class QuestionTrainingPanel {
             }
             concurrency = parsed;
         }
-        String agentType = (String) agentTypeCombo.getSelectedItem();
+        String agentType = requireAuto(agentTypeText(agentTypeCombo));
+        String coreLlmName = requireAuto(comboText(coreLlmCombo));
+        String intentionLlmName = requireAuto(comboText(intentionLlmCombo));
         dialog.runApiTask("触发训练", () -> {
-            String message = AiQuestionApiClient.getInstance().triggerTraining(envConfig, ids, agentType, concurrency);
+            String message = AiQuestionApiClient.getInstance().triggerTraining(envConfig, ids, agentType, concurrency, coreLlmName, intentionLlmName);
             int successCount = ids.size();
             return () -> {
                 tableModel.clearChecked();

@@ -83,6 +83,8 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
     
     private JTextField projectListApiField;
     
+    private JTextField aiMetaConfigApiField;
+    
     private JTextField remarkField;
     
     private JTable headerTable;
@@ -214,6 +216,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         answerSourceInfoApiField = new JTextField(28);
         userListApiField = new JTextField(28);
         projectListApiField = new JTextField(28);
+        aiMetaConfigApiField = new JTextField(28);
         remarkField = new JTextField(24);
         nameField.setFont(UiConstants.FONT_SANS_12);
         hostField.setFont(UiConstants.FONT_SANS_12);
@@ -232,6 +235,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         answerSourceInfoApiField.setFont(UiConstants.FONT_SANS_12);
         userListApiField.setFont(UiConstants.FONT_SANS_12);
         projectListApiField.setFont(UiConstants.FONT_SANS_12);
+        aiMetaConfigApiField.setFont(UiConstants.FONT_SANS_12);
         remarkField.setFont(UiConstants.FONT_SANS_12);
         
         addFormRow(formPanel, gbc, 0, new JLabel("环境名称："), nameField);
@@ -299,13 +303,15 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         addFormGroupTitle(formPanel, gbc, 14, "公共接口");
         addFormRow(formPanel, gbc, 15, new JLabel("获取用户列表："), userListApiField, exampleLink(USER_LIST_EXAMPLE, userListApiField));
         addFormRow(formPanel, gbc, 16, new JLabel("获取项目列表："), projectListApiField, exampleLink(PROJECT_LIST_EXAMPLE, projectListApiField));
-        addFormGroupTitle(formPanel, gbc, 17, "回复审计接口");
-        addFormRow(formPanel, gbc, 18, new JLabel("回复列表："), answerListApiField, exampleLink(ANSWER_LIST_EXAMPLE, answerListApiField));
-        addFormRow(formPanel, gbc, 19, new JLabel("回复更新："), answerUpdateApiField, exampleLink(ANSWER_UPDATE_EXAMPLE, answerUpdateApiField));
-        addFormRow(formPanel, gbc, 20, new JLabel("回复删除："), answerDeleteApiField, exampleLink(ANSWER_DELETE_EXAMPLE, answerDeleteApiField));
-        addFormRow(formPanel, gbc, 21, new JLabel("问题来源查询："), answerSourceInfoApiField,
+        addFormRow(formPanel, gbc, 17, new JLabel("获取AI元数据："), aiMetaConfigApiField,
+                exampleLink(AI_META_CONFIG_EXAMPLE, aiMetaConfigApiField));
+        addFormGroupTitle(formPanel, gbc, 18, "回复审计接口");
+        addFormRow(formPanel, gbc, 19, new JLabel("回复列表："), answerListApiField, exampleLink(ANSWER_LIST_EXAMPLE, answerListApiField));
+        addFormRow(formPanel, gbc, 20, new JLabel("回复更新："), answerUpdateApiField, exampleLink(ANSWER_UPDATE_EXAMPLE, answerUpdateApiField));
+        addFormRow(formPanel, gbc, 21, new JLabel("回复删除："), answerDeleteApiField, exampleLink(ANSWER_DELETE_EXAMPLE, answerDeleteApiField));
+        addFormRow(formPanel, gbc, 22, new JLabel("问题来源查询："), answerSourceInfoApiField,
                 exampleLink(ANSWER_SOURCE_INFO_EXAMPLE, answerSourceInfoApiField));
-        addFormRow(formPanel, gbc, 22, new JLabel("备注："), remarkField);
+        addFormRow(formPanel, gbc, 23, new JLabel("备注："), remarkField);
         
         // 表单整体放入滚动面板：窗口高度不足时出现滚动条，内容与表格高度不被压缩
         JScrollPane formScrollPane = new JScrollPane(formPanel);
@@ -355,6 +361,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         answerSourceInfoApiField.setText(valueOrDefault(env.getAnswerSourceInfoApi()));
         userListApiField.setText(valueOrDefault(env.getUserListApi()));
         projectListApiField.setText(valueOrDefault(env.getProjectListApi()));
+        aiMetaConfigApiField.setText(valueOrDefault(env.getAiMetaConfigApi()));
         remarkField.setText(nullToEmpty(env.getRemark()));
         headerModel.setRows(parseHeaderRows(env.getHeaders()));
         updateHeaderTableHeight();
@@ -387,6 +394,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         answerSourceInfoApiField.setText(AiEnvConfig.DEFAULT_ANSWER_SOURCE_INFO_API);
         userListApiField.setText(AiEnvConfig.DEFAULT_USER_LIST_API);
         projectListApiField.setText(AiEnvConfig.DEFAULT_PROJECT_LIST_API);
+        aiMetaConfigApiField.setText(AiEnvConfig.DEFAULT_AI_META_CONFIG_API);
         remarkField.setText("");
         headerModel.setRows(new ArrayList<>());
         updateHeaderTableHeight();
@@ -467,6 +475,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         config.setAnswerSourceInfoApi(answerSourceInfoApiField.getText().trim());
         config.setUserListApi(userListApiField.getText().trim());
         config.setProjectListApi(projectListApiField.getText().trim());
+        config.setAiMetaConfigApi(aiMetaConfigApiField.getText().trim());
         config.setHeaders(headersJson);
         config.setRemark(remarkField.getText().trim());
     }
@@ -834,15 +843,15 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
     // ────────── 接口示例 ──────────
     
     /**
-     * 接口示例定义（弹窗标题 / 路径空值兑底的默认路径 / 请求参数示例 / 响应参数示例 / URL 查询参数示例，无则为 null）
+     * 接口示例定义（弹窗标题 / 路径空值兑底的默认路径 / 请求参数示例 / 响应参数示例 / URL 查询参数示例，无则为 null / 请求方式）
      */
-    private record ApiExample(String title, String defaultPath, String requestExample, String responseExample, String urlQuery) {
+    private record ApiExample(String title, String defaultPath, String requestExample, String responseExample, String urlQuery, String method) {
         
         /**
-         * 便利构造器：无 URL 查询参数的接口（urlQuery 为 null）
+         * 便利构造器：无 URL 查询参数的 POST 接口（urlQuery 为 null）
          */
         ApiExample(String title, String defaultPath, String requestExample, String responseExample) {
-            this(title, defaultPath, requestExample, responseExample, null);
+            this(title, defaultPath, requestExample, responseExample, null, "POST");
         }
     }
     
@@ -944,13 +953,16 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
             """);
     
     /**
-     * 触发训练接口示例（questionIds 为勾选的问题 ID 列表，agentType：safety / system / ops / auto；concurrency 为并发数量，>= 1，缺省由服务端决定）
+     * 触发训练接口示例（questionIds 为勾选的问题 ID 列表，agentType 取自获取 AI 元数据接口 agentList；concurrency 为并发数量，>= 1，缺省由服务端决定；
+     * coreLlmName / intentionLlmName 取自获取 AI 元数据接口，留空不提交该字段）
      */
     private static final ApiExample TRAIN_EXAMPLE = new ApiExample("触发训练", AiEnvConfig.DEFAULT_TRAIN_API, """
             {
               "questionIds": [1001, 1002],
               "agentType": "auto",
-              "concurrency": 1
+              "concurrency": 1,
+              "corellmName": "qwen2.5-7b-instruct",
+              "intentionLlmName": "qwen2.5-3b-instruct"
             }
             """, """
             {
@@ -986,7 +998,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
               "maxLastTime": 1791799347000,
               "finishTraining": false
             }
-            """, "?trainingNo=TR20261012001");
+            """, "?trainingNo=TR20261012001", "GET");
     
     /**
      * 批量更新问题接口示例（ids 为勾选的问题 ID 列表，userId / trainingParam 均可选，留空字段不提交保持原值）
@@ -1022,7 +1034,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
                 "userId": "u10001"
               }
             }
-            """, "?answerId=2001");
+            """, "?answerId=2001", "POST");
     
     /**
      * 回复列表查询接口示例（query / answer / allowModify / sourceTraining 均可选，不传字段不参与筛选）
@@ -1102,7 +1114,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
                 "answer": "进入数据源管理页面新增配置"
               }
             }
-            """, "?id=1001");
+            """, "?id=1001", "POST");
     
     /**
      * 获取用户列表接口示例（公共接口，无请求参数，响应为用户数组）
@@ -1133,6 +1145,32 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
             """);
     
     /**
+     * 获取 AI 元数据配置接口示例（公共接口，GET 请求，固定以 id=default 查询；响应返回触发训练弹窗下拉候选值）
+     */
+    private static final ApiExample AI_META_CONFIG_EXAMPLE = new ApiExample("获取AI元数据", AiEnvConfig.DEFAULT_AI_META_CONFIG_API, """
+            无请求体（GET 请求）
+            """, """
+            {
+              "code": "0",
+              "message": "查询成功",
+              "data": {
+                "coreLlmNameList": [
+                  "qwen2.5-7b-instruct"
+                ],
+                "intentionLlmNameList": [
+                  "qwen2.5-3b-instruct"
+                ],
+                "agentList": [
+                  {
+                    "name": "safety",
+                    "desc": "安全智能体"
+                  }
+                ]
+              }
+            }
+            """, "?id=default", "GET");
+    
+    /**
      * 创建接口“示例”链接（点击弹窗展示该接口的请求 / 响应参数 JSON 示例）
      */
     private LinkJLabel exampleLink(ApiExample example, JTextField pathField) {
@@ -1156,7 +1194,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         gbc.insets = new Insets(6, 6, 6, 6);
         gbc.anchor = GridBagConstraints.WEST;
         
-        JLabel urlLabel = new JLabel("POST    " + buildExampleUrl(apiPath, example));
+        JLabel urlLabel = new JLabel(example.method() + "    " + buildExampleUrl(apiPath, example));
         urlLabel.setFont(UiConstants.FONT_MONO_12);
         gbc.gridx = 0;
         gbc.gridy = 0;
@@ -1165,7 +1203,8 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
         gbc.fill = GridBagConstraints.HORIZONTAL;
         form.add(urlLabel, gbc);
         
-        JLabel headerTip = new JLabel("请求头：Content-Type: application/json; charset=UTF-8（另自动附加该环境配置的通用请求头）");
+        JLabel headerTip = new JLabel("GET".equals(example.method()) ? "请求头：无请求体，另自动附加该环境配置的通用请求头"
+                : "请求头：Content-Type: application/json; charset=UTF-8（另自动附加该环境配置的通用请求头）");
         headerTip.setForeground(Color.GRAY);
         headerTip.setFont(UiConstants.FONT_SANS_10);
         gbc.gridy = 1;

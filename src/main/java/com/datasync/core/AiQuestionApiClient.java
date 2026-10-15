@@ -10,6 +10,7 @@ package com.datasync.core;
 
 import com.datasync.model.AiAnswer;
 import com.datasync.model.AiEnvConfig;
+import com.datasync.model.AiMetaConfig;
 import com.datasync.model.AiQuestion;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -64,6 +65,11 @@ public final class AiQuestionApiClient {
      */
     private static final DateTimeFormatter[] API_TIME_FORMATTERS = {DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss[.SSS]"),
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")};
+    
+    /**
+     * AI 元数据配置查询参数（固定查询默认配置）
+     */
+    private static final String AI_META_CONFIG_QUERY = "?id=default";
     
     private final HttpClient httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
     
@@ -226,17 +232,50 @@ public final class AiQuestionApiClient {
     }
     
     /**
+     * 获取 AI 元数据配置（公共接口，GET 请求，固定以 id=default 查询）
+     * <p>
+     * 响应 data 返回训练模型名称（coreLlmNameList）、意图分析模型名称（intentionLlmNameList）与智能体对象（agentList：name / desc），
+     * 用于触发训练弹窗的下拉候选值；兼容标准 {code, message, data} 包装响应与裸对象响应。
+     */
+    public AiMetaConfig getAiMetaConfig(AiEnvConfig env) throws AiApiException {
+        String url = buildUrl(env, env.getAiMetaConfigApi());
+        url += AI_META_CONFIG_QUERY;
+        String responseText = executeGet(env, url);
+        JsonNode root;
+        try {
+            logger.debug("[AiApi] getAiMetaConfig responseText: {}", responseText);
+            root = objectMapper.readTree(responseText == null || responseText.isBlank() ? "{}" : responseText);
+        } catch (Exception e) {
+            throw new AiApiException("解析响应失败: " + abbreviate(responseText, 120));
+        }
+        JsonNode payload = root.has("code") ? parseResponse(url, responseText).path("data") : root;
+        if (payload == null || !payload.isObject()) {
+            throw new AiApiException("响应数据格式异常: " + abbreviate(responseText, 120));
+        }
+        try {
+            return objectMapper.treeToValue(payload, AiMetaConfig.class);
+        } catch (Exception e) {
+            throw new AiApiException("解析 AI 元数据配置失败: " + e.getMessage());
+        }
+    }
+    
+    /**
      * 触发训练选中的问题（按问题 ID 列表批量提交，agentType 指定训练的智能体类型）
      *
-     * @param agentType   智能体类型（safety / system / ops / auto）
-     * @param concurrency 并发数量（null 或 <= 0 表示不提交该字段，由服务端决定；> 0并且ids 数量 > 1 时写入请求体 concurrency 字段）
+     * @param agentType        智能体类型（取自获取 AI 元数据接口 agentList；null / 空白表示不提交该字段，由服务端决定）
+     * @param concurrency      并发数量（null 或 <= 0 表示不提交该字段，由服务端决定；> 0并且ids 数量 > 1 时写入请求体 concurrency 字段）
+     * @param coreLlmName      训练模型名称（请求字段名 corellmName；auto 表示不由客户端指定；null / 空白表示不提交该字段，由服务端决定）
+     * @param intentionLlmName 意图分析模型名称（auto 表示不由客户端指定；null / 空白表示不提交该字段，由服务端决定）
      * @return 成功时返回接口 message，失败时抛出异常
      */
-    public String triggerTraining(AiEnvConfig env, List<Long> ids, String agentType, Integer concurrency) throws AiApiException {
+    public String triggerTraining(AiEnvConfig env, List<Long> ids, String agentType, Integer concurrency, String coreLlmName, String intentionLlmName)
+            throws AiApiException {
         String url = buildUrl(env, env.getTrainApi());
         ObjectNode body = objectMapper.createObjectNode();
         body.set("questionIds", objectMapper.valueToTree(ids));
-        body.put("agentType", agentType);
+        putIfNotBlank(body, "agentType", agentType);
+        putIfNotBlank(body, "corellmName", coreLlmName);
+        putIfNotBlank(body, "intentionLlmName", intentionLlmName);
         if (ids.size() == 1) {
             body.put("concurrency", 1);
         } else {
@@ -245,6 +284,15 @@ public final class AiQuestionApiClient {
             }
         }
         return postForMessage(env, url, body);
+    }
+    
+    /**
+     * 写入非空文本字段（null / 空白表示不提交该字段，接口侧保持默认值）
+     */
+    private static void putIfNotBlank(ObjectNode body, String field, String value) {
+        if (value != null && !value.isBlank()) {
+            body.put(field, value.trim());
+        }
     }
     
     /**

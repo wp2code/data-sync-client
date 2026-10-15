@@ -1,7 +1,9 @@
 package com.datasync.model;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.LocalDateTime;
 import java.util.List;
 import lombok.Data;
@@ -198,6 +200,28 @@ public class AiQuestion {
      * 训练模式：Auto-自动；Manual-手动（接口返回数据，客户端仅展示）
      */
     private String trainingModel;
+    
+    /**
+     * 智能体类型（接口返回数据，客户端仅展示；与触发训练请求 agentType 字段对应）
+     */
+    private String agentType;
+    
+    /**
+     * 训练模型名称（接口返回数据，客户端仅展示；接口字段名 corellmName，兼容 coreLlmName 拼写）
+     */
+    @JsonProperty("corellmName")
+    @JsonAlias("coreLlmName")
+    private String coreLlmName;
+    
+    /**
+     * 意图识别模型名称（接口返回数据，客户端仅展示；与触发训练请求 intentionLlmName 字段对应）
+     */
+    private String intentionLlmName;
+    
+    /**
+     * 重试次数（接口返回数据，客户端仅展示）
+     */
+    private Integer retryCount;
     
     /**
      * 优先级别，越大越优先，默认 0

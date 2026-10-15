@@ -20,7 +20,6 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -803,20 +802,47 @@ public class AnswerAuditPanel {
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(6, 6, 6, 6);
         gbc.anchor = GridBagConstraints.WEST;
-        dialog.addFormRow(form, gbc, 0, new JLabel("环境："), new JLabel(AiQuestionMangerDialog.nullToEmpty(answer.getEnvName())));
-        dialog.addFormRow(form, gbc, 1, new JLabel("ID："), new JLabel(answer.getId() != null ? String.valueOf(answer.getId()) : ""));
-        dialog.addFormRow(form, gbc, 2, new JLabel("所属项目："), new JLabel(AiQuestionMangerDialog.nullToEmpty(answer.getProjectName())));
-        dialog.addFormRow(form, gbc, 3, new JLabel("问题："),
+        dialog.addFormRow(form, gbc, 0, new JLabel("ID："), new JLabel(answer.getId() != null ? String.valueOf(answer.getId()) : ""));
+        dialog.addFormRow(form, gbc, 1, new JLabel("所属项目："), new JLabel(AiQuestionMangerDialog.nullToEmpty(answer.getProjectName())));
+        dialog.addFormRow(form, gbc, 2, new JLabel("问题："),
                 AiQuestionMangerDialog.readonlyArea(AiQuestionMangerDialog.nullToEmpty(answer.getQuery()), 2));
-        dialog.addFormRow(form, gbc, 4, new JLabel("回复内容："),
+        dialog.addFormRow(form, gbc, 3, new JLabel("回复内容："),
                 AiQuestionMangerDialog.readonlyArea(AiQuestionMangerDialog.nullToEmpty(answer.getAnswer()), 15));
-        dialog.addFormRow(form, gbc, 5, new JLabel("所属用户："), AiQuestionMangerDialog.readonlyField(
+        dialog.addFormRow(form, gbc, 4, new JLabel("所属用户："), AiQuestionMangerDialog.readonlyField(
                 AiQuestionMangerDialog.formatUserIdDisplay(AiQuestionMangerDialog.nullToEmpty(answer.getUserId()), dialog.userOptions)));
-        dialog.addFormRow(form, gbc, 6, new JLabel("是否允许修改："), new JLabel(answer.isModifyAllowed() ? ALLOW_MODIFY_YES : ALLOW_MODIFY_NO));
-        dialog.addFormRow(form, gbc, 7, new JLabel("是否来源训练："), new JLabel(answer.isFromTraining() ? SOURCE_TRAINING_YES : SOURCE_TRAINING_NO));
-        dialog.addFormRow(form, gbc, 8, new JLabel("创建时间："), new JLabel(AiQuestionMangerDialog.nullToEmpty(answer.getCreateTime())));
-        dialog.addFormRow(form, gbc, 9, new JLabel("更新时间："), new JLabel(AiQuestionMangerDialog.nullToEmpty(answer.getUpdateTime())));
-        JOptionPane.showMessageDialog(dialog, form, "回复详情", JOptionPane.PLAIN_MESSAGE);
+        dialog.addFormRow(form, gbc, 5, new JLabel("是否允许修改："), new JLabel(answer.isModifyAllowed() ? ALLOW_MODIFY_YES : ALLOW_MODIFY_NO));
+        dialog.addFormRow(form, gbc, 6, new JLabel("是否来源训练："), new JLabel(answer.isFromTraining() ? SOURCE_TRAINING_YES : SOURCE_TRAINING_NO));
+        dialog.addFormRow(form, gbc, 7, new JLabel("创建时间："), new JLabel(AiQuestionMangerDialog.nullToEmpty(answer.getCreateTime())));
+        dialog.addFormRow(form, gbc, 8, new JLabel("更新时间："), new JLabel(AiQuestionMangerDialog.nullToEmpty(answer.getUpdateTime())));
+        JOptionPane.showMessageDialog(dialog, form, dialogTitle("回复详情", answer.getEnvName()), JOptionPane.PLAIN_MESSAGE);
+    }
+    
+    /**
+     * 拼接带环境信息的弹窗标题
+     *
+     * @param title    原业务标题
+     * @param envNames 环境名称（可多个，多个时用「、」连接）
+     * @return 「原标题 - 环境 [环境名称]」格式的弹窗标题
+     */
+    private String dialogTitle(String title, String... envNames) {
+        if (envNames == null || envNames.length == 0) {
+            return title;
+        }
+        StringBuilder envPart = new StringBuilder();
+        for (String envName : envNames) {
+            String text = AiQuestionMangerDialog.nullToEmpty(envName);
+            if (text.isEmpty()) {
+                continue;
+            }
+            if (!envPart.isEmpty()) {
+                envPart.append("、");
+            }
+            envPart.append(text);
+        }
+        if (envPart.length() == 0) {
+            return title;
+        }
+        return title + " - 环境 [" + envPart + "]";
     }
     
     private void showSourceQuestionInfo(AiAnswer answer) {
@@ -894,12 +920,12 @@ public class AnswerAuditPanel {
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(6, 6, 6, 6);
         gbc.anchor = GridBagConstraints.WEST;
-        dialog.addFormRow(form, gbc, 0, new JLabel("环境："), new JLabel(AiQuestionMangerDialog.nullToEmpty(answer.getEnvName())));
-        dialog.addFormRow(form, gbc, 1, new JLabel("问题："), dialog.dialogScroll(queryArea, 2));
-        dialog.addFormRow(form, gbc, 2, new JLabel("回复内容："), dialog.dialogScroll(replyArea, 15));
-        dialog.addFormRow(form, gbc, 3, new JLabel("所属项目："), projectNameLabel);
-        dialog.addFormRow(form, gbc, 4, new JLabel("是否允许修改："), allowModifyCombo);
-        int option = JOptionPane.showConfirmDialog(dialog, form, "编辑回复", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        dialog.addFormRow(form, gbc, 0, new JLabel("问题："), dialog.dialogScroll(queryArea, 2));
+        dialog.addFormRow(form, gbc, 1, new JLabel("回复内容："), dialog.dialogScroll(replyArea, 15));
+        dialog.addFormRow(form, gbc, 2, new JLabel("所属项目："), projectNameLabel);
+        dialog.addFormRow(form, gbc, 3, new JLabel("是否允许修改："), allowModifyCombo);
+        int option = JOptionPane.showConfirmDialog(dialog, form, dialogTitle("编辑回复", answer.getEnvName()), JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.PLAIN_MESSAGE);
         if (option != JOptionPane.OK_OPTION) {
             return;
         }
@@ -949,9 +975,19 @@ public class AnswerAuditPanel {
             JOptionPane.showMessageDialog(dialog, "该回复缺少 ID，无法调用删除接口", "错误", JOptionPane.ERROR_MESSAGE);
             return;
         }
-        int confirm = JOptionPane.showConfirmDialog(dialog,
-                "确定删除环境 [" + envConfig.getEnvName() + "] 的问题回复 [ID " + answer.getId() + "] 吗？\n删除后不可恢复，请谨慎操作。", "确认删除",
-                JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        JPanel confirmPanel = new JPanel();
+        confirmPanel.setLayout(new BoxLayout(confirmPanel, BoxLayout.Y_AXIS));
+        confirmPanel.setBorder(new EmptyBorder(8, 12, 8, 12));
+        JLabel titleLabel = new JLabel("确定删除问题回复 [ID " + answer.getId() + "] 吗？");
+        titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        confirmPanel.add(titleLabel);
+        JLabel warningLabel = new JLabel("删除后不可恢复，请谨慎操作");
+        warningLabel.setForeground(UiConstants.COLOR_DANGER_LIGHT);
+        warningLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        confirmPanel.add(Box.createVerticalStrut(6));
+        confirmPanel.add(warningLabel);
+        int confirm = JOptionPane.showConfirmDialog(dialog, confirmPanel, dialogTitle("确认删除", envConfig.getEnvName()), JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE);
         if (confirm != JOptionPane.YES_OPTION) {
             return;
         }
@@ -983,7 +1019,6 @@ public class AnswerAuditPanel {
             envIdGroups.computeIfAbsent(answer.getEnvName(), key -> new ArrayList<>()).add(answer.getId());
         }
         List<AiEnvConfig> targets = new ArrayList<>();
-        List<String> summaryLines = new ArrayList<>();
         int selectedTotal = 0;
         for (Map.Entry<String, List<Long>> entry : envIdGroups.entrySet()) {
             AiEnvConfig envConfig = dialog.findEnvByName(entry.getKey());
@@ -994,7 +1029,6 @@ public class AnswerAuditPanel {
             }
             targets.add(envConfig);
             selectedTotal += entry.getValue().size();
-            summaryLines.add(" 环境 [" + envConfig.getEnvName() + "] " + entry.getValue().size() + " 条");
         }
         JComboBox<String> allowModifyCombo = new JComboBox<>(new String[] {ALLOW_MODIFY_YES, ALLOW_MODIFY_NO});
         allowModifyCombo.setToolTipText("批量更新后统一设置的是否允许修改状态");
@@ -1004,18 +1038,14 @@ public class AnswerAuditPanel {
         JLabel titleLabel = new JLabel("确定批量更新勾选的 " + selectedTotal + " 条回复吗？");
         titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         confirmPanel.add(titleLabel);
-        for (String line : summaryLines) {
-            JLabel envLabel = new JLabel(line);
-            envLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-            confirmPanel.add(envLabel);
-        }
         JPanel modifyPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
         modifyPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
         modifyPanel.add(new JLabel("是否允许修改："));
         modifyPanel.add(allowModifyCombo);
         confirmPanel.add(Box.createVerticalStrut(8));
         confirmPanel.add(modifyPanel);
-        int confirm = JOptionPane.showConfirmDialog(dialog, confirmPanel, "确认批量更新", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        int confirm = JOptionPane.showConfirmDialog(dialog, confirmPanel, dialogTitle("确认批量更新", envIdGroups.keySet().toArray(new String[0])),
+                JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
         if (confirm != JOptionPane.YES_OPTION) {
             return;
         }
@@ -1029,7 +1059,7 @@ public class AnswerAuditPanel {
                 try {
                     String message = AiQuestionApiClient.getInstance().batchUpdateAnswerModify(envConfig, ids, targetAllowModify);
                     successCount += ids.size();
-                    successDetails.add("环境 [" + envConfig.getEnvName() + "] " + ids.size() + " 条：" + message);
+                    successDetails.add(ids.size() + " 条：" + message);
                 } catch (AiQuestionApiClient.AiApiException ex) {
                     logger.error("环境 [{}] 批量更新回复失败", envConfig.getEnvName(), ex);
                     errors.add("环境 [" + envConfig.getEnvName() + "]：" + ex.getMessage());
@@ -1074,7 +1104,6 @@ public class AnswerAuditPanel {
             envIdGroups.computeIfAbsent(answer.getEnvName(), key -> new ArrayList<>()).add(answer.getId());
         }
         List<AiEnvConfig> targets = new ArrayList<>();
-        List<String> summaryLines = new ArrayList<>();
         int selectedTotal = 0;
         for (Map.Entry<String, List<Long>> entry : envIdGroups.entrySet()) {
             AiEnvConfig envConfig = dialog.findEnvByName(entry.getKey());
@@ -1085,7 +1114,6 @@ public class AnswerAuditPanel {
             }
             targets.add(envConfig);
             selectedTotal += entry.getValue().size();
-            summaryLines.add(" 环境 [" + envConfig.getEnvName() + "] " + entry.getValue().size() + " 条");
         }
         JPanel confirmPanel = new JPanel();
         confirmPanel.setLayout(new BoxLayout(confirmPanel, BoxLayout.Y_AXIS));
@@ -1093,17 +1121,13 @@ public class AnswerAuditPanel {
         JLabel titleLabel = new JLabel("确定批量删除勾选的 " + selectedTotal + " 条回复吗？");
         titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         confirmPanel.add(titleLabel);
-        for (String line : summaryLines) {
-            JLabel envLabel = new JLabel(line);
-            envLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-            confirmPanel.add(envLabel);
-        }
         JLabel warningLabel = new JLabel("删除后不可恢复，请谨慎操作");
         warningLabel.setForeground(UiConstants.COLOR_DANGER_LIGHT);
         warningLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         confirmPanel.add(Box.createVerticalStrut(6));
         confirmPanel.add(warningLabel);
-        int confirm = JOptionPane.showConfirmDialog(dialog, confirmPanel, "确认批量删除", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        int confirm = JOptionPane.showConfirmDialog(dialog, confirmPanel, dialogTitle("确认批量删除", envIdGroups.keySet().toArray(new String[0])),
+                JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
         if (confirm != JOptionPane.YES_OPTION) {
             return;
         }

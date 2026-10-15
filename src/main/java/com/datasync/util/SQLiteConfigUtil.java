@@ -125,6 +125,9 @@ public class SQLiteConfigUtil {
                 answer_update_api VARCHAR(256) DEFAULT '/pilot/training/knowledge/answer/update',
                 answer_delete_api VARCHAR(256) DEFAULT '/pilot/training/knowledge/answer/delete',
                 answer_source_info_api VARCHAR(256) DEFAULT '/pilot/training/knowledge/info',
+                user_list_api VARCHAR(256) DEFAULT '/pilot/training/knowledge/user/list',
+                project_list_api VARCHAR(256) DEFAULT '/pilot/training/knowledge/project/list',
+                ai_meta_config_api VARCHAR(256) DEFAULT '/pilot/training/knowledge/ai-meta/config',
                 headers     TEXT         DEFAULT NULL,
                 selected    INTEGER      DEFAULT 0,
                 remark      TEXT         DEFAULT NULL,
@@ -594,7 +597,7 @@ public class SQLiteConfigUtil {
      * 新增 AI 问题保存环境配置（env_name 唯一）
      */
     public boolean saveAiEnvConfig(AiEnvConfig config) {
-        String sql = "INSERT INTO ai_env_config (env_name, host, save_api, update_api, delete_api, list_api, train_api, stop_train_api, training_cast_time_api, update_user_api, answer_info_api, answer_list_api, answer_update_api, answer_delete_api, answer_source_info_api, user_list_api, project_list_api, headers, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO ai_env_config (env_name, host, save_api, update_api, delete_api, list_api, train_api, stop_train_api, training_cast_time_api, update_user_api, answer_info_api, answer_list_api, answer_update_api, answer_delete_api, answer_source_info_api, user_list_api, project_list_api, ai_meta_config_api, headers, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (Connection conn = getConnection();
                 PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, config.getEnvName());
@@ -614,8 +617,9 @@ public class SQLiteConfigUtil {
             ps.setString(15, valueOrDefault(config.getAnswerSourceInfoApi(), AiEnvConfig.DEFAULT_ANSWER_SOURCE_INFO_API));
             ps.setString(16, valueOrDefault(config.getUserListApi(), AiEnvConfig.DEFAULT_USER_LIST_API));
             ps.setString(17, valueOrDefault(config.getProjectListApi(), AiEnvConfig.DEFAULT_PROJECT_LIST_API));
-            ps.setString(18, config.getHeaders());
-            ps.setString(19, config.getRemark());
+            ps.setString(18, valueOrDefault(config.getAiMetaConfigApi(), AiEnvConfig.DEFAULT_AI_META_CONFIG_API));
+            ps.setString(19, config.getHeaders());
+            ps.setString(20, config.getRemark());
             return ps.executeUpdate() > 0;
         } catch (SQLException e) {
             logger.error("[SQLite] 保存 AI 问题环境失败", e);
@@ -629,7 +633,7 @@ public class SQLiteConfigUtil {
     public boolean updateAiEnvConfig(AiEnvConfig config) {
         String sql =
                 "UPDATE ai_env_config SET env_name = ?, host = ?, save_api = ?, update_api = ?, delete_api = ?, list_api = ?, train_api = ?, stop_train_api = ?, training_cast_time_api = ?, update_user_api = ?, "
-                        + "answer_info_api = ?, answer_list_api = ?, answer_update_api = ?, answer_delete_api = ?, answer_source_info_api = ?, user_list_api = ?, project_list_api = ?, headers = ?, remark = ?, update_time = CURRENT_TIMESTAMP WHERE id = ?";
+                        + "answer_info_api = ?, answer_list_api = ?, answer_update_api = ?, answer_delete_api = ?, answer_source_info_api = ?, user_list_api = ?, project_list_api = ?, ai_meta_config_api = ?, headers = ?, remark = ?, update_time = CURRENT_TIMESTAMP WHERE id = ?";
         try (Connection conn = getConnection();
                 PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, config.getEnvName());
@@ -649,9 +653,10 @@ public class SQLiteConfigUtil {
             ps.setString(15, valueOrDefault(config.getAnswerSourceInfoApi(), AiEnvConfig.DEFAULT_ANSWER_SOURCE_INFO_API));
             ps.setString(16, valueOrDefault(config.getUserListApi(), AiEnvConfig.DEFAULT_USER_LIST_API));
             ps.setString(17, valueOrDefault(config.getProjectListApi(), AiEnvConfig.DEFAULT_PROJECT_LIST_API));
-            ps.setString(18, config.getHeaders());
-            ps.setString(19, config.getRemark());
-            ps.setLong(20, config.getId());
+            ps.setString(18, valueOrDefault(config.getAiMetaConfigApi(), AiEnvConfig.DEFAULT_AI_META_CONFIG_API));
+            ps.setString(19, config.getHeaders());
+            ps.setString(20, config.getRemark());
+            ps.setLong(21, config.getId());
             return ps.executeUpdate() > 0;
         } catch (SQLException e) {
             logger.error("[SQLite] 更新 AI 问题环境失败", e);
@@ -701,6 +706,8 @@ public class SQLiteConfigUtil {
                 "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_ANSWER_SOURCE_INFO_API + "'");
         addColumnIfAbsent(stmt, "ai_env_config", "user_list_api", "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_USER_LIST_API + "'");
         addColumnIfAbsent(stmt, "ai_env_config", "project_list_api", "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_PROJECT_LIST_API + "'");
+        addColumnIfAbsent(stmt, "ai_env_config", "ai_meta_config_api",
+                "VARCHAR(256) DEFAULT '" + AiEnvConfig.DEFAULT_AI_META_CONFIG_API + "'");
         addColumnIfAbsent(stmt, "ai_env_config", "headers", "TEXT DEFAULT NULL");
         addColumnIfAbsent(stmt, "ai_env_config", "selected", "INTEGER DEFAULT 0");
     }
@@ -849,6 +856,7 @@ public class SQLiteConfigUtil {
         config.setAnswerSourceInfoApi(valueOrDefault(rs.getString("answer_source_info_api"), AiEnvConfig.DEFAULT_ANSWER_SOURCE_INFO_API));
         config.setUserListApi(valueOrDefault(rs.getString("user_list_api"), AiEnvConfig.DEFAULT_USER_LIST_API));
         config.setProjectListApi(valueOrDefault(rs.getString("project_list_api"), AiEnvConfig.DEFAULT_PROJECT_LIST_API));
+        config.setAiMetaConfigApi(valueOrDefault(rs.getString("ai_meta_config_api"), AiEnvConfig.DEFAULT_AI_META_CONFIG_API));
         config.setHeaders(rs.getString("headers"));
         config.setSelected(rs.getInt("selected") == 1);
         config.setRemark(rs.getString("remark"));

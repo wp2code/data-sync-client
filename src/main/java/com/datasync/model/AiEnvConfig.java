@@ -95,6 +95,11 @@ public class AiEnvConfig {
      */
     public static final String DEFAULT_PROJECT_LIST_API = "/pilot/training/knowledge/project/list";
     
+    /**
+     * 获取 AI 元数据配置接口默认路径（公共接口，GET 查询训练模型 / 意图分析模型 / 智能体可选项）
+     */
+    public static final String DEFAULT_AI_META_CONFIG_API = "/pilot/training/knowledge/ai-meta/config";
+    
     private Long id;
     
     /**
@@ -181,6 +186,11 @@ public class AiEnvConfig {
      * 获取项目列表接口路径（公共接口）
      */
     private String projectListApi = DEFAULT_PROJECT_LIST_API;
+    
+    /**
+     * 获取 AI 元数据配置接口路径（公共接口，GET 查询训练模型 / 意图分析模型 / 智能体可选项）
+     */
+    private String aiMetaConfigApi = DEFAULT_AI_META_CONFIG_API;
     
     /**
      * 环境通用请求头参数 JSON（如 {"Authorization":"Bearer xxx"}），调用该环境所有接口时附加

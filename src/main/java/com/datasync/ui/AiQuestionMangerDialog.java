@@ -12,6 +12,7 @@ import com.datasync.components.ChildLayoutPanel;
 import com.datasync.components.FullscreenJDialog;
 import com.datasync.core.AiQuestionApiClient;
 import com.datasync.model.AiEnvConfig;
+import com.datasync.model.AiMetaConfig;
 import com.datasync.util.ConfigUtil;
 import com.datasync.util.LogUtil;
 import com.datasync.util.SQLiteConfigUtil;
@@ -126,6 +127,11 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     
     List<String[]> projectOptions = new ArrayList<>();
     
+    /**
+     * 当前环境的 AI 元数据配置（触发训练弹窗的智能体 / 训练模型 / 意图分析模型下拉候选值，异步刷新）
+     */
+    AiMetaConfig aiMetaConfig = AiMetaConfig.empty();
+    
     List<String> classifySuggestions = new ArrayList<>();
     
     boolean apiBusy = false;
@@ -164,6 +170,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         refreshEnvCombo();
         refreshUserOptions();
         refreshProjectOptions();
+        refreshAiMetaConfig();
         refreshQuestionTable();
     }
     
@@ -280,6 +287,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         refreshEnvCombo();
         refreshUserOptions();
         refreshProjectOptions();
+        refreshAiMetaConfig();
         invalidateLoadedData();
         invalidateAnswers();
         refreshActiveBusinessTab();
@@ -331,6 +339,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         invalidateAnswers();
         refreshUserOptions();
         refreshProjectOptions();
+        refreshAiMetaConfig();
         refreshActiveBusinessTab();
     }
     
@@ -414,6 +423,39 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
                 questionTrainingPanel.refreshProjectOptionsInPanel();
             });
         }, "refresh-project-options").start();
+    }
+    
+    /**
+     * 刷新当前环境的 AI 元数据配置（触发训练弹窗智能体 / 训练模型 / 意图分析模型下拉候选值，调用失败时按空配置兜底，仍支持手动输入）
+     */
+    private void refreshAiMetaConfig() {
+        Object selected = envCombo.getSelectedItem();
+        if (!(selected instanceof AiEnvConfig envConfig)) {
+            return;
+        }
+        new Thread(() -> {
+            AiMetaConfig fetched;
+            try {
+                fetched = AiQuestionApiClient.getInstance().getAiMetaConfig(envConfig);
+            } catch (AiQuestionApiClient.AiApiException e) {
+                logger.warn("[AiApi] 获取AI元数据配置失败: {}", e.getMessage());
+                fetched = AiMetaConfig.empty();
+            }
+            final AiMetaConfig meta = fetched;
+            SwingUtilities.invokeLater(() -> {
+                aiMetaConfig = meta;
+                questionTrainingPanel.refreshAiMetaOptionsInPanel();
+            });
+        }, "refresh-ai-meta-config").start();
+    }
+    
+    /**
+     * 触发训练弹窗打开时按需拉取 AI 元数据配置（尚未加载到任何可选值时重试，避免下拉为空）
+     */
+    void refreshAiMetaConfigIfNeeded() {
+        if (aiMetaConfig.isEmpty()) {
+            refreshAiMetaConfig();
+        }
     }
     
     // ────────── 面板委托方法 ──────────
