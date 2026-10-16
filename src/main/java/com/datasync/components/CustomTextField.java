@@ -6,6 +6,7 @@ import java.awt.event.*;
 import javax.swing.*;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
+import lombok.Setter;
 
 /**
  * @author liuweiping
@@ -28,7 +29,11 @@ public class CustomTextField extends JTextField {
     
     /**
      * 最小宽度（0 表示不限制），用于保证输入框在 GridBag 等布局中的可见宽度
+     * -- SETTER --
+     *  设置最小宽度：首选尺寸小于该宽度时按该宽度计算
+     
      */
+    @Setter
     private int minWidth = 0;
     
     public CustomTextField(String placeholder) {
@@ -88,13 +93,6 @@ public class CustomTextField extends JTextField {
             int y = ((getHeight() - fm.getHeight()) / 2) + fm.getAscent();
             g2.drawString(placeholder, x, y);
         }
-    }
-    
-    /**
-     * 设置最小宽度：首选尺寸小于该宽度时按该宽度计算
-     */
-    public void setMinWidth(int minWidth) {
-        this.minWidth = minWidth;
     }
     
     @Override

@@ -101,7 +101,7 @@ public final class ExcelExportUtil {
                 row.createCell(2).setCellValue(nullSafe(q.getAnswer()));
                 row.createCell(3).setCellValue(nullSafe(q.getTrainingParam()));
                 row.createCell(4).setCellValue(formatUserId(q.getUserId(), userIdDisplay));
-                row.createCell(5).setCellValue(nullSafe(q.getProjectName()));
+                row.createCell(5).setCellValue(formatProjectName(q.getProjectName(), q.getProjectCode()));
                 row.createCell(6).setCellValue(nullSafe(q.getQuestionClassify()));
                 row.createCell(7).setCellValue(q.getAnswerId() != null ? String.valueOf(q.getAnswerId()) : "");
                 row.createCell(8).setCellValue(q.isAutoTrainingAllowed() ? "允许" : "不允许");
@@ -140,8 +140,9 @@ public final class ExcelExportUtil {
                 row.createCell(0).setCellValue(a.getId() != null ? String.valueOf(a.getId()) : "");
                 row.createCell(1).setCellValue(nullSafe(a.getQuery()));
                 row.createCell(2).setCellValue(nullSafe(a.getAnswer()));
-                row.createCell(3).setCellValue(formatUserId(a.getUserId(), userIdDisplay));
-                row.createCell(4).setCellValue(nullSafe(a.getProjectName()));
+                row.createCell(3).setCellValue(formatAnswerUserId(a.getUserName(), a.getUserId(), userIdDisplay));
+                // AiAnswer 项目编码：0、-1 或空视为「全局」，与列表展示保持一致
+                row.createCell(4).setCellValue(formatProjectName(a.getProjectName(), a.getProjectCode()));
                 row.createCell(5).setCellValue(Boolean.TRUE.equals(a.getSourceTraining()) ? "是" : "否");
             }
             
@@ -236,16 +237,44 @@ public final class ExcelExportUtil {
     }
     
     /**
-     * 格式化用户ID为展示格式「用户名称（用户ID）」（userId 为空返回空字符串，映射中不存在时原样输出 userId）
+     * 格式化用户ID为展示格式「用户名称（用户ID）」（用户ID 为 0、-1 或空视为「全局」，映射中不存在时原样输出 userId）
      */
     private static String formatUserId(String userId, Map<String, String> userIdDisplay) {
-        if (userId == null || userId.isEmpty()) {
-            return "";
+        if (AiQuestion.isGlobalCode(userId)) {
+            return AiQuestion.GLOBAL_DISPLAY_TEXT;
         }
         if (userIdDisplay != null && userIdDisplay.containsKey(userId)) {
             return userIdDisplay.get(userId);
         }
         return userId;
+    }
+
+    /**
+     * 格式化回复列表所属用户为「用户名称（用户ID）」：优先使用接口返回的 userName，
+     * 用户ID 为 0、-1 或空视为「全局」，userName 为空时回退映射查找
+     */
+    private static String formatAnswerUserId(String userName, String userId, Map<String, String> userIdDisplay) {
+        if (AiQuestion.isGlobalCode(userId)) {
+            return AiQuestion.GLOBAL_DISPLAY_TEXT;
+        }
+        String name = nullSafe(userName).trim();
+        if (!name.isEmpty()) {
+            return name + "（" + userId + "）";
+        }
+        return formatUserId(userId, userIdDisplay);
+    }
+    
+    /**
+     * 格式化所属项目（项目编码为 0、-1 或空，或项目名称为空时展示「全局」）
+     *
+     * @param projectName 项目名称
+     * @param projectCode 项目编码；传 null 表示接口未返回该字段，此时仅按名称是否为空判定
+     */
+    private static String formatProjectName(String projectName, String projectCode) {
+        if (AiQuestion.isGlobalCode(projectCode) || nullSafe(projectName).trim().isEmpty()) {
+            return AiQuestion.GLOBAL_DISPLAY_TEXT;
+        }
+        return projectName;
     }
 
     /**

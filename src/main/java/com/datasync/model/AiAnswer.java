@@ -36,6 +36,11 @@ public class AiAnswer {
      * 所属项目名称（接口返回数据，客户端仅展示）
      */
     private String projectName;
+
+    /**
+     * 所属项目编码（接口返回数据，客户端仅用于展示判定；0、-1 或空均视为「全局」）
+     */
+    private String projectCode;
     
     /**
      * 问题内容
@@ -51,6 +56,11 @@ public class AiAnswer {
      * 用户ID（接口返回数据，客户端仅展示）
      */
     private String userId;
+    
+    /**
+     * 用户名称
+     */
+    private String userName;
     
     /**
      * 是否允许修改：0-不允许；1-允许

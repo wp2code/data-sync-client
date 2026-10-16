@@ -17,6 +17,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import lombok.Setter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -134,11 +135,13 @@ public class TrainingCastTimeDialog extends JDialog {
     /**
      * 自动刷新监听器（回调在 EDT 执行，供列表页在分页栏实时展示训练耗时）
      */
+    @Setter
     private AutoRefreshListener autoRefreshListener;
     
     /**
      * 批次训练状态校验器：批次存在待训练 / 训练中 / 训练已提交状态问题时返回 true（自动刷新仅在该条件满足时才允许开启）
      */
+    @Setter
     private java.util.function.Predicate<String> batchInProgressChecker;
     
     /**
@@ -165,14 +168,6 @@ public class TrainingCastTimeDialog extends JDialog {
          * @param trainingNo 停止前刷新的批次号
          */
         void onAutoRefreshStopped(String trainingNo);
-    }
-    
-    public void setAutoRefreshListener(AutoRefreshListener listener) {
-        this.autoRefreshListener = listener;
-    }
-    
-    public void setBatchInProgressChecker(java.util.function.Predicate<String> checker) {
-        this.batchInProgressChecker = checker;
     }
     
     public TrainingCastTimeDialog(Dialog owner, AiEnvConfig envConfig, String initialTrainingNo) {

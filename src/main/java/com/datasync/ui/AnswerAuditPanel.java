@@ -12,6 +12,7 @@ import com.datasync.components.CustomTextField;
 import com.datasync.core.AiQuestionApiClient;
 import com.datasync.model.AiAnswer;
 import com.datasync.model.AiEnvConfig;
+import com.datasync.model.AiQuestion;
 import com.datasync.util.ExcelExportUtil;
 import java.awt.*;
 import java.awt.event.*;
@@ -47,6 +48,11 @@ public class AnswerAuditPanel {
     private static final String ALL_PROJECT = "全部项目";
     
     private static final String ALL_USER = "全部用户";
+    
+    /**
+     * 用户筛选「全局」选项实际传给后端的参数值（与 {@link AiQuestion#GLOBAL_DISPLAY_TEXT} 配对使用）
+     */
+    private static final String GLOBAL_USER_FILTER_VALUE = "0";
     
     private static final String ALLOW_MODIFY_ALL = "全部";
     
@@ -271,6 +277,7 @@ public class AnswerAuditPanel {
         answerFilterRow2.add(new JLabel("用户："));
         answerUserFilterCombo = new JComboBox<>();
         answerUserFilterCombo.addItem(ALL_USER);
+        answerUserFilterCombo.addItem(AiQuestion.GLOBAL_DISPLAY_TEXT);
         for (String userOption : dialog.userOptions) {
             answerUserFilterCombo.addItem(AiQuestionMangerDialog.formatUserOption(userOption));
         }
@@ -428,6 +435,30 @@ public class AnswerAuditPanel {
     
     // ────────── 筛选与搜索 ──────────
     
+    /**
+     * 回复审计列表所属项目展示文案：项目编码为 0、-1 或空（视为「全局」），或项目名称为空时统一展示「全局」。
+     */
+    private static String answerProjectDisplayText(AiAnswer answer) {
+        String name = AiQuestionMangerDialog.nullToEmpty(answer.getProjectName()).trim();
+        if (AiQuestion.isGlobalCode(answer.getProjectCode()) || name.isEmpty()) {
+            return AiQuestion.GLOBAL_DISPLAY_TEXT;
+        }
+        return name;
+    }
+    
+    /**
+     * 回复审计列表所属用户展示文案：优先用接口返回的 userName 拼成「用户名称（用户ID）」；<br> userName 为空时回退原始用户ID（由 {@code UserIdCellRenderer} 按用户列表补全名称）；<br> 用户ID 为 0、-1
+     * 或空时统一展示「全局」。
+     */
+    private static String answerUserDisplayText(AiAnswer answer) {
+        String userId = AiQuestionMangerDialog.nullToEmpty(answer.getUserId()).trim();
+        if (AiQuestion.isGlobalCode(userId)) {
+            return AiQuestion.GLOBAL_DISPLAY_TEXT;
+        }
+        String userName = AiQuestionMangerDialog.nullToEmpty(answer.getUserName()).trim();
+        return userName.isEmpty() ? userId : userName + "（" + userId + "）";
+    }
+    
     private void triggerAnswerSearch() {
         answerCurrentPage = 1;
         dialog.invalidateAnswers();
@@ -456,6 +487,7 @@ public class AnswerAuditPanel {
             try {
                 answerUserFilterCombo.removeAllItems();
                 answerUserFilterCombo.addItem(ALL_USER);
+                answerUserFilterCombo.addItem(AiQuestion.GLOBAL_DISPLAY_TEXT);
                 for (String userOption : dialog.userOptions) {
                     answerUserFilterCombo.addItem(AiQuestionMangerDialog.formatUserOption(userOption));
                 }
@@ -712,12 +744,20 @@ public class AnswerAuditPanel {
         if (text == null || ALL_USER.equals(text)) {
             return null;
         }
+        // 选中「全局」时传参数 0
+        if (AiQuestion.GLOBAL_DISPLAY_TEXT.equals(text)) {
+            return GLOBAL_USER_FILTER_VALUE;
+        }
         return AiQuestionMangerDialog.extractUserIdFromDisplayText(text);
     }
     
     private boolean matchesAnswerUserFilter(AiAnswer answer, String userIdFilter) {
         if (userIdFilter == null) {
             return true;
+        }
+        // 选中「全局」（传参 0）时匹配全部全局记录：0、-1 或空
+        if (AiQuestion.isGlobalCode(userIdFilter)) {
+            return AiQuestion.isGlobalCode(AiQuestionMangerDialog.nullToEmpty(answer.getUserId()).trim());
         }
         return userIdFilter.equals(AiQuestionMangerDialog.nullToEmpty(answer.getUserId()).trim());
     }
@@ -803,13 +843,12 @@ public class AnswerAuditPanel {
         gbc.insets = new Insets(6, 6, 6, 6);
         gbc.anchor = GridBagConstraints.WEST;
         dialog.addFormRow(form, gbc, 0, new JLabel("ID："), new JLabel(answer.getId() != null ? String.valueOf(answer.getId()) : ""));
-        dialog.addFormRow(form, gbc, 1, new JLabel("所属项目："), new JLabel(AiQuestionMangerDialog.nullToEmpty(answer.getProjectName())));
-        dialog.addFormRow(form, gbc, 2, new JLabel("问题："),
+        dialog.addFormRow(form, gbc, 1, new JLabel("问题："),
                 AiQuestionMangerDialog.readonlyArea(AiQuestionMangerDialog.nullToEmpty(answer.getQuery()), 2));
-        dialog.addFormRow(form, gbc, 3, new JLabel("回复内容："),
+        dialog.addFormRow(form, gbc, 2, new JLabel("回复内容："),
                 AiQuestionMangerDialog.readonlyArea(AiQuestionMangerDialog.nullToEmpty(answer.getAnswer()), 15));
-        dialog.addFormRow(form, gbc, 4, new JLabel("所属用户："), AiQuestionMangerDialog.readonlyField(
-                AiQuestionMangerDialog.formatUserIdDisplay(AiQuestionMangerDialog.nullToEmpty(answer.getUserId()), dialog.userOptions)));
+        dialog.addFormRow(form, gbc, 3, new JLabel("所属项目："), new JLabel(answerProjectDisplayText(answer)));
+        dialog.addFormRow(form, gbc, 4, new JLabel("所属用户："), new JLabel(answerUserDisplayText(answer)));
         dialog.addFormRow(form, gbc, 5, new JLabel("是否允许修改："), new JLabel(answer.isModifyAllowed() ? ALLOW_MODIFY_YES : ALLOW_MODIFY_NO));
         dialog.addFormRow(form, gbc, 6, new JLabel("是否来源训练："), new JLabel(answer.isFromTraining() ? SOURCE_TRAINING_YES : SOURCE_TRAINING_NO));
         dialog.addFormRow(form, gbc, 7, new JLabel("创建时间："), new JLabel(AiQuestionMangerDialog.nullToEmpty(answer.getCreateTime())));
@@ -839,7 +878,7 @@ public class AnswerAuditPanel {
             }
             envPart.append(text);
         }
-        if (envPart.length() == 0) {
+        if (envPart.isEmpty()) {
             return title;
         }
         return title + " - 环境 [" + envPart + "]";
@@ -868,8 +907,9 @@ public class AnswerAuditPanel {
                 GridBagConstraints gbc = new GridBagConstraints();
                 gbc.insets = new Insets(4, 6, 4, 6);
                 gbc.anchor = GridBagConstraints.WEST;
-                dialog.addFormRow(topPanel, gbc, 0, new JLabel("问题："), dialog.readonlyArea(fields.getOrDefault("question", ""), 1));
-                dialog.addFormRow(topPanel, gbc, 1, new JLabel("训练参数："), dialog.readonlyArea(fields.getOrDefault("trainingParam", ""), 3));
+                dialog.addFormRow(topPanel, gbc, 0, new JLabel("问题："), AiQuestionMangerDialog.readonlyArea(fields.getOrDefault("question", ""), 1));
+                dialog.addFormRow(topPanel, gbc, 1, new JLabel("训练参数："),
+                        AiQuestionMangerDialog.readonlyArea(fields.getOrDefault("trainingParam", ""), 3));
                 content.add(topPanel);
                 content.add(Box.createRigidArea(new Dimension(0, 8)));
                 JPanel comparePanel = new JPanel(new GridLayout(1, 2, 8, 0));
@@ -920,8 +960,8 @@ public class AnswerAuditPanel {
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(6, 6, 6, 6);
         gbc.anchor = GridBagConstraints.WEST;
-        dialog.addFormRow(form, gbc, 0, new JLabel("问题："), dialog.dialogScroll(queryArea, 2));
-        dialog.addFormRow(form, gbc, 1, new JLabel("回复内容："), dialog.dialogScroll(replyArea, 15));
+        dialog.addFormRow(form, gbc, 0, new JLabel("问题："), AiQuestionMangerDialog.dialogScroll(queryArea, 2));
+        dialog.addFormRow(form, gbc, 1, new JLabel("回复内容："), AiQuestionMangerDialog.dialogScroll(replyArea, 15));
         dialog.addFormRow(form, gbc, 2, new JLabel("所属项目："), projectNameLabel);
         dialog.addFormRow(form, gbc, 3, new JLabel("是否允许修改："), allowModifyCombo);
         int option = JOptionPane.showConfirmDialog(dialog, form, dialogTitle("编辑回复", answer.getEnvName()), JOptionPane.OK_CANCEL_OPTION,
@@ -1366,10 +1406,10 @@ public class AnswerAuditPanel {
             return switch (column) {
                 case ACOL_CHECK -> answer.getId() != null ? isChecked(answer) : null;
                 case ACOL_ID -> answer.getId();
-                case ACOL_PROJECT -> AiQuestionMangerDialog.nullToEmpty(answer.getProjectName());
+                case ACOL_PROJECT -> answerProjectDisplayText(answer);
                 case ACOL_QUERY -> AiQuestionMangerDialog.nullToEmpty(answer.getQuery());
                 case ACOL_ANSWER -> AiQuestionMangerDialog.nullToEmpty(answer.getAnswer());
-                case ACOL_USER -> AiQuestionMangerDialog.nullToEmpty(answer.getUserId());
+                case ACOL_USER -> answerUserDisplayText(answer);
                 case ACOL_MODIFY -> answer.isModifyAllowed() ? ALLOW_MODIFY_YES : ALLOW_MODIFY_NO;
                 case ACOL_SOURCE_TRAINING -> answer.isFromTraining() ? SOURCE_TRAINING_YES : SOURCE_TRAINING_NO;
                 case ACOL_SOURCE_ID -> answer.getSourceId() != null ? String.valueOf(answer.getSourceId()) : "";

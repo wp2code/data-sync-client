@@ -1001,13 +1001,16 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
             """, "?trainingNo=TR20261012001", "GET");
     
     /**
-     * 批量更新问题接口示例（ids 为勾选的问题 ID 列表，userId / trainingParam 均可选，留空字段不提交保持原值）
+     * 批量更新问题接口示例（ids 为勾选的问题 ID 列表；userId / trainingParam / allowAutoTraining / projectCode 均可选，
+     * 不提交的字段接口侧保持原值；allowAutoTraining：0-允许自动训练，1-不允许；projectCode 为空字符串表示「全局」，即不绑定具体项目）
      */
     private static final ApiExample UPDATE_USER_EXAMPLE = new ApiExample("批量更新问题", AiEnvConfig.DEFAULT_UPDATE_USER_API, """
             {
               "ids": [1001, 1002],
               "userId": "u10001",
-              "trainingParam": "{\\"topK\\":5}"
+              "trainingParam": "{\\"topK\\":5}",
+              "allowAutoTraining": 0,
+              "projectCode": "P00000001"
             }
             """, """
             {

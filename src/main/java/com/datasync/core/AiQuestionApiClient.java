@@ -142,7 +142,8 @@ public final class AiQuestionApiClient {
             for (JsonNode item : data) {
                 try {
                     AiQuestion question = objectMapper.treeToValue(item, AiQuestion.class);
-                    // AiQuestion.updateTime 标注 @JsonIgnore，此处手动解析接口返回的更新时间，供列表按更新时间降序排序
+                    // AiQuestion.createTime / updateTime 标注 @JsonIgnore，此处手动解析接口返回的时间，供列表排序与详情展示
+                    question.setCreateTime(parseApiTime(item.get("createTime")));
                     question.setUpdateTime(parseApiTime(item.get("updateTime")));
                     questions.add(question);
                 } catch (Exception e) {
@@ -308,15 +309,16 @@ public final class AiQuestionApiClient {
     }
     
     /**
-     * 批量更新选中问题的用户ID / 训练参数 / 自动训练开关（留空的字段不提交，接口侧保持原值不变）
+     * 批量更新选中问题的用户ID / 训练参数 / 自动训练开关 / 所属项目（留空的字段不提交，接口侧保持原值不变）
      *
      * @param userId            用户ID（null / 空白表示不更新该字段）
      * @param trainingParam     训练参数（null / 空白表示不更新该字段）
      * @param allowAutoTraining 自动训练开关（null 表示不更新；0-允许；1-不允许）
+     * @param projectCode       所属项目编码（null 表示不更新；空字符串表示「全局」，即不绑定具体项目）
      * @return 成功时返回接口 message，失败时抛出异常
      */
-    public String batchUpdateUser(AiEnvConfig env, List<Long> ids, String userId, String trainingParam, Integer allowAutoTraining)
-            throws AiApiException {
+    public String batchUpdateUser(AiEnvConfig env, List<Long> ids, String userId, String trainingParam, Integer allowAutoTraining,
+            String projectCode) throws AiApiException {
         String url = buildUrl(env, env.getUpdateUserApi());
         ObjectNode body = objectMapper.createObjectNode();
         body.set("ids", objectMapper.valueToTree(ids));
@@ -328,6 +330,10 @@ public final class AiQuestionApiClient {
         }
         if (allowAutoTraining != null) {
             body.put("allowAutoTraining", allowAutoTraining);
+        }
+        // projectCode 空字符串是有效值（表示全局），故只判 null 而非 isBlank
+        if (projectCode != null) {
+            body.put("projectCode", projectCode);
         }
         return postForMessage(env, url, body);
     }

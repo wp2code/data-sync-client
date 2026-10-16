@@ -12,6 +12,8 @@ import java.awt.*;
 import java.awt.event.*;
 import java.net.URI;
 import javax.swing.*;
+import lombok.Getter;
+import lombok.Setter;
 
 /**
  * 链接标签 - 支持点击跳转浏览器、鼠标悬停变色、下划线效果
@@ -21,6 +23,8 @@ import javax.swing.*;
  **/
 public class LinkJLabel extends JLabel {
     
+    @Getter
+    @Setter
     private String url;
     
     private Color normalColor = new Color(0x1A, 0x73, 0xE8);  // Google Blue
@@ -106,30 +110,5 @@ public class LinkJLabel extends JLabel {
             return "";
         }
         return htmlText.replaceAll("<html>", "").replaceAll("</html>", "");
-    }
-    
-    // ── Getter/Setter ──
-    
-    public String getUrl() {
-        return url;
-    }
-    
-    public void setUrl(String url) {
-        this.url = url;
-    }
-    
-    public void setNormalColor(Color normalColor) {
-        this.normalColor = normalColor;
-        if (!visited) {
-            setForeground(normalColor);
-        }
-    }
-    
-    public void setHoverColor(Color hoverColor) {
-        this.hoverColor = hoverColor;
-    }
-    
-    public void setUnderline(boolean underline) {
-        this.underline = underline;
     }
 }

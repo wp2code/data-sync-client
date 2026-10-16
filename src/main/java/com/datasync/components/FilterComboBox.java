@@ -64,8 +64,10 @@ public class FilterComboBox<T> extends JComboBox<T> {
     
     @Override
     public void removeItem(Object anObject) {
-        super.removeItem(anObject);
-        allItems.remove(anObject);
+        if (anObject != null) {
+            super.removeItem(anObject);
+            allItems.remove(anObject);
+        }
     }
     
 }

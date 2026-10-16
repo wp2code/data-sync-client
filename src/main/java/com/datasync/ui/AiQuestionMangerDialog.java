@@ -13,6 +13,7 @@ import com.datasync.components.FullscreenJDialog;
 import com.datasync.core.AiQuestionApiClient;
 import com.datasync.model.AiEnvConfig;
 import com.datasync.model.AiMetaConfig;
+import com.datasync.model.AiQuestion;
 import com.datasync.util.ConfigUtil;
 import com.datasync.util.LogUtil;
 import com.datasync.util.SQLiteConfigUtil;
@@ -95,9 +96,6 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
      * 回复审计操作列删除区域值
      */
     static final int ANSWER_ACTION_DELETE = 2;
-    
-    // ── 业务页签 ──
-    private static final int TAB_QUESTION_TRAINING = 0;
     
     private static final int TAB_ANSWER_AUDIT = 1;
     
@@ -504,6 +502,16 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         }
         return LocalDateTime.ofInstant(Instant.ofEpochMilli(millis), ZoneId.systemDefault()).format(TRAINING_TIME_FORMATTER);
     }
+
+    /**
+     * 将 {@link LocalDateTime} 格式化为 yyyy-MM-dd HH:mm:ss（null 返回空字符串）
+     */
+    static String formatLocalDateTime(LocalDateTime time) {
+        if (time == null) {
+            return "";
+        }
+        return time.format(TRAINING_TIME_FORMATTER);
+    }
     
     /**
      * 将毫秒时间戳格式化为 HH:mm:ss（仅展示时间部分）
@@ -603,11 +611,12 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     }
     
     /**
-     * 根据原始 userId 查找用户名称并格式化为「用户名称（用户ID）」
+     * 根据原始 userId 查找用户名称并格式化为「用户名称（用户ID）」<br>
+     * userId 为 0、-1 或空时统一展示「全局」（与 {@link AiQuestion#isGlobalCode(String)} 保持一致）
      */
     static String formatUserIdDisplay(String userId, List<String> userOptions) {
-        if (userId == null || userId.isEmpty()) {
-            return "";
+        if (AiQuestion.isGlobalCode(userId)) {
+            return AiQuestion.GLOBAL_DISPLAY_TEXT;
         }
         if (userOptions != null) {
             for (String option : userOptions) {
@@ -892,9 +901,9 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
             Component component = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
             String userId = value == null ? "" : value.toString().trim();
-            if (userId.isEmpty()) {
-                setText("");
-                setToolTipText(null);
+            if (AiQuestion.isGlobalCode(userId)) {
+                setText(AiQuestion.GLOBAL_DISPLAY_TEXT);
+                setToolTipText(AiQuestion.GLOBAL_DISPLAY_TEXT);
             } else {
                 String userName = lookupUserName(userId);
                 String display = userName.isEmpty() ? userId : userName + "（" + userId + "）";

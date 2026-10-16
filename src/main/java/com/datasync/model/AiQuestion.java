@@ -49,6 +49,29 @@ public class AiQuestion {
     public static final String TRAINING_MODEL_MANUAL = "Manual";
     
     /**
+     * 所属项目 / 所属用户为「全局」时的编码值（-1 与 0 均表示全局，等价于空字符串）
+     */
+    public static final String GLOBAL_CODE = "-1";
+
+    /**
+     * 「全局」展示文案：所属项目 / 所属用户为 0、-1 或空时统一展示
+     */
+    public static final String GLOBAL_DISPLAY_TEXT = "全局";
+
+    /**
+     * 判断编码是否表示「全局」：0、-1 或空值（null / 空白）均视为全局
+     *
+     * @param code 所属项目编码（projectCode）或所属用户ID（userId）
+     */
+    public static boolean isGlobalCode(String code) {
+        if (code == null || code.isBlank()) {
+            return true;
+        }
+        String trimmed = code.trim();
+        return GLOBAL_CODE.equals(trimmed) || "0".equals(trimmed);
+    }
+    
+    /**
      * 训练状态：默认
      */
     public static final int TRAINING_STATUS_INITIAL = -2;
@@ -112,7 +135,12 @@ public class AiQuestion {
     private String projectName;
     
     /**
-     * 所属项目编码列表（保存时传递，参数名 projectCodeList）
+     * 所属项目编码（单选，编辑单条问题时传递，参数名 projectCode；-1 或空字符串均表示「全局」，即不绑定具体项目）
+     */
+    private String projectCode;
+    
+    /**
+     * 所属项目编码列表（批量保存时传递，参数名 projectCodeList；与 projectCode 共存，分别用于更新与保存接口）
      */
     private List<String> projectCodeList;
     
