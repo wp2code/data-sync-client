@@ -1,5 +1,6 @@
 package com.datasync;
 
+import com.datasync.core.ProcessContainerService;
 import com.datasync.ui.DataSyncUI;
 import com.datasync.ui.UiConstants;
 import com.formdev.flatlaf.FlatDarkLaf;
@@ -16,6 +17,13 @@ public class Main {
     
     public static void main(String[] args) {
         logger.info("DataSync Client 启动");
+        // 应用退出时按用户选择清理程序容器中仍在运行的子进程（主窗口关闭弹窗中可选「保持程序运行」跳过清理）
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            ProcessContainerService container = ProcessContainerService.getInstance();
+            if (container.isStopProcessesOnExit()) {
+                container.stopAll();
+            }
+        }, "program-container-shutdown"));
         // 开启全局文本灰度抗锯齿，保证中文小字号边缘平滑（暗色主题下无亚像素彩边）
         System.setProperty("awt.useSystemAAFontSettings", "on");
         System.setProperty("swing.aatext", "true");

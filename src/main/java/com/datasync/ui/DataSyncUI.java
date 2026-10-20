@@ -9,6 +9,7 @@ import com.datasync.components.combobox.IconJComboBox;
 import com.datasync.core.DataSyncService;
 import com.datasync.core.DbConnector;
 import com.datasync.core.GitLabService;
+import com.datasync.core.ProcessContainerService;
 import com.datasync.core.UpdateService;
 import com.datasync.model.ConnectionWrapper;
 import com.datasync.model.DataSource;
@@ -136,7 +137,8 @@ public class DataSyncUI extends JFrame {
     
     private void initUI() {
         setTitle("DataSync");
-        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        // 拦截关闭事件：有运行中的程序时弹窗选择停止或保持后台运行，无则直接退出
+        setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
         setSize(980, 820);
         setLocationRelativeTo(null);
         setLayout(new BorderLayout(10, 10));
@@ -153,9 +155,7 @@ public class DataSyncUI extends JFrame {
             
             @Override
             public void windowClosing(WindowEvent e) {
-                closeConnection(Side.SOURCE, true);
-                closeConnection(Side.TARGET, true);
-                GitLabService.getInstance().logout();
+                handleCloseApplication();
             }
         });
         
@@ -216,6 +216,9 @@ public class DataSyncUI extends JFrame {
         JButton scriptBtn = ButtonFactory.createToolbar("脚本管理");
         scriptBtn.addActionListener(e -> openScriptManager());
         rightPanel.add(scriptBtn);
+        JButton programBtn = ButtonFactory.createToolbar("程序容器");
+        programBtn.addActionListener(e -> openProgramContainer());
+        rightPanel.add(programBtn);
         JButton manageBtn = ButtonFactory.createToolbar("管理数据源");
         manageBtn.addActionListener(e -> openDataSourceManager());
         rightPanel.add(manageBtn);
@@ -711,6 +714,61 @@ public class DataSyncUI extends JFrame {
         ScriptMangerDialog dialog = new ScriptMangerDialog(this);
         dialog.setVisible(true);
         // 脚本管理不修改数据源配置，关闭后无需刷新主页下拉框
+    }
+    
+    // ────────── 程序容器对话框 ──────────
+    private void openProgramContainer() {
+        ProgramContainerDialog dialog = new ProgramContainerDialog(this);
+        dialog.setVisible(true);
+        // 关闭对话框后进程继续后台运行，无需刷新主页任何状态
+    }
+    
+    // ────────── 应用退出 ──────────
+    
+    /**
+     * 主窗口关闭流程：无运行中程序直接退出；有运行中程序时弹窗选择
+     * 「停止程序并退出」或「保持程序后台运行」，取消则留在应用。
+     * 选择保持运行时子进程不随应用退出（Windows 下父进程退出后子进程继续存活），
+     * 但退出后无法再通过本工具查看输出或停止这些程序。
+     */
+    private void handleCloseApplication() {
+        ProcessContainerService container = ProcessContainerService.getInstance();
+        long running = container.countRunningProcesses();
+        if (running == 0) {
+            exitApplication();
+            return;
+        }
+        Object[] options = {"停止程序并退出", "保持程序运行", "取消"};
+        int choice = JOptionPane.showOptionDialog(this,
+                "检测到 " + running + " 个程序正在运行，关闭应用时如何处理？\n"
+                        + "选择「保持程序运行」后，程序将在后台继续运行，但无法再通过本工具查看输出或停止",
+                "关闭确认", JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE,
+                null, options, options[0]);
+        if (choice == JOptionPane.CLOSED_OPTION || choice == 2) {
+            return; // 取消：留在应用
+        }
+        if (choice == 1) {
+            // 保持程序后台运行：关闭退出时的进程清理钩子
+            container.setStopProcessesOnExit(false);
+            exitApplication();
+            return;
+        }
+        // 停止程序并退出：stopAll 为阻塞方法（最多等待约 3 秒），隐藏窗口后交后台线程执行避免冻结
+        setVisible(false);
+        new Thread(() -> {
+            container.stopAll();
+            System.exit(0);
+        }, "app-exit-stop-processes").start();
+    }
+    
+    /**
+     * 执行窗口关闭清理（释放数据库连接、GitLab 登出）后退出应用
+     */
+    private void exitApplication() {
+        closeConnection(Side.SOURCE, true);
+        closeConnection(Side.TARGET, true);
+        GitLabService.getInstance().logout();
+        System.exit(0);
     }
     // ────────── 配置下拉刷新 ──────────
     

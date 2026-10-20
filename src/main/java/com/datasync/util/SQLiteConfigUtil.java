@@ -4,6 +4,7 @@ import com.datasync.model.AiEnvConfig;
 import com.datasync.model.DataSource;
 import com.datasync.model.DbType;
 import com.datasync.model.GitLabAuthConfig;
+import com.datasync.model.ProgramConfig;
 import com.datasync.model.Script;
 import java.io.File;
 import java.sql.Connection;
@@ -136,6 +137,23 @@ public class SQLiteConfigUtil {
             );
             """;
     
+    // 程序容器配置表
+    private static final String CREATE_PROGRAM_CONFIG_TABLE_SQL = """
+            CREATE TABLE IF NOT EXISTS program_config (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                name         VARCHAR(64)  NOT NULL UNIQUE,
+                program_path VARCHAR(512) NOT NULL,
+                arguments    TEXT         DEFAULT NULL,
+                work_dir     VARCHAR(512) DEFAULT NULL,
+                jre_path     VARCHAR(512) DEFAULT NULL,
+                last_pid     INTEGER      DEFAULT NULL,
+                output_charset VARCHAR(64) DEFAULT NULL,
+                remark       TEXT         DEFAULT NULL,
+                create_time  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                update_time  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            """;
+
     // 通用键值配置表（如更新检查间隔、上次检查时间等）
     private static final String CREATE_APP_CONFIG_TABLE_SQL = """
             CREATE TABLE IF NOT EXISTS app_config (
@@ -168,8 +186,10 @@ public class SQLiteConfigUtil {
                 stmt.execute(CREATE_SCRIPT_TABLE_SQL);
                 stmt.execute(CREATE_GITLAB_CONFIG_TABLE_SQL);
                 stmt.execute(CREATE_AI_ENV_CONFIG_TABLE_SQL);
+                stmt.execute(CREATE_PROGRAM_CONFIG_TABLE_SQL);
                 stmt.execute(CREATE_APP_CONFIG_TABLE_SQL);
                 ensureAiEnvConfigColumns(stmt);
+                ensureProgramConfigColumns(stmt);
                 seedDefaultAiEnv(stmt);
                 seedDefaultAppConfig(stmt);
             }
@@ -434,6 +454,137 @@ public class SQLiteConfigUtil {
             return ps.executeUpdate() > 0;
         } catch (SQLException e) {
             logger.error("[SQLite] 删除脚本失败", e);
+            return false;
+        }
+    }
+    
+    // ────────── 程序容器配置 CRUD ──────────
+    
+    /**
+     * 保存新的程序容器配置，成功后回填自增主键到 config.id
+     */
+    public boolean saveProgramConfig(ProgramConfig config) {
+        String sql = "INSERT INTO program_config (name, program_path, arguments, work_dir, jre_path, last_pid, output_charset, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+        try (Connection conn = getConnection();
+                PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            ps.setString(1, config.getName());
+            ps.setString(2, config.getProgramPath());
+            ps.setString(3, config.getArguments());
+            ps.setString(4, config.getWorkDir());
+            ps.setString(5, config.getJrePath());
+            if (config.getLastPid() == null) {
+                ps.setNull(6, java.sql.Types.INTEGER);
+            } else {
+                ps.setLong(6, config.getLastPid());
+            }
+            ps.setString(7, config.getOutputCharset());
+            ps.setString(8, config.getRemark());
+            boolean saved = ps.executeUpdate() > 0;
+            if (saved) {
+                try (ResultSet rs = ps.getGeneratedKeys()) {
+                    if (rs.next()) {
+                        config.setId(rs.getLong(1));
+                    }
+                }
+            }
+            return saved;
+        } catch (SQLException e) {
+            logger.error("[SQLite] 保存程序配置失败", e);
+            return false;
+        }
+    }
+    
+    /**
+     * 加载所有程序容器配置
+     */
+    public List<ProgramConfig> loadProgramConfigs() {
+        List<ProgramConfig> configs = new ArrayList<>();
+        String sql = "SELECT * FROM program_config ORDER BY update_time DESC";
+        try (Connection conn = getConnection();
+                Statement stmt = conn.createStatement();
+                ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                configs.add(mapRowToProgramConfig(rs));
+            }
+        } catch (SQLException e) {
+            logger.error("[SQLite] 加载程序配置列表失败", e);
+        }
+        return configs;
+    }
+    
+    /**
+     * 根据名称加载程序容器配置（唯一性校验）
+     */
+    public ProgramConfig loadProgramConfigByName(String name) {
+        String sql = "SELECT * FROM program_config WHERE name = ?";
+        try (Connection conn = getConnection();
+                PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, name);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return mapRowToProgramConfig(rs);
+                }
+            }
+        } catch (SQLException e) {
+            logger.error("[SQLite] 加载程序配置失败", e);
+        }
+        return null;
+    }
+    
+    /**
+     * 更新已有的程序容器配置（以 id 为条件）
+     */
+    public boolean updateProgramConfig(ProgramConfig config) {
+        String sql = "UPDATE program_config SET name = ?, program_path = ?, arguments = ?, work_dir = ?, jre_path = ?, output_charset = ?, remark = ?, update_time = CURRENT_TIMESTAMP WHERE id = ?";
+        try (Connection conn = getConnection();
+                PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, config.getName());
+            ps.setString(2, config.getProgramPath());
+            ps.setString(3, config.getArguments());
+            ps.setString(4, config.getWorkDir());
+            ps.setString(5, config.getJrePath());
+            ps.setString(6, config.getOutputCharset());
+            ps.setString(7, config.getRemark());
+            ps.setLong(8, config.getId());
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            logger.error("[SQLite] 更新程序配置失败", e);
+            return false;
+        }
+    }
+    
+    /**
+     * 删除指定 id 的程序容器配置
+     */
+    public boolean deleteProgramConfig(Long id) {
+        String sql = "DELETE FROM program_config WHERE id = ?";
+        try (Connection conn = getConnection();
+                PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setLong(1, id);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            logger.error("[SQLite] 删除程序配置失败", e);
+            return false;
+        }
+    }
+    
+    /**
+     * 单独更新程序最近一次启动的进程号（不随表单保存覆盖）：启动成功后写入 pid，进程退出后置 null。
+     * pid 传 null 时清空记录
+     */
+    public boolean updateProgramPid(long id, Long pid) {
+        String sql = "UPDATE program_config SET last_pid = ? WHERE id = ?";
+        try (Connection conn = getConnection();
+                PreparedStatement ps = conn.prepareStatement(sql)) {
+            if (pid == null) {
+                ps.setNull(1, java.sql.Types.INTEGER);
+            } else {
+                ps.setLong(1, pid);
+            }
+            ps.setLong(2, id);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            logger.error("[SQLite] 更新程序进程号失败: id={}", id, e);
             return false;
         }
     }
@@ -713,6 +864,15 @@ public class SQLiteConfigUtil {
     }
     
     /**
+     * 兼容旧库：program_config 缺少 jre_path / last_pid / output_charset 列时自动补齐（SQLite ALTER TABLE ADD COLUMN）
+     */
+    private void ensureProgramConfigColumns(Statement stmt) throws SQLException {
+        addColumnIfAbsent(stmt, "program_config", "jre_path", "VARCHAR(512) DEFAULT NULL");
+        addColumnIfAbsent(stmt, "program_config", "last_pid", "INTEGER DEFAULT NULL");
+        addColumnIfAbsent(stmt, "program_config", "output_charset", "VARCHAR(64) DEFAULT NULL");
+    }
+    
+    /**
      * 列不存在时执行 ALTER TABLE ADD COLUMN
      */
     private void addColumnIfAbsent(Statement stmt, String table, String column, String definition) throws SQLException {
@@ -831,6 +991,37 @@ public class SQLiteConfigUtil {
         }
         
         return script;
+    }
+    
+    /**
+     * 将 ResultSet 当前行映射为 ProgramConfig 实体
+     */
+    private ProgramConfig mapRowToProgramConfig(ResultSet rs) throws SQLException {
+        ProgramConfig config = new ProgramConfig();
+        config.setId(rs.getLong("id"));
+        config.setName(rs.getString("name"));
+        config.setProgramPath(rs.getString("program_path"));
+        config.setArguments(rs.getString("arguments"));
+        config.setWorkDir(rs.getString("work_dir"));
+        config.setJrePath(rs.getString("jre_path"));
+        long lastPid = rs.getLong("last_pid");
+        if (!rs.wasNull()) {
+            config.setLastPid(lastPid);
+        }
+        config.setOutputCharset(rs.getString("output_charset"));
+        config.setRemark(rs.getString("remark"));
+        
+        Timestamp ct = rs.getTimestamp("create_time");
+        if (ct != null) {
+            config.setCreateTime(ct.toLocalDateTime());
+        }
+        
+        Timestamp ut = rs.getTimestamp("update_time");
+        if (ut != null) {
+            config.setUpdateTime(ut.toLocalDateTime());
+        }
+        
+        return config;
     }
     
     /**

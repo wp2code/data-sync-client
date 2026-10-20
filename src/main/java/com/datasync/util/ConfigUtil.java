@@ -3,6 +3,7 @@ package com.datasync.util;
 import com.datasync.model.AiEnvConfig;
 import com.datasync.model.DataSource;
 import com.datasync.model.GitLabAuthConfig;
+import com.datasync.model.ProgramConfig;
 import com.datasync.model.Script;
 import java.util.List;
 
@@ -133,5 +134,49 @@ public final class ConfigUtil {
      */
     public static boolean updateSelectedAiEnv(Long id) {
         return SQLiteConfigUtil.getInstance().updateSelectedAiEnv(id);
+    }
+    
+    // ────────── 程序容器配置 ──────────
+    
+    /**
+     * 保存新的程序容器配置
+     */
+    public static boolean saveProgramConfig(ProgramConfig config) {
+        return SQLiteConfigUtil.getInstance().saveProgramConfig(config);
+    }
+    
+    /**
+     * 加载所有程序容器配置
+     */
+    public static List<ProgramConfig> loadProgramConfigs() {
+        return SQLiteConfigUtil.getInstance().loadProgramConfigs();
+    }
+    
+    /**
+     * 根据名称加载程序容器配置（唯一性校验）
+     */
+    public static ProgramConfig loadProgramConfigByName(String name) {
+        return SQLiteConfigUtil.getInstance().loadProgramConfigByName(name);
+    }
+    
+    /**
+     * 更新已有的程序容器配置
+     */
+    public static boolean updateProgramConfig(ProgramConfig config) {
+        return SQLiteConfigUtil.getInstance().updateProgramConfig(config);
+    }
+    
+    /**
+     * 删除程序容器配置
+     */
+    public static boolean deleteProgramConfig(Long id) {
+        return SQLiteConfigUtil.getInstance().deleteProgramConfig(id);
+    }
+    
+    /**
+     * 单独更新程序最近一次启动的进程号（启动成功后写入，进程退出后置 null）
+     */
+    public static boolean updateProgramPid(long id, Long pid) {
+        return SQLiteConfigUtil.getInstance().updateProgramPid(id, pid);
     }
 }
