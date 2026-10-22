@@ -14,7 +14,7 @@ import lombok.Setter;
  **/
 public class CustomTextField extends JTextField {
     
-    private final String placeholder;
+    private String placeholder;
     
     private boolean showPlaceholder = true;
     
@@ -23,9 +23,9 @@ public class CustomTextField extends JTextField {
     private final Font placeholderFont = UiConstants.FONT_SANS_11;
     
     /**
-     * 基于 placeholder 文本宽度和字体计算的首选尺寸
+     * 基于 placeholder 文本宽度和字体计算的首选尺寸（placeholder 动态更新时重算）
      */
-    private final Dimension preferredSize;
+    private Dimension preferredSize;
     
     /**
      * 最小宽度（0 表示不限制），用于保证输入框在 GridBag 等布局中的可见宽度
@@ -39,11 +39,34 @@ public class CustomTextField extends JTextField {
     public CustomTextField(String placeholder) {
         setFont(UiConstants.FONT_SANS_11);
         this.placeholder = placeholder != null ? placeholder : "请输入内容";
-        // 根据 placeholder 文本宽度 + 内边距计算首选尺寸，避免父容器变化后尺寸失效
+        updatePreferredSize();
+        attachListeners();
+    }
+
+    /**
+     * 动态更新占位提示文本（如按程序类型切换示例），并同步重算首选尺寸
+     */
+    public void setPlaceholder(String placeholder) {
+        this.placeholder = placeholder != null ? placeholder : "请输入内容";
+        updatePreferredSize();
+        repaint();
+    }
+
+    /**
+     * 根据 placeholder 文本宽度 + 内边距计算首选尺寸，避免父容器变化后尺寸失效
+     */
+    private void updatePreferredSize() {
         FontMetrics fm = getFontMetrics(getFont());
-        int textWidth = fm.stringWidth(this.placeholder);
+        int textWidth = fm.stringWidth(placeholder);
         int textHeight = fm.getHeight();
         this.preferredSize = new Dimension(textWidth + 16, textHeight + 8);
+        revalidate();
+    }
+
+    /**
+     * 注册焦点与文本变化监听：仅构造时执行一次，动态更新 placeholder 不重复注册
+     */
+    private void attachListeners() {
         // 焦点变化时更新placeholder显示状态
         addFocusListener(new FocusAdapter() {
             @Override
@@ -51,30 +74,30 @@ public class CustomTextField extends JTextField {
                 showPlaceholder = false;
                 repaint(0, 0, getWidth(), getHeight());
             }
-            
+
             @Override
             public void focusLost(FocusEvent e) {
                 showPlaceholder = getText().isEmpty();
                 repaint(0, 0, getWidth(), getHeight());
-                
+
             }
         });
-        
+
         // 文本变化时更新placeholder显示状态
         getDocument().addDocumentListener(new DocumentListener() {
             @Override
             public void insertUpdate(DocumentEvent e) {
                 showPlaceholder = getText().isEmpty() && !hasFocus();
                 repaint(0, 0, getWidth(), getHeight());
-                
+
             }
-            
+
             @Override
             public void removeUpdate(DocumentEvent e) {
                 showPlaceholder = getText().isEmpty() && !hasFocus();
                 repaint(0, 0, getWidth(), getHeight());
             }
-            
+
             @Override
             public void changedUpdate(DocumentEvent e) {
             }

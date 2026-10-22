@@ -105,6 +105,11 @@ public final class UiConstants {
      * 待处理状态色（待训练等中间态状态文字，暗色主题下用亮琥珀色保证对比度）
      */
     public static final Color COLOR_PENDING = new Color(0xFBBF24);
+
+    /**
+     * 警示/重启动作色（淡黄填充按钮背景）
+     */
+    public static final Color COLOR_WARNING = new Color(0xFBBF24);
     
     /**
      * 训练动作色（问题列表操作列训练按钮的悬浮填充色，饱和琥珀）

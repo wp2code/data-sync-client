@@ -6,7 +6,12 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
+
 import com.datasync.model.ProgramConfig;
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -15,6 +20,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * ProcessContainerService 单元测试：进程启动/停止/重启、输出回调、退出码记录与日志缓冲上限。
@@ -379,6 +385,212 @@ class ProcessContainerServiceTest {
         assertTrue(await(() -> service.getExitCode(config.getId()) != null), "应等待到进程退出");
     }
 
+    // ────────── Python 解释器 ──────────
+
+    /**
+     * 从 PATH 中查找系统 Python 可执行文件，未安装返回 null（用例自动跳过）
+     */
+    private static String findSystemPython() {
+        String pathEnv = System.getenv("PATH");
+        if (pathEnv == null) {
+            return null;
+        }
+        String[] names = isWindows()
+                ? new String[]{"python.exe", "python3.exe"}
+                : new String[]{"python3", "python"};
+        for (String dir : pathEnv.split(java.io.File.pathSeparator)) {
+            if (dir.isBlank()) {
+                continue;
+            }
+            File dirFile = new File(dir);
+            if (!dirFile.isDirectory()) {
+                continue;
+            }
+            for (String name : names) {
+                File exe = new File(dirFile, name);
+                if (exe.isFile()) {
+                    return exe.getAbsolutePath();
+                }
+            }
+        }
+        return null;
+    }
+
+    @Test
+    @DisplayName("isPlainPythonCommand：仅整词匹配 python/python3 命令，带路径的不匹配")
+    void testIsPlainPythonCommand() {
+        assertTrue(ProcessContainerService.isPlainPythonCommand("python"), "裸 python 命令应匹配");
+        assertTrue(ProcessContainerService.isPlainPythonCommand("PYTHON.EXE"), "大小写不敏感");
+        assertTrue(ProcessContainerService.isPlainPythonCommand("python3"), "python3 命令应匹配");
+        assertFalse(ProcessContainerService.isPlainPythonCommand("pythonw"), "pythonw 不匹配");
+        assertFalse(ProcessContainerService.isPlainPythonCommand("C:\\Python311\\python.exe"),
+                "带路径的 python 不视为纯命令名");
+    }
+
+    @Test
+    @DisplayName("resolvePythonExecutable：目录定位 python 可执行文件、文件直接使用、无效路径返回 null")
+    void testResolvePythonExecutable(@TempDir Path tempDir) throws Exception {
+        Path venv = tempDir.resolve("venv");
+        Files.createDirectories(venv.resolve("bin"));
+        Path unixExe = venv.resolve("bin").resolve("python");
+        Files.createFile(unixExe);
+        Path winExe = venv.resolve("python.exe");
+        Files.createFile(winExe);
+        String expected = isWindows()
+                ? winExe.toAbsolutePath().toString()
+                : unixExe.toAbsolutePath().toString();
+
+        assertEquals(expected, ProcessContainerService.resolvePythonExecutable(venv.toString(), null),
+                "指向目录应定位到其中的 python 可执行文件");
+        assertEquals(expected, ProcessContainerService.resolvePythonExecutable("\"" + venv + "\"", null),
+                "带引号路径应先去引号再解析");
+        assertEquals(expected, ProcessContainerService.resolvePythonExecutable(expected, null),
+                "直接指向 python 可执行文件应返回绝对路径");
+        // 相对路径以工作目录为根解析
+        String relative = "venv";
+        assertEquals(expected, ProcessContainerService.resolvePythonExecutable(relative, tempDir.toFile()),
+                "相对解释器路径应基于工作目录定位");
+        assertNull(ProcessContainerService.resolvePythonExecutable("definitely-not-a-python-dir-xyz", null),
+                "不存在的路径应返回 null");
+    }
+
+    @Test
+    @DisplayName("isPythonCommand：识别 python/python3/py 与带路径的解释器，忽略其他程序")
+    void testIsPythonCommand() {
+        assertTrue(ProcessContainerService.isPythonCommand(List.of("python", "main.py")), "裸 python 命令应识别");
+        assertTrue(ProcessContainerService.isPythonCommand(List.of("python3.11", "main.py")), "带版本号应识别");
+        assertTrue(ProcessContainerService.isPythonCommand(List.of("C:\\Python311\\python.exe", "main.py")),
+                "带路径的解释器应识别");
+        assertTrue(ProcessContainerService.isPythonCommand(List.of("cmd.exe", "/c", "python", "main.py")),
+                "经 cmd.exe 解释执行时解释器位于第三项");
+        assertFalse(ProcessContainerService.isPythonCommand(List.of("ping", "-n", "2", "127.0.0.1")),
+                "非 Python 程序不应识别");
+    }
+
+    @Test
+    @DisplayName("start：Python 入口脚本自动前置配置的解释器并逐行输出")
+    void testStartPythonScript(@TempDir Path tempDir) throws Exception {
+        String python = findSystemPython();
+        assumeTrue(python != null, "环境未安装 Python，跳过 Python 启动用例");
+        Path script = tempDir.resolve("main.py");
+        Files.writeString(script, "print('hello-python-container')\n");
+        ProgramConfig config = newConfig(9017L, script.toAbsolutePath().toString(), "");
+        config.setPythonPath(python);
+        List<String> outputLines = new CopyOnWriteArrayList<>();
+
+        String error = service.start(config, outputLines::add, null);
+        assertNull(error, "配置了有效 Python 解释器的 .py 入口脚本应能启动");
+        assertTrue(await(() -> service.getExitCode(config.getId()) != null), "应等待到进程退出");
+        assertEquals(0, service.getExitCode(config.getId()), "脚本正常执行退出码应为 0");
+        assertTrue(outputLines.stream().anyMatch(line -> line.contains("hello-python-container")),
+                "应收到 Python 脚本的标准输出");
+        assertTrue(service.getLogBuffer(config.getId()).stream()
+                        .anyMatch(line -> line.startsWith("[容器] 已启动") && line.contains(python)),
+                "启动日志应包含配置的 Python 解释器路径");
+    }
+
+    @Test
+    @DisplayName("buildCommand：Python 项目按解释器配置组装命令（.py 入口脚本自动前置解释器）")
+    void testBuildCommandForPython(@TempDir Path tempDir) throws Exception {
+        Path venv = tempDir.resolve("venv");
+        Path exe = isWindows()
+                ? venv.resolve("python.exe")
+                : venv.resolve("bin").resolve("python");
+        Files.createDirectories(exe.getParent());
+        Files.createFile(exe);
+        String expectedExe = exe.toAbsolutePath().toString();
+
+        ProgramConfig commandConfig = newConfig(9019L, "python", "main.py");
+        commandConfig.setPythonPath(venv.toString());
+        assertEquals(List.of(expectedExe, "main.py"), service.buildCommand(commandConfig),
+                "python 命令应替换为配置的解释器，参数保持原样");
+
+        Path script = tempDir.resolve("main.py");
+        Files.createFile(script);
+        ProgramConfig scriptConfig = newConfig(9020L, script.toAbsolutePath().toString(), "--port=8080");
+        scriptConfig.setPythonPath(venv.toString());
+        assertEquals(List.of(expectedExe, script.toAbsolutePath().toString(), "--port=8080"),
+                service.buildCommand(scriptConfig), ".py 入口脚本应自动前置配置的解释器");
+
+        ProgramConfig plainConfig = newConfig(9021L, "python", "main.py");
+        assertEquals(List.of("python", "main.py"), service.buildCommand(plainConfig),
+                "未配置解释器时保持原命令不变");
+    }
+
+    @Test
+    @DisplayName("buildCommand：程序类型为 Python 时 .py 入口脚本未配置解释器也前置 PATH 的 python")
+    void testBuildCommandForPythonTypeWithoutInterpreter(@TempDir Path tempDir) throws Exception {
+        Path script = tempDir.resolve("main.py");
+        Files.createFile(script);
+
+        ProgramConfig config = newConfig(9022L, script.toAbsolutePath().toString(), "--port=8080");
+        config.setProgramType(ProgramConfig.TYPE_PYTHON);
+        assertEquals(List.of("python", script.toAbsolutePath().toString(), "--port=8080"),
+                service.buildCommand(config), "显式 Python 类型应前置 PATH 中的 python");
+
+        // 未显式指定类型的旧数据（.py 路径按通用命令处理）保持原行为，不自动前置
+        ProgramConfig legacy = newConfig(9023L, script.toAbsolutePath().toString(), "");
+        assertEquals(List.of(script.toAbsolutePath().toString()), service.buildCommand(legacy),
+                "旧数据未配置解释器且非 Python 类型时不前置解释器");
+    }
+
+    @Test
+    @DisplayName("resolveProgramType：显式类型优先，旧数据按程序字段推断")
+    void testResolveProgramType() {
+        ProgramConfig javaConfig = newConfig(9024L, "java -jar app.jar", "");
+        assertEquals(ProgramConfig.TYPE_JAVA, javaConfig.resolveProgramType(), "java 命令推断为 Java");
+
+        ProgramConfig pythonConfig = newConfig(9025L, "python main.py", "");
+        assertEquals(ProgramConfig.TYPE_PYTHON, pythonConfig.resolveProgramType(), "python 命令推断为 Python");
+
+        ProgramConfig batConfig = newConfig(9026L, "D:\\server\\startup.bat", "");
+        assertEquals(ProgramConfig.TYPE_OTHER, batConfig.resolveProgramType(), "其他命令推断为通用");
+
+        ProgramConfig explicit = newConfig(9027L, "D:\\proj\\main.py", "");
+        explicit.setProgramType(ProgramConfig.TYPE_PYTHON);
+        assertEquals(ProgramConfig.TYPE_PYTHON, explicit.resolveProgramType(), "显式 Python 类型生效");
+
+        ProgramConfig otherExplicit = newConfig(9028L, "python main.py", "");
+        otherExplicit.setProgramType(ProgramConfig.TYPE_OTHER);
+        assertEquals(ProgramConfig.TYPE_OTHER, otherExplicit.resolveProgramType(), "显式类型优先于自动推断");
+    }
+
+    @Test
+    @DisplayName("buildCommand：相对路径默认以工作目录为根解析（含空格不误拆为命令行）")
+    void testBuildCommandRelativePathWithWorkDir(@TempDir Path tempDir) throws Exception {
+        Path sub = tempDir.resolve("my app");
+        Files.createDirectories(sub);
+        Path script = sub.resolve("main.py");
+        Files.writeString(script, "print('ok')\n");
+        String relative = "my app" + File.separator + "main.py";
+
+        ProgramConfig config = newConfig(9029L, relative, "--port=8080");
+        config.setProgramType(ProgramConfig.TYPE_PYTHON);
+        config.setWorkDir(tempDir.toString());
+        List<String> command = service.buildCommand(config);
+        assertEquals(List.of("python", relative, "--port=8080"), command,
+                "相对路径按工作目录解析为存在的文件，整体作为入口脚本并前置解释器");
+
+        // 绝对路径不受工作目录影响
+        ProgramConfig absolute = newConfig(9030L, script.toAbsolutePath().toString(), "");
+        absolute.setProgramType(ProgramConfig.TYPE_PYTHON);
+        absolute.setWorkDir(tempDir.toString());
+        assertEquals(List.of("python", script.toAbsolutePath().toString()),
+                service.buildCommand(absolute), "绝对路径直接作为入口脚本");
+    }
+
+    @Test
+    @DisplayName("start：无效 Python 解释器路径返回错误且不创建进程")
+    void testStartInvalidPythonPath() {
+        ProgramConfig config = newConfig(9018L, "python", "main.py");
+        config.setPythonPath("definitely-not-a-python-dir-xyz");
+
+        String error = service.start(config, null, null);
+        assertNotNull(error, "无效 Python 路径应返回错误信息");
+        assertTrue(error.contains("Python"), "错误信息应提示 Python 路径无效");
+        assertFalse(service.isRunning(config.getId()), "校验失败不应启动进程");
+    }
+
     // ────────── 应用退出清理 ──────────
 
     @Test
@@ -577,5 +789,53 @@ class ProcessContainerServiceTest {
         }
         reader.close();
         return sb.toString();
+    }
+
+    @Test
+    @DisplayName("attachExternal：接管后台进程可恢复历史日志并接收增量输出")
+    void testAttachExternalOutput() throws Exception {
+        long id = 9022L;
+        String historyMsg = "历史中文日志";
+        String lateMsg = "增量中文日志";
+        StringBuilder escapedHistory = new StringBuilder();
+        for (char c : historyMsg.toCharArray()) {
+            escapedHistory.append(String.format("\\u%04x", (int) c));
+        }
+        StringBuilder escapedLate = new StringBuilder();
+        for (char c : lateMsg.toCharArray()) {
+            escapedLate.append(String.format("\\u%04x", (int) c));
+        }
+        // 程序：打印两行历史 → 停留数秒（留给接管窗口）→ 打印增量行 → 退出
+        java.nio.file.Path src = java.nio.file.Files.createTempFile("PrintDelayed", ".java");
+        java.nio.file.Files.writeString(src,
+                "public class PrintDelayed { public static void main(String[] args) throws Exception { "
+                        + "System.out.println(\"" + escapedHistory + "\"); "
+                        + "System.out.println(\"history-line-two\"); "
+                        + "Thread.sleep(5000); "
+                        + "System.out.println(\"" + escapedLate + "\"); } }");
+        try {
+            ProgramConfig config = newConfig(id, currentJavaExecutable() + " \"" + src + "\"", null);
+            assertNull(service.start(config, null, null), "临时 Java 程序应能启动");
+            assertTrue(await(() -> service.getLogBuffer(id).stream().anyMatch(l -> l.contains("history-line-two"))),
+                    "前两行历史应先到达");
+
+            // 模拟应用重启：仅移除内存会话（进程继续后台运行），仅剩 PID 与日志文件
+            service.detachSession(id);
+            assertTrue(service.getLogBuffer(id).isEmpty(), "会话移除后日志缓冲应清空");
+
+            // 接管：重建会话并 tail 日志文件，历史行应恢复（与 UI 一致从缓冲拉取），增量行走回调
+            List<String> lines = new CopyOnWriteArrayList<>();
+            service.attachExternal(id, config, lines::add, null);
+            List<String> restored = service.getLogBuffer(id);
+            assertTrue(restored.stream().anyMatch(l -> l.contains(historyMsg)),
+                    "接管后应恢复历史中文行: " + restored);
+            assertTrue(restored.stream().anyMatch(l -> l.contains("history-line-two")),
+                    "接管后应恢复历史 ASCII 行: " + restored);
+            assertTrue(await(() -> lines.stream().anyMatch(l -> l.contains(lateMsg))),
+                    "接管后应收到进程后续输出的增量行: " + lines);
+        } finally {
+            java.nio.file.Files.deleteIfExists(src);
+            service.removeSession(id);
+        }
     }
 }

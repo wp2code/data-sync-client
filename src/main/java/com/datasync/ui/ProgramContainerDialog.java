@@ -33,11 +33,6 @@ public class ProgramContainerDialog extends FullscreenJDialog {
     
     private static final ProcessContainerService PROCESS_SERVICE = ProcessContainerService.getInstance();
     
-    /**
-     * 输出编码下拉框中的自动检测选项（存库为空串）
-     */
-    private static final String AUTO_CHARSET_LABEL = "自动检测";
-    
     private final List<OptionJPanel> programPanelList = new ArrayList<>();
     
     /**
@@ -56,17 +51,17 @@ public class ProgramContainerDialog extends FullscreenJDialog {
     
     private JTextField nameField;
     
-    private JTextField programPathField;
-    
-    private JTextField argumentsField;
+    private CustomTextField programPathField;
+
+    private CustomTextField argumentsField;
     
     private JTextField workDirField;
     
     private JTextField jrePathField;
     
-    private JTextField remarkField;
+    private JTextField pythonPathField;
     
-    private JComboBox<String> charsetCombo;
+    private JTextField remarkField;
     
     private JButton browseProgramBtn;
     
@@ -74,6 +69,46 @@ public class ProgramContainerDialog extends FullscreenJDialog {
     
     private JButton browseJreBtn;
     
+    private JButton browsePythonBtn;
+
+    /**
+     * 程序类型下拉框：Java 程序 / Python 程序 / 其他程序
+     */
+    private JComboBox<String> typeComboBox;
+
+    /**
+     * 程序配置表单面板：行布局随程序类型动态重建
+     */
+    private JPanel formPanel;
+
+    /**
+     * 表单滚动容器：控制台双击全屏时从分割面板移除、恢复时放回
+     */
+    private JScrollPane formScroll;
+
+    private JPanel programRow;
+
+    private JPanel workDirRow;
+
+    private JPanel jrePathRow;
+
+    private JPanel pythonPathRow;
+
+    private JPanel formBtnPanel;
+
+    /**
+     * 程序类型下拉标签与持久化值（下标一一对应）
+     */
+    private static final String[] TYPE_LABELS = {"Java 程序", "Python 程序", "其他程序"};
+
+    private static final String[] TYPE_VALUES =
+            {ProgramConfig.TYPE_JAVA, ProgramConfig.TYPE_PYTHON, ProgramConfig.TYPE_OTHER};
+
+    /**
+     * 程序性设置下拉选中项时，抑制触发表单重建的回调
+     */
+    private boolean suppressTypeAction;
+
     private JButton saveBtn;
     
     private JButton deleteBtn;
@@ -90,6 +125,11 @@ public class ProgramContainerDialog extends FullscreenJDialog {
     
     private JTextArea consoleArea;
     
+    /**
+     * 右侧表单/控制台垂直分割：窗口打开时按比例定位（控制台占更大区域）
+     */
+    private JSplitPane rightSplitPane;
+    
     private ProgramConfig selectedConfig;
     
     private OptionJPanel selectedPanel;
@@ -105,7 +145,7 @@ public class ProgramContainerDialog extends FullscreenJDialog {
     private Timer flushTimer;
     
     public ProgramContainerDialog(Frame owner) {
-        super("PROGRAM", owner, "程序容器", true, 1000, 720);
+        super("PROGRAM", owner, "程序容器", true, 1000, 840);
         SQLiteConfigUtil.getInstance().initialize();
         initUI();
         refreshProgramList();
@@ -113,6 +153,12 @@ public class ProgramContainerDialog extends FullscreenJDialog {
         // 关闭对话框仅销毁视图：停止定时器、卸载回调，进程继续后台运行
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         addWindowListener(new WindowAdapter() {
+            
+            @Override
+            public void windowOpened(WindowEvent e) {
+                // 布局完成后按比例定位分割条：表单约 45%，控制台约 55%
+                rightSplitPane.setDividerLocation(0.45);
+            }
             
             @Override
             public void windowClosed(WindowEvent e) {
@@ -173,8 +219,9 @@ public class ProgramContainerDialog extends FullscreenJDialog {
         
         // ── 右侧：配置表单 + 控制台 ──
         JPanel rightPanel = new JPanel(new BorderLayout(5, 5));
-        JSplitPane rightSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, createFormPanel(), createConsolePanel());
-        rightSplitPane.setResizeWeight(0.42);
+        rightSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, createFormPanel(), createConsolePanel());
+        // 窗口拉伸时额外空间 45% 给表单，其余归控制台，配置项尽量不被压缩
+        rightSplitPane.setResizeWeight(0.45);
         rightPanel.add(rightSplitPane, BorderLayout.CENTER);
         
         JSplitPane rootSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, leftPanel, rightPanel);
@@ -187,64 +234,79 @@ public class ProgramContainerDialog extends FullscreenJDialog {
     
     // ────────── 配置表单 ──────────
     
-    private JPanel createFormPanel() {
-        JPanel formPanel = new JPanel(new GridBagLayout());
-        formPanel.setBorder(BorderFactory.createTitledBorder("程序配置"));
-        
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(4, 10, 4, 10);
-        gbc.anchor = GridBagConstraints.WEST;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        
+    private JComponent createFormPanel() {
+        formPanel = new JPanel(new GridBagLayout());
+        createFormFields();
+        rebuildFormPanel();
+        // 表单置于可滚动容器：程序类型切换后行数变化或窗口较矮时，
+        // 配置项可滚动查看，不会被控制台区域遮挡或裁切
+        JScrollPane scroll = new JScrollPane(formPanel);
+        scroll.setBorder(BorderFactory.createTitledBorder("程序配置"));
+        scroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+        scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
+        formScroll = scroll;
+        return scroll;
+    }
+
+    /**
+     * 创建表单字段与行组件（仅初始化，不做布局）；行布局由 {@link #rebuildFormPanel()} 按程序类型动态生成
+     */
+    private void createFormFields() {
+        typeComboBox = new JComboBox<>(TYPE_LABELS);
+        typeComboBox.setToolTipText("选择程序类型：决定命令组装方式与下方显示的运行环境字段");
+        typeComboBox.addActionListener(e -> {
+            if (!suppressTypeAction) {
+                rebuildFormPanel();
+                updateTypeExamples();
+            }
+        });
+
         nameField = new JTextField();
-        programPathField = new JTextField();
-        programPathField.setToolTipText("两种写法：单个程序/脚本路径；或完整命令行，如 java -jar app.jar（自动拆分首词为程序）。含空格的段可用双引号包裹");
-        argumentsField = new JTextField();
+        programPathField = new CustomTextField("如：java -jar D:\\app\\ebx-pawn.jar");
+        argumentsField = new CustomTextField("如：--server.port=8080 --spring.profiles.active=prod");
         workDirField = new JTextField();
         jrePathField = new JTextField();
         jrePathField.setToolTipText("可选：JDK/JRE 根目录（自动定位 bin/java）或直接指向 java 可执行文件；留空使用系统 PATH。仅对 java/javaw 命令生效");
-        charsetCombo = new JComboBox<>(new String[] {AUTO_CHARSET_LABEL, "UTF-8", "GBK", "GB18030", "ISO-8859-1"});
-        charsetCombo.setFont(UiConstants.FONT_MONO_12);
-        charsetCombo.setToolTipText("控制台日志的解码编码：留「自动检测」按输出内容智能判定（UTF-8 优先，回退系统编码）；已知程序输出编码时可手动指定");
+        pythonPathField = new CustomTextField("如：D:\\proj\\venv 或 C:\\Python311\\python.exe");
+        pythonPathField.setToolTipText("可选：Python 安装根目录、虚拟环境目录（自动定位 Scripts/python.exe 或 bin/python）"
+                + "或直接指向 python 可执行文件；留空使用系统 PATH。对 python/python3 命令及 .py 入口脚本生效");
         remarkField = new JTextField();
-        JTextField[] fields = {nameField, programPathField, argumentsField, workDirField, jrePathField, remarkField};
+        JTextField[] fields = {nameField, programPathField, argumentsField, workDirField, jrePathField, pythonPathField,
+                remarkField};
         for (JTextField field : fields) {
             field.setFont(UiConstants.FONT_MONO_12);
         }
-        
+        updateTypeExamples();
+
         // 程序/命令行：输入框 + 浏览按钮
         browseProgramBtn = ButtonFactory.createToolbar("浏览...");
         browseProgramBtn.addActionListener(e -> browseProgramPath());
-        JPanel programRow = new JPanel(new BorderLayout(5, 0));
+        programRow = new JPanel(new BorderLayout(5, 0));
         programRow.add(programPathField, BorderLayout.CENTER);
         programRow.add(browseProgramBtn, BorderLayout.EAST);
-        
+
         // 工作目录行：输入框 + 浏览按钮
         browseWorkDirBtn = ButtonFactory.createToolbar("浏览...");
         browseWorkDirBtn.addActionListener(e -> browseWorkDir());
-        JPanel workDirRow = new JPanel(new BorderLayout(5, 0));
+        workDirRow = new JPanel(new BorderLayout(5, 0));
         workDirRow.add(workDirField, BorderLayout.CENTER);
         workDirRow.add(browseWorkDirBtn, BorderLayout.EAST);
-        
-        // JRE/JDK 行：输入框 + 目录浏览按钮
+
+        // JRE/JDK 行：输入框 + 目录浏览按钮（仅 Java 程序显示）
         browseJreBtn = ButtonFactory.createToolbar("浏览...");
         browseJreBtn.addActionListener(e -> browseJrePath());
-        JPanel jrePathRow = new JPanel(new BorderLayout(5, 0));
+        jrePathRow = new JPanel(new BorderLayout(5, 0));
         jrePathRow.add(jrePathField, BorderLayout.CENTER);
         jrePathRow.add(browseJreBtn, BorderLayout.EAST);
-        
-        JComponent[] values = {nameField, programRow, argumentsField, workDirRow, jrePathRow, charsetCombo, remarkField};
-        String[] labels = {"名称:", "程序/命令:", "参数:", "工作目录:", "JRE/JDK:", "输出编码:", "备注:"};
-        for (int i = 0; i < labels.length; i++) {
-            gbc.gridx = 0;
-            gbc.gridy = i;
-            gbc.weightx = 0;
-            formPanel.add(formLabel(labels[i]), gbc);
-            gbc.gridx = 1;
-            gbc.weightx = 1;
-            formPanel.add(values[i], gbc);
-        }
-        
+
+        // Python 解释器行：输入框 + 浏览按钮（仅 Python 程序显示）
+        browsePythonBtn = ButtonFactory.createToolbar("浏览...");
+        browsePythonBtn.addActionListener(e -> browsePythonPath());
+        pythonPathRow = new JPanel(new BorderLayout(5, 0));
+        pythonPathRow.add(pythonPathField, BorderLayout.CENTER);
+        pythonPathRow.add(browsePythonBtn, BorderLayout.EAST);
+
         // 按钮行：删除 + 保存
         saveBtn = ButtonFactory.createPrimary("保存");
         saveBtn.addActionListener(e -> saveCurrentForm());
@@ -254,16 +316,127 @@ public class ProgramContainerDialog extends FullscreenJDialog {
                 deleteProgram(selectedConfig);
             }
         });
-        JPanel formBtnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        formBtnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         formBtnPanel.add(deleteBtn);
         formBtnPanel.add(saveBtn);
+    }
+
+    /**
+     * 按当前程序类型重建表单行：Java 只显示 JRE/JDK、Python 只显示解释器行，
+     * 避免两组环境字段同时堆叠导致布局拥挤
+     */
+    private void rebuildFormPanel() {
+        formPanel.removeAll();
+        GridBagConstraints gbc = new GridBagConstraints();
+        // 加大行距，表单整体更宽松
+        gbc.insets = new Insets(8, 10, 8, 10);
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+
+        List<JComponent[]> rows = new ArrayList<>();
+        rows.add(new JComponent[]{formLabel("程序类型:"), typeComboBox});
+        rows.add(new JComponent[]{formLabel("名称:"), nameField});
+        rows.add(new JComponent[]{formLabel("程序/命令:"), programRow});
+        rows.add(new JComponent[]{formLabel("参数:"), argumentsField});
+        rows.add(new JComponent[]{formLabel("工作目录:"), workDirRow});
+        if (ProgramConfig.TYPE_JAVA.equals(selectedTypeValue())) {
+            rows.add(new JComponent[]{formLabel("JRE/JDK:"), jrePathRow});
+        } else if (ProgramConfig.TYPE_PYTHON.equals(selectedTypeValue())) {
+            rows.add(new JComponent[]{formLabel("Python:"), pythonPathRow});
+        }
+        rows.add(new JComponent[]{formLabel("备注:"), remarkField});
+
+        int row = 0;
+        for (JComponent[] cells : rows) {
+            gbc.gridx = 0;
+            gbc.gridy = row;
+            gbc.weightx = 0;
+            formPanel.add(cells[0], gbc);
+            gbc.gridx = 1;
+            gbc.weightx = 1;
+            formPanel.add(cells[1], gbc);
+            row++;
+        }
         gbc.gridx = 0;
-        gbc.gridy = labels.length;
+        gbc.gridy = row;
         gbc.gridwidth = 2;
         gbc.weightx = 1;
         formPanel.add(formBtnPanel, gbc);
-        
-        return formPanel;
+
+        formPanel.revalidate();
+        formPanel.repaint();
+    }
+
+    /**
+     * 获取当前选中的程序类型持久化值，未选中时默认 Java
+     */
+    private String selectedTypeValue() {
+        int index = typeComboBox.getSelectedIndex();
+        return index >= 0 ? TYPE_VALUES[index] : ProgramConfig.TYPE_JAVA;
+    }
+
+    /**
+     * 程序性设置程序类型（不触发表单重建），选中项发生变化返回 true
+     */
+    private boolean selectType(String typeValue) {
+        int target = -1;
+        for (int i = 0; i < TYPE_VALUES.length; i++) {
+            if (TYPE_VALUES[i].equals(typeValue)) {
+                target = i;
+                break;
+            }
+        }
+        if (target < 0 || target == typeComboBox.getSelectedIndex()) {
+            return false;
+        }
+        suppressTypeAction = true;
+        try {
+            typeComboBox.setSelectedIndex(target);
+        } finally {
+            suppressTypeAction = false;
+        }
+        return true;
+    }
+
+    /**
+     * 应用程序类型选择：类型变化时同步重建表单行与示例提示
+     */
+    private void applyTypeSelection(String typeValue) {
+        if (selectType(typeValue)) {
+            rebuildFormPanel();
+            updateTypeExamples();
+        }
+    }
+
+    /**
+     * 按程序类型更新「程序/命令」与「参数」的占位示例与填写提示
+     */
+    private void updateTypeExamples() {
+        switch (selectedTypeValue()) {
+            case ProgramConfig.TYPE_PYTHON -> {
+                programPathField.setPlaceholder("如：D:\\proj\\main.py 或 python -m uvicorn app:app");
+                argumentsField.setPlaceholder("如：--host 0.0.0.0 --port 8000");
+                programPathField.setToolTipText("填 Python 项目入口脚本路径（如 D:\\proj\\main.py），"
+                        + "启动时自动前置配置的解释器（未配置则用系统 PATH 的 python）；"
+                        + "也可填完整命令行，如 python -m uvicorn app:app --port 8000");
+            }
+            case ProgramConfig.TYPE_JAVA -> {
+                programPathField.setPlaceholder("如：java -jar D:\\app\\ebx-pawn.jar");
+                argumentsField.setPlaceholder("如：--server.port=8080 --spring.profiles.active=prod");
+                programPathField.setToolTipText("可填完整命令行（如 java -jar app.jar）或单个 jar/bat 路径，"
+                        + "参数填到「参数」框；含空格的段用双引号包裹，如：java -cp \"lib/*;app.jar\" com.demo.Main");
+            }
+            default -> {
+                programPathField.setPlaceholder("如：D:\\server\\startup.bat 或 D:\\tools\\app.exe");
+                argumentsField.setPlaceholder("如：--port=8080");
+                programPathField.setToolTipText("可填完整命令行（首词为程序，如 D:\\server\\startup.bat）"
+                        + "或单个程序/脚本路径，参数填到「参数」框；含空格的段用双引号包裹");
+            }
+        }
+        argumentsField.setToolTipText("传给程序的运行参数，多个用空格分隔；"
+                + (ProgramConfig.TYPE_JAVA.equals(selectedTypeValue())
+                        ? "JVM 参数（如 -Xms512m -Dfile.encoding=UTF-8）需写在「程序/命令」中，置于 -jar 之前"
+                        : "Python 项目的入口脚本可直接写在「程序/命令」中，此处填脚本参数"));
     }
     
     private JLabel formLabel(String text) {
@@ -283,11 +456,11 @@ public class ProgramContainerDialog extends FullscreenJDialog {
         consoleToolbar.setBorder(new EmptyBorder(5, 8, 5, 8));
         
         JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
-        startBtn = ButtonFactory.createPrimary("启动");
+        startBtn = ButtonFactory.createSuccess("启动");
         startBtn.addActionListener(e -> startProgram());
         stopBtn = ButtonFactory.createDestructive("停止");
         stopBtn.addActionListener(e -> stopProgram());
-        restartBtn = ButtonFactory.createToolbar("重启");
+        restartBtn = ButtonFactory.createWarning("重启");
         restartBtn.addActionListener(e -> restartProgram());
         clearBtn = ButtonFactory.createToolbar("清空");
         clearBtn.addActionListener(e -> clearConsole());
@@ -312,7 +485,9 @@ public class ProgramContainerDialog extends FullscreenJDialog {
         consoleArea.setLineWrap(true);
         consoleArea.setWrapStyleWord(true);
         consoleArea.setBorder(new EmptyBorder(8, 8, 8, 8));
+        consoleArea.setToolTipText("双击全屏展示控制台，再次双击恢复");
         attachConsolePopupMenu();
+        attachConsoleFullscreenToggle();
         JScrollPane consoleScroll = new JScrollPane(consoleArea);
         consoleScroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
         
@@ -356,6 +531,42 @@ public class ProgramContainerDialog extends FullscreenJDialog {
         });
     }
     
+    /**
+     * 控制台是否处于双击全屏状态（表单区收起）
+     */
+    private boolean consoleFullscreen;
+
+    /**
+     * 控制台双击切换全屏展示：收起表单区（分割条拉到底），控制台占满窗口；再次双击恢复表单占比。
+     * 手动拖动分割条后双击仍按标志切换，展示/恢复交替生效
+     */
+    private void attachConsoleFullscreenToggle() {
+        consoleArea.addMouseListener(new MouseAdapter() {
+
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (e.getClickCount() == 2) {
+                    toggleConsoleFullscreen();
+                }
+            }
+        });
+    }
+
+    /**
+     * 双击控制台切换全屏展示：直接移除表单区让控制台占满整个右侧区域；
+     * 再双击放回表单并恢复约 45% 的占比。
+     * 不用 setDividerLocation(1.0)——它受表单最小尺寸 clamp 且在布局变化后可能被重置，导致全屏不生效
+     */
+    private void toggleConsoleFullscreen() {
+        consoleFullscreen = !consoleFullscreen;
+        if (consoleFullscreen) {
+            rightSplitPane.setTopComponent(null);
+        } else {
+            rightSplitPane.setTopComponent(formScroll);
+            rightSplitPane.setDividerLocation(0.45);
+        }
+    }
+
     // ────────── 程序列表 ──────────
     
     private void refreshProgramList() {
@@ -506,7 +717,7 @@ public class ProgramContainerDialog extends FullscreenJDialog {
             } else if (isExternallyRunning(config)) {
                 stateLabel.setText("● 接管运行");
                 stateLabel.setForeground(UiConstants.COLOR_PENDING);
-                stateLabel.setToolTipText("上次启动的进程 PID=" + config.getLastPid() + " 仍在后台运行，可停止后重新启动");
+                stateLabel.setToolTipText("上次启动的进程 PID=" + config.getLastPid() + " 仍在后台运行，可查看日志或停止");
             } else {
                 stateLabel.setText("○ 已停止");
                 stateLabel.setForeground(Color.GRAY);
@@ -527,54 +738,48 @@ public class ProgramContainerDialog extends FullscreenJDialog {
     // ────────── 表单编辑 ──────────
     
     private void fillFormFromConfig(ProgramConfig config) {
+        applyTypeSelection(config.resolveProgramType());
         nameField.setText(config.getName());
         programPathField.setText(config.getProgramPath());
         argumentsField.setText(config.getArguments());
         workDirField.setText(config.getWorkDir());
         jrePathField.setText(config.getJrePath());
-        selectCharsetCombo(config.getOutputCharset());
+        pythonPathField.setText(config.getPythonPath());
         remarkField.setText(config.getRemark());
     }
     
     private void clearForm() {
+        applyTypeSelection(ProgramConfig.TYPE_JAVA);
         nameField.setText("");
         programPathField.setText("");
         argumentsField.setText("");
         workDirField.setText("");
         jrePathField.setText("");
-        charsetCombo.setSelectedItem(AUTO_CHARSET_LABEL);
+        pythonPathField.setText("");
         remarkField.setText("");
     }
     
     private void setFormEditable(boolean editable) {
+        typeComboBox.setEnabled(editable);
         nameField.setEditable(editable);
         programPathField.setEditable(editable);
         argumentsField.setEditable(editable);
         workDirField.setEditable(editable);
         jrePathField.setEditable(editable);
-        charsetCombo.setEnabled(editable);
+        pythonPathField.setEditable(editable);
         remarkField.setEditable(editable);
         browseProgramBtn.setEnabled(editable);
         browseWorkDirBtn.setEnabled(editable);
         browseJreBtn.setEnabled(editable);
+        browsePythonBtn.setEnabled(editable);
         saveBtn.setEnabled(editable);
     }
     
-    /**
-     * 下拉框选中项转存库值：「自动检测」存空串，其余存编码名
-     */
-    private static String charsetFromCombo(Object item) {
-        return item == null || AUTO_CHARSET_LABEL.equals(item) ? "" : item.toString();
-    }
-    
-    /**
-     * 按存库值选中下拉框：空选「自动检测」
-     */
-    private void selectCharsetCombo(String charset) {
-        charsetCombo.setSelectedItem(charset == null || charset.isBlank() ? AUTO_CHARSET_LABEL : charset);
-    }
-    
     private void createNewProgram() {
+        // 控制台处于双击全屏状态时自动恢复表单区，便于填写新建配置
+        if (consoleFullscreen) {
+            toggleConsoleFullscreen();
+        }
         if (selectedPanel != null) {
             selectedPanel.setSelected(false);
         }
@@ -609,10 +814,11 @@ public class ProgramContainerDialog extends FullscreenJDialog {
             }
             selectedConfig.setName(name);
             selectedConfig.setProgramPath(programPath);
+            selectedConfig.setProgramType(selectedTypeValue());
             selectedConfig.setArguments(argumentsField.getText().trim());
             selectedConfig.setWorkDir(workDirField.getText().trim());
             selectedConfig.setJrePath(jrePathField.getText().trim());
-            selectedConfig.setOutputCharset(charsetFromCombo(charsetCombo.getSelectedItem()));
+            selectedConfig.setPythonPath(pythonPathField.getText().trim());
             selectedConfig.setRemark(remarkField.getText().trim());
             if (!ConfigUtil.updateProgramConfig(selectedConfig)) {
                 JOptionPane.showMessageDialog(this, "更新程序配置失败", "错误", JOptionPane.ERROR_MESSAGE);
@@ -625,9 +831,10 @@ public class ProgramContainerDialog extends FullscreenJDialog {
                 return false;
             }
             ProgramConfig config = new ProgramConfig(name, programPath, argumentsField.getText().trim());
+            config.setProgramType(selectedTypeValue());
             config.setWorkDir(workDirField.getText().trim());
             config.setJrePath(jrePathField.getText().trim());
-            config.setOutputCharset(charsetFromCombo(charsetCombo.getSelectedItem()));
+            config.setPythonPath(pythonPathField.getText().trim());
             config.setRemark(remarkField.getText().trim());
             if (!ConfigUtil.saveProgramConfig(config)) {
                 JOptionPane.showMessageDialog(this, "保存程序配置失败", "错误", JOptionPane.ERROR_MESSAGE);
@@ -671,6 +878,16 @@ public class ProgramContainerDialog extends FullscreenJDialog {
         chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             jrePathField.setText(chooser.getSelectedFile().getAbsolutePath());
+        }
+    }
+    
+    private void browsePythonPath() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("选择 Python 安装目录、虚拟环境目录，或 python 可执行文件");
+        // 目录（venv/安装根目录）与可执行文件（python.exe）均可能，故允许两者
+        chooser.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
+        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            pythonPathField.setText(chooser.getSelectedFile().getAbsolutePath());
         }
     }
     
@@ -778,7 +995,8 @@ public class ProgramContainerDialog extends FullscreenJDialog {
     // ────────── 控制台输出与状态刷新 ──────────
     
     /**
-     * 切换控制台监听目标：卸载旧程序回调 → 丢弃未刷新的旧输出 → 恢复新程序历史日志并注册回调
+     * 切换控制台监听目标：卸载旧程序回调 → 丢弃未刷新的旧输出 → 恢复新程序历史日志并注册回调。
+     * 接管运行中的进程先建立外部会话并 tail 日志文件，历史与实时输出均可查看
      */
     private void attachConsoleListener(Long id) {
         if (attachedId != null) {
@@ -787,14 +1005,12 @@ public class ProgramContainerDialog extends FullscreenJDialog {
         pendingOutput.clear();
         attachedId = id;
         if (id != null) {
+            if (selectedConfig != null && selectedConfig.getId().equals(id)
+                    && isExternallyRunning(selectedConfig)) {
+                PROCESS_SERVICE.attachExternal(id, selectedConfig, this::onOutputLine, this::onStateChanged);
+            }
             List<String> logs = PROCESS_SERVICE.getLogBuffer(id);
             String text = logs.isEmpty() ? "" : String.join("\n", logs) + "\n";
-            // 接管运行中的进程输出管道已断，无历史日志可恢复
-            if (text.isEmpty() && selectedConfig != null && selectedConfig.getId().equals(id)
-                    && isExternallyRunning(selectedConfig)) {
-                text = "[容器] 程序正在后台运行（PID=" + selectedConfig.getLastPid()
-                        + "），接管模式下无法查看输出，可停止后重新启动\n";
-            }
             consoleArea.setText(text);
             consoleArea.setCaretPosition(consoleArea.getDocument().getLength());
             PROCESS_SERVICE.attachListener(id, this::onOutputLine, this::onStateChanged);
@@ -843,7 +1059,7 @@ public class ProgramContainerDialog extends FullscreenJDialog {
     private void updateActionState() {
         boolean hasSelection = selectedConfig != null;
         boolean running = hasSelection && PROCESS_SERVICE.isRunning(selectedConfig.getId());
-        // 接管运行：应用重启后检测到上次启动的进程仍在后台，只能停止，不能重复启动/重启或查看输出
+        // 接管运行：应用重启后检测到上次启动的进程仍在后台，不能重复启动/重启，可停止与查看日志
         boolean externalRunning = hasSelection && !running && isExternallyRunning(selectedConfig);
         startBtn.setEnabled(hasSelection && !running && !externalRunning);
         stopBtn.setEnabled(running || externalRunning);
@@ -860,7 +1076,7 @@ public class ProgramContainerDialog extends FullscreenJDialog {
             statusLabel.setText("运行中 PID=" + PROCESS_SERVICE.getPid(selectedConfig.getId()));
             statusLabel.setForeground(UiConstants.COLOR_SUCCESS_LIGHT);
         } else if (externalRunning) {
-            statusLabel.setText("运行中 PID=" + selectedConfig.getLastPid() + "（接管，无法查看输出）");
+            statusLabel.setText("运行中 PID=" + selectedConfig.getLastPid() + "（接管）");
             statusLabel.setForeground(UiConstants.COLOR_PENDING);
         } else {
             Integer exitCode = PROCESS_SERVICE.getExitCode(selectedConfig.getId());

@@ -49,8 +49,6 @@ final class EncodingDetectReader extends Reader {
      */
     private byte[] pending = EMPTY_BYTES;
 
-    private int pendingPos;
-
     EncodingDetectReader(InputStream in, Charset fallback) {
         this.in = in;
         this.fallback = fallback;
@@ -81,13 +79,12 @@ final class EncodingDetectReader extends Reader {
                     .onMalformedInput(CodingErrorAction.REPLACE)
                     .onUnmappableCharacter(CodingErrorAction.REPLACE);
             pending = probe;
-            pendingPos = 0;
         }
         return decode(cbuf, off, len);
     }
 
     /**
-     * 用已锁定的解码器解码：优先消化判定批次暂存字节，再读新字节（与残余多字节拼接），
+     * 用已锁定的解码器解码：消化判定批次暂存字节与后续新字节（残余多字节自动拼接），
      * 至少产出一个字符或到达流末尾才返回
      */
     private int decode(char[] cbuf, int off, int len) throws IOException {
@@ -107,25 +104,24 @@ final class EncodingDetectReader extends Reader {
             } else {
                 pending = EMPTY_BYTES;
             }
-            pendingPos = 0;
         }
         return out.position();
     }
 
     /**
-     * 取下一批待解码字节：优先消化判定批次暂存，否则读取新字节并与残余多字节拼接；流末尾返回 null
+     * 取下一批待解码字节：阻塞读取新字节，与残余多字节（含判定批次未消化部分）拼接后返回；
+     * 流末尾且无残余返回 null。每轮循环必然消费新字节或产出字符，保证 decode 无自旋死循环
      */
     private byte[] readChunk() throws IOException {
-        if (pendingPos < pending.length) {
-            byte[] rest = new byte[pending.length - pendingPos];
-            System.arraycopy(pending, pendingPos, rest, 0, rest.length);
-            pending = EMPTY_BYTES;
-            pendingPos = 0;
-            return rest;
-        }
         byte[] tmp = new byte[BUFFER_SIZE];
         int n = in.read(tmp);
         if (n == -1) {
+            if (pending.length > 0) {
+                // 流末尾：先消化残余（含判定批次），下一轮再返回 null 走 flush
+                byte[] rest = pending;
+                pending = EMPTY_BYTES;
+                return rest;
+            }
             return null;
         }
         if (pending.length == 0) {
@@ -141,22 +137,44 @@ final class EncodingDetectReader extends Reader {
     }
 
     /**
-     * 以触发批次为基础追加读取到行尾（换行）或判定上限，保证判定的多字节序列完整
+     * 以触发批次为基础追加读取，直到最后一个非 ASCII 字节之后出现 ASCII 字节（如行尾换行）
+     * 或达到判定上限/流末尾，保证截断判定时多字节序列完整
      */
     private byte[] appendToLineEnd(byte[] first, int n) throws IOException {
         ByteArrayOutputStream buf = new ByteArrayOutputStream();
         buf.write(first, 0, n);
-        while (buf.size() < PROBE_LIMIT && !containsLineBreak(first, n)) {
+        while (buf.size() < PROBE_LIMIT && !hasCompleteTail(buf)) {
             byte[] tmp = new byte[BUFFER_SIZE];
             int r = in.read(tmp);
             if (r == -1) {
                 break;
             }
             buf.write(tmp, 0, r);
-            first = tmp;
-            n = r;
         }
         return buf.toByteArray();
+    }
+
+    /**
+     * 最后一个非 ASCII 字节之后是否已出现 ASCII 字节；无任何非 ASCII 视为完整。
+     * 若非 ASCII 后紧跟批尾（多字节序列可能被切断），需继续读取追加，否则按截断判定会误判
+     */
+    private static boolean hasCompleteTail(ByteArrayOutputStream buf) {
+        byte[] bytes = buf.toByteArray();
+        int lastNonAscii = -1;
+        for (int i = 0; i < bytes.length; i++) {
+            if (bytes[i] < 0) {
+                lastNonAscii = i;
+            }
+        }
+        if (lastNonAscii < 0) {
+            return true;
+        }
+        for (int i = lastNonAscii + 1; i < bytes.length; i++) {
+            if (bytes[i] >= 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static int indexOfNonAscii(byte[] bytes, int length) {
@@ -168,17 +186,17 @@ final class EncodingDetectReader extends Reader {
         return -1;
     }
 
-    private static boolean containsLineBreak(byte[] bytes, int length) {
-        for (int i = 0; i < length; i++) {
-            if (bytes[i] == '\n') {
-                return true;
-            }
-        }
-        return false;
-    }
-
     @Override
     public void close() throws IOException {
         in.close();
+    }
+
+    /**
+     * 已从底层读出但仍在内部缓冲等待与后续字节拼接的残余字节数
+     * （多字节字符被流尾切断时 > 0）。调用方据此回退字节偏移，
+     * 避免跨轮续读时从多字节字符中间开始导致乱码
+     */
+    int pendingByteCount() {
+        return decoder == null ? 0 : pending.length;
     }
 }

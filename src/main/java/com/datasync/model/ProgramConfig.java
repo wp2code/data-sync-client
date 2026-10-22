@@ -1,6 +1,7 @@
 package com.datasync.model;
 
 import java.time.LocalDateTime;
+import java.util.Locale;
 import lombok.Data;
 
 /**
@@ -11,8 +12,29 @@ import lombok.Data;
  */
 @Data
 public class ProgramConfig {
-    
+
+    /**
+     * 程序类型：Java 程序（可指定 JRE/JDK 运行环境）
+     */
+    public static final String TYPE_JAVA = "JAVA";
+
+    /**
+     * 程序类型：Python 程序（可指定解释器/虚拟环境，入口脚本自动前置解释器）
+     */
+    public static final String TYPE_PYTHON = "PYTHON";
+
+    /**
+     * 程序类型：其他通用命令（bat 脚本、可执行文件等）
+     */
+    public static final String TYPE_OTHER = "OTHER";
+
     private Long id;
+
+    /**
+     * 程序类型：{@link #TYPE_JAVA} / {@link #TYPE_PYTHON} / {@link #TYPE_OTHER}。
+     * 决定表单展示的运行环境字段与命令组装行为；旧数据为 null 时按程序字段自动推断
+     */
+    private String programType;
     
     /**
      * 程序名称（列表展示，唯一）
@@ -42,15 +64,16 @@ public class ProgramConfig {
     private String jrePath;
     
     /**
+     * Python 解释器路径（可选）：Python 安装根目录（自动定位 python 可执行文件）、
+     * 虚拟环境目录（自动定位 Scripts/bin 下的 python）或直接指向 python 可执行文件；
+     * 留空时使用系统 PATH 中的 python。仅对 python/python3 命令或 .py 入口脚本生效
+     */
+    private String pythonPath;
+
+    /**
      * 最近一次启动的进程号（可选）：启动成功后由服务层写入，应用重启后用于检测程序是否仍在后台运行
      */
     private Long lastPid;
-    
-    /**
-     * 输出编码（可选）：控制台日志的解码编码，如 UTF-8、GBK；留空时自动探测
-     * （开头字节能通过 UTF-8 严格校验则按 UTF-8，否则按系统编码）
-     */
-    private String outputCharset;
     
     /**
      * 备注
@@ -69,5 +92,24 @@ public class ProgramConfig {
         this.programPath = programPath;
         this.arguments = arguments;
     }
-    
+
+    /**
+     * 解析生效的程序类型：显式配置优先；未配置（旧数据）时按程序字段与运行环境自动推断，
+     * 保证旧行为不变。程序为 java/javaw 命令或配置了 JRE 路径视为 Java；
+     * python/python3 命令或配置了解释器视为 Python；其余为通用命令
+     */
+    public String resolveProgramType() {
+        if (programType != null && !programType.isBlank()) {
+            return programType;
+        }
+        String path = programPath == null ? "" : programPath.trim().toLowerCase(Locale.ROOT).replace("\"", "");
+        if (path.matches("^(java|javaw)(\\.exe)?(\\s.*|$)") || (jrePath != null && !jrePath.isBlank())) {
+            return TYPE_JAVA;
+        }
+        if (path.matches("^(python3?)(\\.exe)?(\\s.*|$)") || (pythonPath != null && !pythonPath.isBlank())) {
+            return TYPE_PYTHON;
+        }
+        return TYPE_OTHER;
+    }
+
 }

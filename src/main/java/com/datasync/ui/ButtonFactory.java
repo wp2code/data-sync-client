@@ -45,6 +45,31 @@ public final class ButtonFactory {
     }
     
     /**
+     * 成功/启动类操作按钮：成功色（绿色）填充背景 + 白字 + 加粗
+     */
+    public static JButton createSuccess(String text) {
+        JButton btn = new JButton(text);
+        btn.setFont(UiConstants.FONT_SANS_12_BOLD);
+        btn.setBackground(UiConstants.COLOR_SUCCESS);
+        btn.setForeground(Color.WHITE);
+        btn.setOpaque(true);
+        applyCommonStyle(btn, new Insets(4, 14, 4, 14));
+        return btn;
+    }
+
+    /**
+     * 警示/重启类操作按钮：透明背景 + 淡黄文字（与危险按钮同构，仅颜色不同）
+     */
+    public static JButton createWarning(String text) {
+        JButton btn = new JButton(text);
+        btn.setFont(UiConstants.FONT_SANS_12);
+        btn.setForeground(UiConstants.COLOR_WARNING);
+        btn.setOpaque(false);
+        applyCommonStyle(btn, new Insets(2, 10, 2, 10));
+        return btn;
+    }
+
+    /**
      * 危险操作按钮（备用）：主色填充背景 + 白字 + 加粗
      *
      * @param text

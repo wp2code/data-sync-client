@@ -91,7 +91,7 @@ public class QuestionTrainingPanel {
     private static final String BATCH_NO_UPDATE_OPTION = "不更新";
     
     private static final String ALL_USER = "全部用户";
-
+    
     /**
      * 用户筛选「全局」选项实际传给后端的参数值（与 {@link AiQuestion#GLOBAL_DISPLAY_TEXT} 配对使用）
      */
@@ -108,7 +108,7 @@ public class QuestionTrainingPanel {
     
     private static final int[] TRAINING_STATUS_VALUES = {AiQuestion.TRAINING_STATUS_INITIAL, AiQuestion.TRAINING_STATUS_PENDING, 0, 1, 2, 3, 4, 5, 6,
             AiQuestion.TRAINING_STATUS_STOPPED};
-
+    
     /**
      * 智能体类型 / 训练模型 / 意图识别模型为空时的展示文案
      */
@@ -1982,9 +1982,8 @@ public class QuestionTrainingPanel {
     }
     
     /**
-     * 所属项目展示文案：无项目名称或项目编码为 -1 时显示「全局」（列表、详情、导出共用）。<br>
-     * 注意编码判空与展示判定要分开：这里不用 {@code AiQuestion.isGlobalCode}，因为它把 null / 空编码也算作全局，
-     * 会覆盖掉「接口没返回 projectCode 但名称正常」的项目。
+     * 所属项目展示文案：无项目名称或项目编码为 -1 时显示「全局」（列表、详情、导出共用）。<br> 注意编码判空与展示判定要分开：这里不用 {@code AiQuestion.isGlobalCode}，因为它把 null / 空编码也算作全局， 会覆盖掉「接口没返回
+     * projectCode 但名称正常」的项目。
      */
     private static String projectDisplayText(AiQuestion question) {
         String name = AiQuestionMangerDialog.nullToEmpty(question.getProjectName()).trim();
@@ -1995,12 +1994,10 @@ public class QuestionTrainingPanel {
     }
     
     /**
-     * 所属用户展示文案：用户ID 为空或 -1 时显示「全局」。<br>
-     * 返回原始用户ID，列表由 {@code UserIdCellRenderer} 补成「用户名称（用户ID）」；「全局」在映射里查不到，会原样透出。
+     * 所属用户展示文案：用户ID 为空或 -1 时显示「全局」。<br> 返回原始用户ID，列表由 {@code UserIdCellRenderer} 补成「用户名称（用户ID）」；「全局」在映射里查不到，会原样透出。
      */
     private static String userDisplayText(AiQuestion question) {
-        return AiQuestion.isGlobalCode(question.getUserId())
-                ? AiQuestion.GLOBAL_DISPLAY_TEXT
+        return AiQuestion.isGlobalCode(question.getUserId()) ? AiQuestion.GLOBAL_DISPLAY_TEXT
                 : AiQuestionMangerDialog.nullToEmpty(question.getUserId()).trim();
     }
     
@@ -2198,8 +2195,7 @@ public class QuestionTrainingPanel {
         addDetailInfoRow(lowerPanel, "ID：", question.getId() != null ? String.valueOf(question.getId()) : "");
         // 所属项目 / 所属用户：为空或 -1 时统一显示「全局」（与列表、导出共用同一套展示规则）
         addDetailInfoRow(lowerPanel, "所属项目：", projectDisplayText(question));
-        addDetailInfoRow(lowerPanel, "所属用户：", AiQuestion.isGlobalCode(question.getUserId())
-                ? AiQuestion.GLOBAL_DISPLAY_TEXT
+        addDetailInfoRow(lowerPanel, "所属用户：", AiQuestion.isGlobalCode(question.getUserId()) ? AiQuestion.GLOBAL_DISPLAY_TEXT
                 : AiQuestionMangerDialog.formatUserIdDisplay(AiQuestionMangerDialog.nullToEmpty(question.getUserId()), dialog.userOptions));
         addDetailInfoRow(lowerPanel, "分类：", AiQuestionMangerDialog.nullToEmpty(question.getQuestionClassify()));
         addDetailInfoRow(lowerPanel, "回复ID：", question.getAnswerId() != null ? String.valueOf(question.getAnswerId()) : "");
@@ -2214,9 +2210,8 @@ public class QuestionTrainingPanel {
         addDetailInfoRow(lowerPanel, "训练提交时间：", AiQuestionMangerDialog.formatEpochMillis(question.getSubmitTrainingTime()));
         addDetailInfoRow(lowerPanel, "训练开始时间：", AiQuestionMangerDialog.formatEpochMillis(question.getStartTrainingTime()));
         // 训练状态为「超时(4)」时：标签改为「训练超时时间」，值依然取 lastTrainingTime（即后端记录的超时时刻）
-        String lastTrainingTimeLabel = question.getTrainingStatus() != null
-                && question.getTrainingStatus() == AiQuestion.TRAINING_STATUS_TIMEOUT
-                        ? "训练超时时间："
+        String lastTrainingTimeLabel =
+                question.getTrainingStatus() != null && question.getTrainingStatus() == AiQuestion.TRAINING_STATUS_TIMEOUT ? "训练超时时间："
                         : "训练完成时间：";
         addDetailInfoRow(lowerPanel, lastTrainingTimeLabel, AiQuestionMangerDialog.formatEpochMillis(question.getLastTrainingTime()));
         String trainingCost = AiQuestionMangerDialog.trainingCostText(question);
@@ -2296,8 +2291,7 @@ public class QuestionTrainingPanel {
     }
     
     /**
-     * 可复制字段：无边框但仍可选中复制（Ctrl+C / 拖选复制）。用于问题、批次号、任务ID 等长字段。<br>
-     * 前景色取主题默认文字色，保证 dark 主题下与其它值文本亮度一致。
+     * 可复制字段：无边框但仍可选中复制（Ctrl+C / 拖选复制）。用于问题、批次号、任务ID 等长字段。<br> 前景色取主题默认文字色，保证 dark 主题下与其它值文本亮度一致。
      */
     private JTextField buildBorderlessCopyableField(String text) {
         JTextField field = new JTextField(text);
@@ -2318,7 +2312,7 @@ public class QuestionTrainingPanel {
     private void addDetailInfoRow(JPanel panel, String labelText, String value) {
         addDetailInfoRow(panel, labelText, new JLabel(value != null ? value : ""));
     }
-
+    
     /**
      * 下栏使用：标签（浅中性色）+ 值，组成一个网格单元；值为空字符串时回退到 {@code emptyFallback}
      */
@@ -2326,10 +2320,10 @@ public class QuestionTrainingPanel {
         String display = (value == null || value.isEmpty()) && emptyFallback != null ? emptyFallback : value;
         addDetailInfoRow(panel, labelText, new JLabel(display != null ? display : ""));
     }
-
+    
     /**
-     * 下栏使用：标签（浅中性色）+ 自定义值组件（如可复制的 JTextField），组成一个网格单元。<br>
-     * 标签用 {@code COLOR_NEUTRAL_LIGHT}（比 Color.GRAY 更亮，dark 主题下不偏暗）；值组件用主题默认文字色（最亮），与下栏其它行 JLabel 值一致。
+     * 下栏使用：标签（浅中性色）+ 自定义值组件（如可复制的 JTextField），组成一个网格单元。<br> 标签用 {@code COLOR_NEUTRAL_LIGHT}（比 Color.GRAY 更亮，dark 主题下不偏暗）；值组件用主题默认文字色（最亮），与下栏其它行
+     * JLabel 值一致。
      */
     private void addDetailInfoRow(JPanel panel, String labelText, JComponent valueComponent) {
         JPanel row = new JPanel(new BorderLayout(6, 0));
@@ -2402,20 +2396,24 @@ public class QuestionTrainingPanel {
             JOptionPane.showMessageDialog(dialog, "请等待当前操作完成", "提示", JOptionPane.WARNING_MESSAGE);
             return;
         }
-        JTextArea questionArea = new JTextArea(AiQuestionMangerDialog.nullToEmpty(question.getQuestion()), 2, 30);
-        questionArea.setLineWrap(true);
-        questionArea.setWrapStyleWord(true);
+        JTextField questionArea = new JTextField(AiQuestionMangerDialog.nullToEmpty(question.getQuestion()));
+        // 所属用户：首项「全局」对应用户ID 为空 / 0 / -1 的记录（与列表、详情展示规则一致），其余为「用户ID - 名称」
         FilterComboBox<String> userIdCombo = new FilterComboBox<>();
+        userIdCombo.addItem(AiQuestion.GLOBAL_DISPLAY_TEXT);
         for (String userOption : dialog.userOptions) {
             userIdCombo.addItem(userOption);
         }
+        userIdCombo.setToolTipText("单选所属用户；选择「全局」表示不绑定具体用户（提交空值，与 0 等价）");
         String currentUserId = AiQuestionMangerDialog.nullToEmpty(question.getUserId());
-        if (!currentUserId.isEmpty()) {
+        if (AiQuestion.isGlobalCode(currentUserId)) {
+            // 用户ID 为空 / 0 / -1 统一回显「全局」，避免下拉留空或显示裸 ID
+            userIdCombo.setSelectedIndex(0);
+        } else {
             boolean matched = false;
-            for (int i = 0; i < userIdCombo.getItemCount(); i++) {
+            for (int i = 1; i < userIdCombo.getItemCount(); i++) {
                 String item = userIdCombo.getItemAt(i);
                 if (item != null && AiQuestionMangerDialog.extractUserIdFromCombo(item).equals(currentUserId)) {
-                    userIdCombo.setSelectedItem(item);
+                    userIdCombo.setSelectedIndex(i);
                     matched = true;
                     break;
                 }
@@ -2446,8 +2444,8 @@ public class QuestionTrainingPanel {
         }
         if (currentProjectCode.isEmpty() && !projectCodePresent) {
             List<String> existingProjectCodes = question.getProjectCodeList();
-            if (existingProjectCodes != null && !existingProjectCodes.isEmpty() && existingProjectCodes.get(0) != null
-                    && !AiQuestion.isGlobalCode(existingProjectCodes.get(0))) {
+            if (existingProjectCodes != null && !existingProjectCodes.isEmpty() && existingProjectCodes.get(0) != null && !AiQuestion.isGlobalCode(
+                    existingProjectCodes.get(0))) {
                 currentProjectCode = existingProjectCodes.get(0).trim();
             }
         }
@@ -2511,8 +2509,7 @@ public class QuestionTrainingPanel {
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(6, 6, 6, 6);
         gbc.anchor = GridBagConstraints.WEST;
-        //        dialog.addFormRow(form, gbc, 0, new JLabel("环境："), new JLabel(AiQuestionMangerDialog.nullToEmpty(question.getEnvName())));
-        dialog.addFormRow(form, gbc, 0, new JLabel("问题："), AiQuestionMangerDialog.dialogScroll(questionArea, 2));
+        dialog.addFormRow(form, gbc, 0, new JLabel("问题："), questionArea);
         dialog.addFormRow(form, gbc, 1, new JLabel("所属用户："), userIdCombo);
         dialog.addFormRow(form, gbc, 2, new JLabel("所属项目："), projectCombo);
         dialog.addFormRow(form, gbc, 3, new JLabel("分类："), classifyCombo);
@@ -2539,7 +2536,10 @@ public class QuestionTrainingPanel {
             return;
         }
         String newClassify = dialog.editableComboText(classifyCombo).trim();
-        String newUserId = AiQuestionMangerDialog.extractUserIdFromCombo(userIdCombo.getSelectedItem()).trim();
+        // 所属用户：以编辑器文本为准；「全局」或手动输入 0 / -1 / 空统一归一化为空值提交（与「全局」展示规则一致）
+        String userEditorText = dialog.editableComboText(userIdCombo).trim();
+        String newUserId = (AiQuestion.GLOBAL_DISPLAY_TEXT.equals(userEditorText) || AiQuestion.isGlobalCode(userEditorText)) ? ""
+                : AiQuestionMangerDialog.extractUserIdFromCombo(userEditorText).trim();
         question.setQuestion(newQuestion);
         question.setUserId(newUserId.isEmpty() ? null : newUserId);
         question.setQuestionClassify(newClassify.isEmpty() ? null : newClassify);
@@ -2556,8 +2556,8 @@ public class QuestionTrainingPanel {
         if (AiQuestion.GLOBAL_DISPLAY_TEXT.equals(projectEditorText) || AiQuestion.isGlobalCode(projectEditorText)) {
             // 「全局」或手动输入 -1 / 空：统一归一化为空字符串提交（与 -1 等价）
             newProjectCode = "";
-        } else if (projectIndex > 0 && projectIndex < editProjectCodeOptions.size()
-                && projectEditorText.equals(projectCombo.getItemAt(projectIndex))) {
+        } else if (projectIndex > 0 && projectIndex < editProjectCodeOptions.size() && projectEditorText.equals(
+                projectCombo.getItemAt(projectIndex))) {
             newProjectCode = editProjectCodeOptions.get(projectIndex);
         } else {
             newProjectCode = projectEditorText;
@@ -2694,8 +2694,8 @@ public class QuestionTrainingPanel {
         Long questionId = question.getId();
         String questionText = question.getQuestion();
         dialog.runApiTask("触发训练", () -> {
-            String message = AiQuestionApiClient.getInstance().triggerTraining(envConfig, List.of(questionId), agentType, concurrency, coreLlmName,
-                    intentionLlmName);
+            String message = AiQuestionApiClient.getInstance()
+                    .triggerTraining(envConfig, List.of(questionId), agentType, concurrency, coreLlmName, intentionLlmName);
             return () -> {
                 dialog.invalidateLoadedData();
                 refreshQuestionTable();
@@ -3067,8 +3067,7 @@ public class QuestionTrainingPanel {
             // 以编辑器文本为准：「不更新」或留空表示保留原值；否则按「用户ID - 名称」解析。
             // 必须先拦截「不更新」——extractUserIdFromCombo 会把它原样当作用户ID返回
             String userEditorText = dialog.editableComboText(userIdCombo).trim();
-            userId = BATCH_NO_UPDATE_OPTION.equals(userEditorText) || userEditorText.isEmpty()
-                    ? ""
+            userId = BATCH_NO_UPDATE_OPTION.equals(userEditorText) || userEditorText.isEmpty() ? ""
                     : AiQuestionMangerDialog.extractUserIdFromCombo(userEditorText).trim();
             trainingParam = trainingParamArea.getText().trim();
             autoTrainingIndex = autoTrainingCombo.getSelectedIndex();
@@ -3084,9 +3083,8 @@ public class QuestionTrainingPanel {
         Integer targetAllowAutoTraining = autoTrainingCombo.getSelectedIndex() == 0 ? null
                 : (autoTrainingCombo.getSelectedIndex() == 1 ? AiQuestion.AUTO_TRAINING_ALLOWED : AiQuestion.AUTO_TRAINING_NOT_ALLOWED);
         // 索引 0「不更新」→ null（不提交该字段）；索引 1「全局」→ 空字符串；其余为项目编码
-        String targetProjectCode = batchProjectIndex > 0 && batchProjectIndex < batchProjectCodes.size()
-                ? batchProjectCodes.get(batchProjectIndex)
-                : null;
+        String targetProjectCode =
+                batchProjectIndex > 0 && batchProjectIndex < batchProjectCodes.size() ? batchProjectCodes.get(batchProjectIndex) : null;
         dialog.runApiTask("批量更新", () -> {
             String message = AiQuestionApiClient.getInstance()
                     .batchUpdateUser(envConfig, ids, targetUserId, targetTrainingParam, targetAllowAutoTraining, targetProjectCode);
