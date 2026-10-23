@@ -67,10 +67,12 @@ public class OptionJPanel extends JPanel {
         
         JLabel remarkLabel;
         if (remark != null && !remark.isEmpty()) {
-            remarkLabel = new JLabel(remark);
+            remarkLabel = new EllipsisLabel(remark);
             remarkLabel.setForeground(new Color(160, 160, 160));
             remarkLabel.setFont(remarkLabel.getFont().deriveFont(Font.PLAIN, remarkLabel.getFont().getSize() - 1f));
             remarkLabel.setOpaque(false);
+            // 悬停时展示完整文本
+            remarkLabel.setToolTipText(remark);
             gbc.gridy = 1;
             gbc.gridx = 0;
             gbc.weighty = 0;
@@ -129,6 +131,63 @@ public class OptionJPanel extends JPanel {
      */
     public void updateText(String text) {
         label.setText(text);
+    }
+    
+    /**
+     * 带省略号截断的 JLabel：宽度不足时显示 "..."，配合 setToolTipText 查看完整文本
+     */
+    private static class EllipsisLabel extends JLabel {
+        
+        private static final int MAX_PREFERRED_WIDTH = 260;
+        
+        EllipsisLabel(String text) {
+            super(text);
+        }
+        
+        @Override
+        public Dimension getPreferredSize() {
+            Dimension size = super.getPreferredSize();
+            String text = getText();
+            if (text != null && !text.isEmpty()) {
+                Insets insets = getInsets();
+                FontMetrics fm = getFontMetrics(getFont());
+                int avail = MAX_PREFERRED_WIDTH - insets.left - insets.right;
+                if (fm.stringWidth(text) > avail) {
+                    size.width = MAX_PREFERRED_WIDTH;
+                }
+            }
+            return size;
+        }
+        
+        @Override
+        protected void paintComponent(Graphics g) {
+            String text = getText();
+            if (text == null || text.isEmpty()) {
+                super.paintComponent(g);
+                return;
+            }
+            Insets insets = getInsets();
+            int avail = getWidth() - insets.left - insets.right;
+            FontMetrics fm = g.getFontMetrics(getFont());
+            if (fm.stringWidth(text) <= avail) {
+                super.paintComponent(g);
+                return;
+            }
+            String dots = "...";
+            String clipped = text;
+            while (!clipped.isEmpty() && fm.stringWidth(clipped + dots) > avail) {
+                clipped = clipped.substring(0, clipped.length() - 1);
+            }
+            if (clipped.isEmpty()) {
+                super.paintComponent(g);
+                return;
+            }
+            g.setFont(getFont());
+            g.setColor(getForeground());
+            int x = insets.left;
+            int y = insets.top + (getHeight() - insets.top - insets.bottom - fm.getHeight()) / 2 + fm.getAscent();
+            g.drawString(clipped + dots, x, y);
+        }
     }
     
     

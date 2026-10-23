@@ -145,7 +145,7 @@ public class ProgramContainerDialog extends FullscreenJDialog {
     private Timer flushTimer;
     
     public ProgramContainerDialog(Frame owner) {
-        super("PROGRAM", owner, "程序容器", true, 1000, 840);
+        super("PROGRAM", owner, "程序容器", true, 1100, 840);
         SQLiteConfigUtil.getInstance().initialize();
         initUI();
         refreshProgramList();
@@ -200,7 +200,8 @@ public class ProgramContainerDialog extends FullscreenJDialog {
         leftTopPanel.add(searchField, BorderLayout.CENTER);
         leftPanel.add(leftTopPanel, BorderLayout.NORTH);
         
-        programListPanel = new JPanel();
+        // 宽度始终跟随滚动容器（不允许横向滚动），由 OptionJPanel 内部按实际宽度截断长文本
+        programListPanel = new ScrollablePanel();
         programListPanel.setLayout(new BoxLayout(programListPanel, BoxLayout.Y_AXIS));
         programListPanel.setBorder(BorderFactory.createEmptyBorder(5, 10, 10, 10));
         programListPanel.setBackground(UIManager.getColor("Panel.background"));
@@ -968,6 +969,12 @@ public class ProgramContainerDialog extends FullscreenJDialog {
         if (JOptionPane.showConfirmDialog(this, message, "删除确认", JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) {
             return;
         }
+        // 二次确认
+        String secondMessage = "删除后配置不可恢复，请再次确认删除 [" + config.getName() + "]？";
+        if (JOptionPane.showConfirmDialog(this, secondMessage, "二次确认", JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) {
+            return;
+        }
         long id = config.getId();
         Long externalPid = !PROCESS_SERVICE.isRunning(id) && isExternallyRunning(config) ? config.getLastPid() : null;
         new Thread(() -> {
@@ -1111,5 +1118,37 @@ public class ProgramContainerDialog extends FullscreenJDialog {
                 saveCurrentForm();
             }
         });
+    }
+    
+    /**
+     * 宽度跟随滚动容器的列表面板：禁止横向滚动，
+     * 保证列表项内的长文本（如程序路径）按实际可用宽度截断显示
+     */
+    private static class ScrollablePanel extends JPanel implements Scrollable {
+        
+        @Override
+        public Dimension getPreferredScrollableViewportSize() {
+            return getPreferredSize();
+        }
+        
+        @Override
+        public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) {
+            return 20;
+        }
+        
+        @Override
+        public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction) {
+            return orientation == SwingConstants.VERTICAL ? visibleRect.height : visibleRect.width;
+        }
+        
+        @Override
+        public boolean getScrollableTracksViewportWidth() {
+            return true;
+        }
+        
+        @Override
+        public boolean getScrollableTracksViewportHeight() {
+            return false;
+        }
     }
 }
