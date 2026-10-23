@@ -1,9 +1,24 @@
 name: Release
 
-# 两种触发方式：
-#   1. 推送 v* 格式的 Tag 时自动构建并发布新版本到 GitHub Releases（仅 main/master 上的 Tag 生效）
-#   2. 手动触发（Actions 页面 Run workflow）：输入 tag 版本号（如 v1.2.3），
-#      要求该 tag 已存在于仓库且位于 main/master 分支历史中
+# ═══════════════════════════════════════════════════════════════
+# 发布流程总览
+#
+# 触发方式（二选一）：
+#   1. Tag Push —— 推送 v* 格式的 tag 自动触发
+#   2. 手动触发 —— Actions 页面 → Release → Run workflow，
+#      输入 tag 版本号（如 v1.2.3）：
+#        · tag 已存在 → 基于该 tag 发布
+#        · tag 不存在 → 在当前运行分支最新 commit 上自动创建并推送，
+#          相当于"打 tag + 发布"一步完成
+#
+# 发布前置校验（任一失败立即中止，不会产生 Release）：
+#   · tag 必须可从 main/master 分支历史到达（防止从临时分支发布）
+#   · tag 必须等于 "v" + build.gradle 的 version（防止版本漂移）
+#   · UiConstants.VERSION 必须从 version.properties 动态加载
+#   · CHANGELOG.md 必须包含 "## [vX.Y.Z]" 对应段落
+#
+# 产物：DataSync.exe（含 SHA-256）+ Windows x64 分发 ZIP → GitHub Release
+# ═══════════════════════════════════════════════════════════════
 on:
   push:
     tags:
@@ -11,15 +26,16 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: '要发布的 tag 版本号（如 v1.2.3），必须已存在于仓库'
+        description: '要发布的 tag 版本号（如 v1.2.3）；已存在则直接发布，不存在则自动创建'
         required: true
         type: string
 
-# 统一解析本次发布的目标 tag：手动触发用输入值，tag push 用 ref 名
+# 本次发布的目标 tag：手动触发取输入值，tag push 取 ref 名。
+# 后续所有步骤（checkout / 校验 / 产物命名 / Release）统一引用此变量。
 env:
   TAG_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
-# 防止同一 tag 多次并发执行（如 force-push 同一 tag / 手动重复发布）
+# 同一 tag 的发布串行执行（排队而非取消），防止手动重复发布与 tag push 冲突
 concurrency:
   group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
   cancel-in-progress: false
@@ -35,16 +51,38 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      # ── 1. 拉取完整历史（含 tags）；手动触发时直接 checkout 输入的 tag ──
+      # ── 1. Checkout：tag push 检出该 tag；手动触发检出运行分支（tag 可能尚未存在） ──
+      # fetch-depth: 0 + fetch-tags 拉取完整历史与所有 tag，供后续 merge-base 校验使用
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.TAG_NAME }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref || env.TAG_NAME }}
           fetch-depth: 0
           fetch-tags: true
 
-      # ── 2. 校验 tag 必须位于主分支历史中 ────────────────────
-      # 兼容 main 或 master（不同仓库默认分支名可能不同）
+      # ── 2. 补建缺失的 tag（仅手动触发） ──────────────────────
+      # 输入的 tag 不存在时，在当前 commit 上创建并推送；已存在则跳过。
+      # 注意：此步骤只负责"让 tag 存在"，是否允许发布仍由步骤 3/5 的校验决定。
+      - name: Create tag if missing (manual dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TAG: ${{ env.TAG_NAME }}
+        shell: bash
+        run: |
+          tag="$TAG"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "::notice::Tag $tag already exists, skipping creation"
+          else
+            sha=$(git rev-parse HEAD)
+            echo "::notice::Tag $tag not found, creating at current commit $sha"
+            git tag "$tag" "$sha"
+            git push origin "refs/tags/$tag"
+            echo "::notice::Tag $tag created and pushed"
+          fi
+
+      # ── 3. 校验 tag 可从 main/master 分支历史到达 ───────────
+      # 兼容 main 或 master（不同仓库默认分支名可能不同）；
+      # 用 merge-base --is-ancestor 判定，防止从临时分支/游离 commit 发布
       - name: Verify tag is on main branch
         env:
           TAG: ${{ env.TAG_NAME }}
@@ -82,7 +120,7 @@ jobs:
             throw "Tag $tag 不在 main/master 分支历史中，仅允许从主分支发布新版本"
           }
 
-      # ── 3. 设置 JDK 17（启用 Gradle 缓存） ──────────────────
+      # ── 4. 设置 JDK 17（启用 Gradle 缓存） ──────────────────
       - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
@@ -90,10 +128,10 @@ jobs:
           java-version: '17'
           cache: 'gradle'
 
-      # ── 4. 校验版本号一致性 ──────────────────────────────────
+      # ── 5. 校验版本号一致性 ──────────────────────────────────
       # 检查点：
-      #   - tag (vX.Y.Z) == "v" + build.gradle version
-      #   - UiConstants.VERSION 不再硬编码（应从 version.properties 加载）
+      #   - tag (vX.Y.Z) 必须等于 "v" + build.gradle 的 version
+      #   - UiConstants.VERSION 必须动态加载（禁止硬编码，应从 version.properties 读取）
       # 用 bash 避免 PowerShell 在 CI 上的反引号/编码边界问题
       - name: Verify version consistency
         env:
@@ -139,12 +177,13 @@ jobs:
 
           echo "::notice::Version consistency check PASSED: $tag == v$gradle_version"
 
-      # ── 5. 构建 EXE 和分发 ZIP ───────────────────────────────
+      # ── 6. 构建：生成 EXE 并打包分发 ZIP ─────────────────────
       - name: Build exe & package zip
         shell: cmd
         run: gradlew.bat createExe packageZip --no-daemon --console=plain
 
-      # ── 6. 备份构建产物（失败排查 + 二次发布用） ──────────────
+      # ── 7. 上传构建产物到 Artifact ───────────────────────────
+      # if: always() —— 失败也保留产物，便于排查；保留 14 天，可用于二次发布
       - name: Upload build artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -158,7 +197,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      # ── 7. 生成 EXE 的 SHA-256 校验文件 ──────────────────────
+      # ── 8. 生成 EXE 的 SHA-256 校验文件（随 Release 一并上传，供下载方校验） ──
       - name: Generate SHA-256 checksum
         shell: pwsh
         run: |
@@ -171,8 +210,9 @@ jobs:
           Write-Host "::notice::SHA-256 = $hash"
           Get-Content build/launch4j/DataSync.exe.sha256
 
-      # ── 8. 从 CHANGELOG.md 提取本版本日志作为 Release 描述 ────
-      # 使用严格正则避免 v1.1.1 误匹配 v1.1.10
+      # ── 9. 提取 CHANGELOG.md 中本版本的段落作为 Release 描述 ──
+      # 从 "## [vX.Y.Z]" 截取到下一个 "## " 或文件末尾；
+      # 正则要求段落头精确匹配整个 tag，避免 v1.1.1 误匹配 v1.1.10
       - name: Extract changelog for this version
         env:
           TAG: ${{ env.TAG_NAME }}
@@ -200,8 +240,9 @@ jobs:
           echo "----- release_notes.md -----"
           cat release_notes.md
 
-      # ── 9. 创建 GitHub Release ───────────────────────────────
-      # 需要前面所有步骤成功：构建产物存在 + release_notes.md 已生成
+      # ── 10. 创建 GitHub Release 并上传产物 ────────────────────
+      # tag_name 显式指向目标 tag（手动触发时 GITHUB_REF 是分支，必须显式指定）；
+      # 依赖前面所有步骤成功：tag 校验通过 + 构建产物存在 + release_notes.md 已生成
       - name: Create GitHub Release
         if: success()
         uses: softprops/action-gh-release@v2
