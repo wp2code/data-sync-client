@@ -1,15 +1,27 @@
 name: Release
 
-# 推送 v* 格式的 Tag 时自动构建并发布新版本到 GitHub Releases
-# 仅 main（或 master）分支上的 Tag 生效
+# 两种触发方式：
+#   1. 推送 v* 格式的 Tag 时自动构建并发布新版本到 GitHub Releases（仅 main/master 上的 Tag 生效）
+#   2. 手动触发（Actions 页面 Run workflow）：输入 tag 版本号（如 v1.2.3），
+#      要求该 tag 已存在于仓库且位于 main/master 分支历史中
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要发布的 tag 版本号（如 v1.2.3），必须已存在于仓库'
+        required: true
+        type: string
 
-# 防止同一 tag 多次并发执行（如 force-push 同一 tag）
+# 统一解析本次发布的目标 tag：手动触发用输入值，tag push 用 ref 名
+env:
+  TAG_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+# 防止同一 tag 多次并发执行（如 force-push 同一 tag / 手动重复发布）
 concurrency:
-  group: release-${{ github.ref_name }}
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 permissions:
@@ -23,10 +35,11 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      # ── 1. 拉取完整历史（含 tags） ─────────────────────────
+      # ── 1. 拉取完整历史（含 tags）；手动触发时直接 checkout 输入的 tag ──
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: ${{ env.TAG_NAME }}
           fetch-depth: 0
           fetch-tags: true
 
@@ -34,7 +47,7 @@ jobs:
       # 兼容 main 或 master（不同仓库默认分支名可能不同）
       - name: Verify tag is on main branch
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ env.TAG_NAME }}
         shell: pwsh
         run: |
           $tag = "$env:TAG"
@@ -84,7 +97,7 @@ jobs:
       # 用 bash 避免 PowerShell 在 CI 上的反引号/编码边界问题
       - name: Verify version consistency
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ env.TAG_NAME }}
         shell: bash
         run: |
           tag="$TAG"
@@ -136,7 +149,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: release-artifacts-${{ github.ref_name }}
+          name: release-artifacts-${{ env.TAG_NAME }}
           path: |
             build/launch4j/DataSync.exe
             build/launch4j/DataSync.exe.sha256
@@ -162,7 +175,7 @@ jobs:
       # 使用严格正则避免 v1.1.1 误匹配 v1.1.10
       - name: Extract changelog for this version
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ env.TAG_NAME }}
         shell: bash
         run: |
           tag="$TAG"
@@ -193,6 +206,7 @@ jobs:
         if: success()
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.TAG_NAME }}
           body_path: release_notes.md
           files: |
             build/launch4j/DataSync.exe
