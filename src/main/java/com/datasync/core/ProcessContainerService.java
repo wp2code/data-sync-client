@@ -500,11 +500,31 @@ public class ProcessContainerService {
     }
 
     /**
-     * 删除程序配置时调用：先停止运行中的进程，再移除会话与日志缓冲
+     * 删除指定程序的日志文件（删除程序配置时调用），文件不存在或删除失败仅告警
+     */
+    private void deleteLogFile(long id) {
+        File logFile = programLogFile(id);
+        if (logFile.isFile() && !logFile.delete()) {
+            logger.warn("[ProgramContainer] 删除日志文件失败: {}", logFile);
+        }
+    }
+
+    /**
+     * 删除程序配置时调用：先停止运行中的进程，再移除会话，清空日志缓存并删除磁盘日志文件
      */
     public void removeSession(long id) {
         stop(id);
-        sessions.remove(id);
+        ProcessSession session = sessions.remove(id);
+        if (session != null) {
+            // 卸载回调并等待 tail 线程退出：防止最后一轮读文件继续写入缓存或占用日志文件
+            session.outputConsumer = null;
+            session.stateChangedCallback = null;
+            joinTailThread(session);
+            synchronized (session.logBuffer) {
+                session.logBuffer.clear();
+            }
+        }
+        deleteLogFile(id);
     }
 
     /**
