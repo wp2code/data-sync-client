@@ -903,6 +903,8 @@ public class ProgramContainerDialog extends FullscreenJDialog {
             return;
         }
         ProgramConfig config = selectedConfig;
+        // 启动前清空该程序的旧日志（界面缓冲 + 服务端日志缓冲）
+        clearProgramLogs(config.getId());
         startBtn.setEnabled(false);
         new Thread(() -> {
             String error = PROCESS_SERVICE.start(config, this::onOutputLine, this::onStateChanged);
@@ -941,6 +943,8 @@ public class ProgramContainerDialog extends FullscreenJDialog {
             return;
         }
         long id = selectedConfig.getId();
+        // 重启前清空该程序的旧日志（界面缓冲 + 服务端日志缓冲）
+        clearProgramLogs(id);
         restartBtn.setEnabled(false);
         new Thread(() -> {
             String error = PROCESS_SERVICE.restart(id);
@@ -959,6 +963,18 @@ public class ProgramContainerDialog extends FullscreenJDialog {
         if (selectedConfig != null) {
             PROCESS_SERVICE.clearLog(selectedConfig.getId());
         }
+    }
+    
+    /**
+     * 清空指定程序的全部日志记录：界面待刷新缓冲、控制台内容与服务端日志缓冲。
+     * 供「清空」按钮外的启动/重启流程复用，保证每次运行从空白控制台开始
+     */
+    private void clearProgramLogs(long id) {
+        pendingOutput.clear();
+        consoleArea.setText("");
+        PROCESS_SERVICE.clearLog(id);
+        // 同步清空磁盘日志文件记录（data/program-logs/<id>.log）
+        PROCESS_SERVICE.clearLogFile(id);
     }
     
     private void deleteProgram(ProgramConfig config) {

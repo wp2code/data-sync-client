@@ -489,6 +489,17 @@ public class ProcessContainerService {
     }
 
     /**
+     * 清空指定程序的日志文件记录：将 {@code data/program-logs/<id>.log} 截断为空
+     * （启动/重启前调用）。进程仍在运行时文件被子进程占用，截断可能失败，仅告警不阻断
+     */
+    public void clearLogFile(long id) {
+        File logFile = programLogFile(id);
+        if (logFile.isFile()) {
+            truncateLogFile(logFile);
+        }
+    }
+
+    /**
      * 删除程序配置时调用：先停止运行中的进程，再移除会话与日志缓冲
      */
     public void removeSession(long id) {
