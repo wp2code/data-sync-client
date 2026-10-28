@@ -6,13 +6,15 @@
  *
  * Written by 软件研究中心（深圳曼顿科技有限公司）
  */
-package com.omnikit.ui;
+package com.omnikit.ui.aitraining;
 
 import com.omnikit.components.CustomTextField;
 import com.omnikit.core.AiQuestionApiClient;
 import com.omnikit.model.AiAnswer;
 import com.omnikit.model.AiEnvConfig;
 import com.omnikit.model.AiQuestion;
+import com.omnikit.components.ButtonFactory;
+import com.omnikit.ui.UiConstants;
 import com.omnikit.util.ExcelExportUtil;
 import java.awt.*;
 import java.awt.event.*;
@@ -111,7 +113,7 @@ public class AnswerAuditPanel {
     private static final int ANSWER_ACTION_COLUMN_WIDTH = 190;
     
     // ── 字段 ──
-    private final AiQuestionMangerDialog dialog;
+    private final AiQuestionPanel dialog;
     
     private CustomTextField answerQueryField;
     
@@ -157,7 +159,7 @@ public class AnswerAuditPanel {
     
     private long answerTotalCount = 0;
     
-    private int answerPageSize = AiQuestionMangerDialog.DEFAULT_PAGE_SIZE;
+    private int answerPageSize = AiQuestionPanel.DEFAULT_PAGE_SIZE;
     
     private final List<AiAnswer> loadedAnswers = new ArrayList<>();
     
@@ -165,7 +167,7 @@ public class AnswerAuditPanel {
     
     // ────────── 构造 ──────────
     
-    AnswerAuditPanel(AiQuestionMangerDialog dialog) {
+    AnswerAuditPanel(AiQuestionPanel dialog) {
         this.dialog = dialog;
     }
     
@@ -279,7 +281,7 @@ public class AnswerAuditPanel {
         answerUserFilterCombo.addItem(ALL_USER);
         answerUserFilterCombo.addItem(AiQuestion.GLOBAL_DISPLAY_TEXT);
         for (String userOption : dialog.userOptions) {
-            answerUserFilterCombo.addItem(AiQuestionMangerDialog.formatUserOption(userOption));
+            answerUserFilterCombo.addItem(AiQuestionPanel.formatUserOption(userOption));
         }
         answerUserFilterCombo.setPreferredSize(new Dimension(160, 26));
         answerUserFilterCombo.setToolTipText("按用户过滤回复列表，选项来自当前环境用户列表");
@@ -300,27 +302,27 @@ public class AnswerAuditPanel {
         answerTable.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         answerTable.setRowHeight(28);
         answerTable.getTableHeader().setReorderingAllowed(false);
-        int[] columnWidths = {AiQuestionMangerDialog.CHECK_COLUMN_WIDTH, 50, 240, 240, 90, 100, 90, 90, 70, 130, 130, ANSWER_ACTION_COLUMN_WIDTH};
+        int[] columnWidths = {AiQuestionPanel.CHECK_COLUMN_WIDTH, 50, 240, 240, 90, 100, 90, 90, 70, 130, 130, ANSWER_ACTION_COLUMN_WIDTH};
         for (int i = 0; i < columnWidths.length; i++) {
             answerTable.getColumnModel().getColumn(i).setPreferredWidth(columnWidths[i]);
         }
         TableColumn answerCheckColumn = answerTable.getColumnModel().getColumn(ACOL_CHECK);
-        answerCheckColumn.setMinWidth(AiQuestionMangerDialog.CHECK_COLUMN_WIDTH);
-        answerCheckColumn.setMaxWidth(AiQuestionMangerDialog.CHECK_COLUMN_WIDTH);
-        answerCheckColumn.setCellRenderer(new AiQuestionMangerDialog.CheckBoxCellRenderer());
-        answerCheckColumn.setHeaderRenderer(new AiQuestionMangerDialog.HeaderCheckBoxRenderer(() -> answerTableModel.isCurrentPageAllChecked(),
+        answerCheckColumn.setMinWidth(AiQuestionPanel.CHECK_COLUMN_WIDTH);
+        answerCheckColumn.setMaxWidth(AiQuestionPanel.CHECK_COLUMN_WIDTH);
+        answerCheckColumn.setCellRenderer(new AiQuestionPanel.CheckBoxCellRenderer());
+        answerCheckColumn.setHeaderRenderer(new AiQuestionPanel.HeaderCheckBoxRenderer(() -> answerTableModel.isCurrentPageAllChecked(),
                 () -> answerTableModel.getRowCount()));
         TableColumn answerActionColumn = answerTable.getColumnModel().getColumn(ACOL_ACTION);
         answerActionColumn.setMinWidth(ANSWER_ACTION_COLUMN_WIDTH);
         answerActionColumn.setMaxWidth(ANSWER_ACTION_COLUMN_WIDTH);
         answerTable.getColumnModel().getColumn(ACOL_ID).setCellRenderer(dialog.centeredRenderer());
-        answerTable.getColumnModel().getColumn(ACOL_PROJECT).setCellRenderer(new AiQuestionMangerDialog.TextCellRenderer(16));
-        answerTable.getColumnModel().getColumn(ACOL_QUERY).setCellRenderer(new AiQuestionMangerDialog.TextCellRenderer(48));
-        answerTable.getColumnModel().getColumn(ACOL_ANSWER).setCellRenderer(new AiQuestionMangerDialog.TextCellRenderer(48));
-        AiQuestionMangerDialog.SelectableTextEditor answerTextEditor = new AiQuestionMangerDialog.SelectableTextEditor();
+        answerTable.getColumnModel().getColumn(ACOL_PROJECT).setCellRenderer(new AiQuestionPanel.TextCellRenderer(16));
+        answerTable.getColumnModel().getColumn(ACOL_QUERY).setCellRenderer(new AiQuestionPanel.TextCellRenderer(48));
+        answerTable.getColumnModel().getColumn(ACOL_ANSWER).setCellRenderer(new AiQuestionPanel.TextCellRenderer(48));
+        AiQuestionPanel.SelectableTextEditor answerTextEditor = new AiQuestionPanel.SelectableTextEditor();
         answerTable.getColumnModel().getColumn(ACOL_QUERY).setCellEditor(answerTextEditor);
         answerTable.getColumnModel().getColumn(ACOL_ANSWER).setCellEditor(answerTextEditor);
-        answerTable.getColumnModel().getColumn(ACOL_USER).setCellRenderer(new AiQuestionMangerDialog.UserIdCellRenderer(dialog.userOptions));
+        answerTable.getColumnModel().getColumn(ACOL_USER).setCellRenderer(new AiQuestionPanel.UserIdCellRenderer(dialog.userOptions));
         answerTable.getColumnModel().getColumn(ACOL_MODIFY).setCellRenderer((table, value, isSelected, hasFocus, row, column) -> {
             JLabel label = new JLabel(value.toString());
             label.setHorizontalAlignment(SwingConstants.CENTER);
@@ -346,11 +348,11 @@ public class AnswerAuditPanel {
             }
             return label;
         });
-        answerTable.getColumnModel().getColumn(ACOL_CREATE_TIME).setCellRenderer(new AiQuestionMangerDialog.TextCellRenderer(20));
-        answerTable.getColumnModel().getColumn(ACOL_UPDATE_TIME).setCellRenderer(new AiQuestionMangerDialog.TextCellRenderer(20));
+        answerTable.getColumnModel().getColumn(ACOL_CREATE_TIME).setCellRenderer(new AiQuestionPanel.TextCellRenderer(20));
+        answerTable.getColumnModel().getColumn(ACOL_UPDATE_TIME).setCellRenderer(new AiQuestionPanel.TextCellRenderer(20));
         answerTable.getColumnModel().getColumn(ACOL_ACTION).setCellRenderer(
-                new AiQuestionMangerDialog.ActionCellRenderer(() -> answerHoverActionRow, () -> answerHoverActionZone, "查看回复详情（全部字段）",
-                        false, AiQuestionMangerDialog.ANSWER_ACTION_DELETE));
+                new AiQuestionPanel.ActionCellRenderer(() -> answerHoverActionRow, () -> answerHoverActionZone, "查看回复详情（全部字段）",
+                        false, AiQuestionPanel.ANSWER_ACTION_DELETE));
         answerTable.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -410,12 +412,12 @@ public class AnswerAuditPanel {
         pageRightPanel.add(answerTotalLabel);
         pageRightPanel.add(Box.createHorizontalStrut(12));
         pageRightPanel.add(new JLabel("每页："));
-        answerPageSizeCombo = new JComboBox<>(AiQuestionMangerDialog.DEFAULT_PAGE_SCOPE);
+        answerPageSizeCombo = new JComboBox<>(AiQuestionPanel.DEFAULT_PAGE_SCOPE);
         answerPageSizeCombo.setEditable(true);
         answerPageSizeCombo.setPreferredSize(new Dimension(76, 26));
         answerPageSizeCombo.setToolTipText(
-                "选择或输入每页条数（" + AiQuestionMangerDialog.MIN_PAGE_SIZE + " ~ " + AiQuestionMangerDialog.MAX_PAGE_SIZE + "），回车或失去焦点生效");
-        answerPageSizeCombo.setSelectedItem(String.valueOf(AiQuestionMangerDialog.DEFAULT_PAGE_SIZE));
+                "选择或输入每页条数（" + AiQuestionPanel.MIN_PAGE_SIZE + " ~ " + AiQuestionPanel.MAX_PAGE_SIZE + "），回车或失去焦点生效");
+        answerPageSizeCombo.setSelectedItem(String.valueOf(AiQuestionPanel.DEFAULT_PAGE_SIZE));
         answerPageSizeCombo.addActionListener(e -> applyAnswerPageSizeFromCombo());
         if (answerPageSizeCombo.getEditor().getEditorComponent() instanceof JTextField editorField) {
             editorField.addFocusListener(new FocusAdapter() {
@@ -439,7 +441,7 @@ public class AnswerAuditPanel {
      * 回复审计列表所属项目展示文案：项目编码为 0、-1 或空（视为「全局」），或项目名称为空时统一展示「全局」。
      */
     private static String answerProjectDisplayText(AiAnswer answer) {
-        String name = AiQuestionMangerDialog.nullToEmpty(answer.getProjectName()).trim();
+        String name = AiQuestionPanel.nullToEmpty(answer.getProjectName()).trim();
         if (AiQuestion.isGlobalCode(answer.getProjectCode()) || name.isEmpty()) {
             return AiQuestion.GLOBAL_DISPLAY_TEXT;
         }
@@ -451,11 +453,11 @@ public class AnswerAuditPanel {
      * 或空时统一展示「全局」。
      */
     private static String answerUserDisplayText(AiAnswer answer) {
-        String userId = AiQuestionMangerDialog.nullToEmpty(answer.getUserId()).trim();
+        String userId = AiQuestionPanel.nullToEmpty(answer.getUserId()).trim();
         if (AiQuestion.isGlobalCode(userId)) {
             return AiQuestion.GLOBAL_DISPLAY_TEXT;
         }
-        String userName = AiQuestionMangerDialog.nullToEmpty(answer.getUserName()).trim();
+        String userName = AiQuestionPanel.nullToEmpty(answer.getUserName()).trim();
         return userName.isEmpty() ? userId : userName + "（" + userId + "）";
     }
     
@@ -489,7 +491,7 @@ public class AnswerAuditPanel {
                 answerUserFilterCombo.addItem(ALL_USER);
                 answerUserFilterCombo.addItem(AiQuestion.GLOBAL_DISPLAY_TEXT);
                 for (String userOption : dialog.userOptions) {
-                    answerUserFilterCombo.addItem(AiQuestionMangerDialog.formatUserOption(userOption));
+                    answerUserFilterCombo.addItem(AiQuestionPanel.formatUserOption(userOption));
                 }
                 if (previousAnswerUserFilter != null) {
                     answerUserFilterCombo.setSelectedItem(previousAnswerUserFilter);
@@ -623,9 +625,9 @@ public class AnswerAuditPanel {
             size = Integer.parseInt(text);
         } catch (NumberFormatException ignored) {
         }
-        if (size < AiQuestionMangerDialog.MIN_PAGE_SIZE || size > AiQuestionMangerDialog.MAX_PAGE_SIZE) {
+        if (size < AiQuestionPanel.MIN_PAGE_SIZE || size > AiQuestionPanel.MAX_PAGE_SIZE) {
             answerPageSizeCombo.getEditor().setItem(String.valueOf(answerPageSize));
-            dialog.setStatus("每页条数请输入 " + AiQuestionMangerDialog.MIN_PAGE_SIZE + " ~ " + AiQuestionMangerDialog.MAX_PAGE_SIZE + " 之间的整数",
+            dialog.setStatus("每页条数请输入 " + AiQuestionPanel.MIN_PAGE_SIZE + " ~ " + AiQuestionPanel.MAX_PAGE_SIZE + " 之间的整数",
                     false);
             return;
         }
@@ -732,7 +734,7 @@ public class AnswerAuditPanel {
         if (projectFilter == null) {
             return true;
         }
-        return projectFilter.equals(AiQuestionMangerDialog.nullToEmpty(answer.getProjectName()).trim());
+        return projectFilter.equals(AiQuestionPanel.nullToEmpty(answer.getProjectName()).trim());
     }
     
     private String selectedAnswerUserFilter() {
@@ -748,7 +750,7 @@ public class AnswerAuditPanel {
         if (AiQuestion.GLOBAL_DISPLAY_TEXT.equals(text)) {
             return GLOBAL_USER_FILTER_VALUE;
         }
-        return AiQuestionMangerDialog.extractUserIdFromDisplayText(text);
+        return AiQuestionPanel.extractUserIdFromDisplayText(text);
     }
     
     private boolean matchesAnswerUserFilter(AiAnswer answer, String userIdFilter) {
@@ -757,9 +759,9 @@ public class AnswerAuditPanel {
         }
         // 选中「全局」（传参 0）时匹配全部全局记录：0、-1 或空
         if (AiQuestion.isGlobalCode(userIdFilter)) {
-            return AiQuestion.isGlobalCode(AiQuestionMangerDialog.nullToEmpty(answer.getUserId()).trim());
+            return AiQuestion.isGlobalCode(AiQuestionPanel.nullToEmpty(answer.getUserId()).trim());
         }
-        return userIdFilter.equals(AiQuestionMangerDialog.nullToEmpty(answer.getUserId()).trim());
+        return userIdFilter.equals(AiQuestionPanel.nullToEmpty(answer.getUserId()).trim());
     }
     
     // ────────── 表格交互 ──────────
@@ -768,9 +770,6 @@ public class AnswerAuditPanel {
         int row = answerTable.rowAtPoint(e.getPoint());
         int column = answerTable.columnAtPoint(e.getPoint());
         if (row < 0 || column < 0 || row >= answerTableModel.getRowCount()) {
-            if (e.getClickCount() == 2 && SwingUtilities.isLeftMouseButton(e)) {
-                dialog.toggleFullscreenDialog();
-            }
             return;
         }
         AiAnswer answer = answerTableModel.getAnswerAt(row);
@@ -788,10 +787,10 @@ public class AnswerAuditPanel {
             }
         } else if (column == ACOL_ACTION) {
             Rectangle cellRect = answerTable.getCellRect(row, column, false);
-            int zone = AiQuestionMangerDialog.actionZoneAt(e.getX(), cellRect, 3);
-            if (zone == AiQuestionMangerDialog.ACTION_VIEW) {
+            int zone = AiQuestionPanel.actionZoneAt(e.getX(), cellRect, 3);
+            if (zone == AiQuestionPanel.ACTION_VIEW) {
                 showAnswerDetail(answer);
-            } else if (zone == AiQuestionMangerDialog.ACTION_EDIT) {
+            } else if (zone == AiQuestionPanel.ACTION_EDIT) {
                 editAnswer(answer);
             } else {
                 deleteAnswer(answer);
@@ -812,7 +811,7 @@ public class AnswerAuditPanel {
             int hitColumn = answerTable.columnAtPoint(point);
             if (hitRow >= 0 && hitColumn == ACOL_ACTION) {
                 row = hitRow;
-                zone = AiQuestionMangerDialog.actionZoneAt(point.x, answerTable.getCellRect(hitRow, ACOL_ACTION, false), 3);
+                zone = AiQuestionPanel.actionZoneAt(point.x, answerTable.getCellRect(hitRow, ACOL_ACTION, false), 3);
                 clickable = true;
             } else if (hitRow >= 0 && hitColumn == ACOL_CHECK) {
                 clickable = true;
@@ -844,15 +843,15 @@ public class AnswerAuditPanel {
         gbc.anchor = GridBagConstraints.WEST;
         dialog.addFormRow(form, gbc, 0, new JLabel("ID："), new JLabel(answer.getId() != null ? String.valueOf(answer.getId()) : ""));
         dialog.addFormRow(form, gbc, 1, new JLabel("问题："),
-                AiQuestionMangerDialog.readonlyArea(AiQuestionMangerDialog.nullToEmpty(answer.getQuery()), 2));
+                AiQuestionPanel.readonlyArea(AiQuestionPanel.nullToEmpty(answer.getQuery()), 2));
         dialog.addFormRow(form, gbc, 2, new JLabel("回复内容："),
-                AiQuestionMangerDialog.readonlyArea(AiQuestionMangerDialog.nullToEmpty(answer.getAnswer()), 15));
+                AiQuestionPanel.readonlyArea(AiQuestionPanel.nullToEmpty(answer.getAnswer()), 15));
         dialog.addFormRow(form, gbc, 3, new JLabel("所属项目："), new JLabel(answerProjectDisplayText(answer)));
         dialog.addFormRow(form, gbc, 4, new JLabel("所属用户："), new JLabel(answerUserDisplayText(answer)));
         dialog.addFormRow(form, gbc, 5, new JLabel("是否允许修改："), new JLabel(answer.isModifyAllowed() ? ALLOW_MODIFY_YES : ALLOW_MODIFY_NO));
         dialog.addFormRow(form, gbc, 6, new JLabel("是否来源训练："), new JLabel(answer.isFromTraining() ? SOURCE_TRAINING_YES : SOURCE_TRAINING_NO));
-        dialog.addFormRow(form, gbc, 7, new JLabel("创建时间："), new JLabel(AiQuestionMangerDialog.nullToEmpty(answer.getCreateTime())));
-        dialog.addFormRow(form, gbc, 8, new JLabel("更新时间："), new JLabel(AiQuestionMangerDialog.nullToEmpty(answer.getUpdateTime())));
+        dialog.addFormRow(form, gbc, 7, new JLabel("创建时间："), new JLabel(AiQuestionPanel.nullToEmpty(answer.getCreateTime())));
+        dialog.addFormRow(form, gbc, 8, new JLabel("更新时间："), new JLabel(AiQuestionPanel.nullToEmpty(answer.getUpdateTime())));
         JOptionPane.showMessageDialog(dialog, form, dialogTitle("回复详情", answer.getEnvName()), JOptionPane.PLAIN_MESSAGE);
     }
     
@@ -869,7 +868,7 @@ public class AnswerAuditPanel {
         }
         StringBuilder envPart = new StringBuilder();
         for (String envName : envNames) {
-            String text = AiQuestionMangerDialog.nullToEmpty(envName);
+            String text = AiQuestionPanel.nullToEmpty(envName);
             if (text.isEmpty()) {
                 continue;
             }
@@ -887,7 +886,7 @@ public class AnswerAuditPanel {
     private void showSourceQuestionInfo(AiAnswer answer) {
         AiEnvConfig envConfig = dialog.findEnvByName(answer.getEnvName());
         if (envConfig == null) {
-            JOptionPane.showMessageDialog(dialog, "未找到回复所属环境配置 [" + AiQuestionMangerDialog.nullToEmpty(answer.getEnvName()) + "]", "错误",
+            JOptionPane.showMessageDialog(dialog, "未找到回复所属环境配置 [" + AiQuestionPanel.nullToEmpty(answer.getEnvName()) + "]", "错误",
                     JOptionPane.ERROR_MESSAGE);
             return;
         }
@@ -907,9 +906,9 @@ public class AnswerAuditPanel {
                 GridBagConstraints gbc = new GridBagConstraints();
                 gbc.insets = new Insets(4, 6, 4, 6);
                 gbc.anchor = GridBagConstraints.WEST;
-                dialog.addFormRow(topPanel, gbc, 0, new JLabel("问题："), AiQuestionMangerDialog.readonlyArea(fields.getOrDefault("question", ""), 1));
+                dialog.addFormRow(topPanel, gbc, 0, new JLabel("问题："), AiQuestionPanel.readonlyArea(fields.getOrDefault("question", ""), 1));
                 dialog.addFormRow(topPanel, gbc, 1, new JLabel("训练参数："),
-                        AiQuestionMangerDialog.readonlyArea(fields.getOrDefault("trainingParam", ""), 3));
+                        AiQuestionPanel.readonlyArea(fields.getOrDefault("trainingParam", ""), 3));
                 content.add(topPanel);
                 content.add(Box.createRigidArea(new Dimension(0, 8)));
                 JPanel comparePanel = new JPanel(new GridLayout(1, 2, 8, 0));
@@ -924,7 +923,7 @@ public class AnswerAuditPanel {
                 leftPanel.add(new JScrollPane(sourceAnswerArea), BorderLayout.CENTER);
                 JPanel rightPanel = new JPanel(new BorderLayout());
                 rightPanel.setBorder(BorderFactory.createTitledBorder("回复内容（回复审计）"));
-                JTextArea currentAnswerArea = new JTextArea(AiQuestionMangerDialog.nullToEmpty(answer.getAnswer()));
+                JTextArea currentAnswerArea = new JTextArea(AiQuestionPanel.nullToEmpty(answer.getAnswer()));
                 currentAnswerArea.setEditable(false);
                 currentAnswerArea.setLineWrap(true);
                 currentAnswerArea.setWrapStyleWord(true);
@@ -947,21 +946,21 @@ public class AnswerAuditPanel {
             JOptionPane.showMessageDialog(dialog, "请等待当前操作完成", "提示", JOptionPane.WARNING_MESSAGE);
             return;
         }
-        JTextArea queryArea = new JTextArea(AiQuestionMangerDialog.nullToEmpty(answer.getQuery()), 2, 30);
+        JTextArea queryArea = new JTextArea(AiQuestionPanel.nullToEmpty(answer.getQuery()), 2, 30);
         queryArea.setLineWrap(true);
         queryArea.setWrapStyleWord(true);
-        JTextArea replyArea = new JTextArea(AiQuestionMangerDialog.nullToEmpty(answer.getAnswer()), 15, 30);
+        JTextArea replyArea = new JTextArea(AiQuestionPanel.nullToEmpty(answer.getAnswer()), 15, 30);
         replyArea.setLineWrap(true);
         replyArea.setWrapStyleWord(true);
-        JLabel projectNameLabel = new JLabel(AiQuestionMangerDialog.nullToEmpty(answer.getProjectName()));
+        JLabel projectNameLabel = new JLabel(AiQuestionPanel.nullToEmpty(answer.getProjectName()));
         JComboBox<String> allowModifyCombo = new JComboBox<>(new String[] {ALLOW_MODIFY_YES, ALLOW_MODIFY_NO});
         allowModifyCombo.setSelectedIndex(answer.isModifyAllowed() ? 0 : 1);
         JPanel form = new JPanel(new GridBagLayout());
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(6, 6, 6, 6);
         gbc.anchor = GridBagConstraints.WEST;
-        dialog.addFormRow(form, gbc, 0, new JLabel("问题："), AiQuestionMangerDialog.dialogScroll(queryArea, 2));
-        dialog.addFormRow(form, gbc, 1, new JLabel("回复内容："), AiQuestionMangerDialog.dialogScroll(replyArea, 15));
+        dialog.addFormRow(form, gbc, 0, new JLabel("问题："), AiQuestionPanel.dialogScroll(queryArea, 2));
+        dialog.addFormRow(form, gbc, 1, new JLabel("回复内容："), AiQuestionPanel.dialogScroll(replyArea, 15));
         dialog.addFormRow(form, gbc, 2, new JLabel("所属项目："), projectNameLabel);
         dialog.addFormRow(form, gbc, 3, new JLabel("是否允许修改："), allowModifyCombo);
         int option = JOptionPane.showConfirmDialog(dialog, form, dialogTitle("编辑回复", answer.getEnvName()), JOptionPane.OK_CANCEL_OPTION,
@@ -982,7 +981,7 @@ public class AnswerAuditPanel {
         int newAllowModify = allowModifyCombo.getSelectedIndex() == 0 ? AiAnswer.MODIFY_ALLOWED : AiAnswer.MODIFY_FORBIDDEN;
         AiEnvConfig envConfig = dialog.findEnvByName(answer.getEnvName());
         if (envConfig == null) {
-            JOptionPane.showMessageDialog(dialog, "未找到回复所属环境配置 [" + AiQuestionMangerDialog.nullToEmpty(answer.getEnvName()) + "]", "错误",
+            JOptionPane.showMessageDialog(dialog, "未找到回复所属环境配置 [" + AiQuestionPanel.nullToEmpty(answer.getEnvName()) + "]", "错误",
                     JOptionPane.ERROR_MESSAGE);
             return;
         }
@@ -1007,7 +1006,7 @@ public class AnswerAuditPanel {
         }
         AiEnvConfig envConfig = dialog.findEnvByName(answer.getEnvName());
         if (envConfig == null) {
-            JOptionPane.showMessageDialog(dialog, "未找到回复所属环境配置 [" + AiQuestionMangerDialog.nullToEmpty(answer.getEnvName()) + "]", "错误",
+            JOptionPane.showMessageDialog(dialog, "未找到回复所属环境配置 [" + AiQuestionPanel.nullToEmpty(answer.getEnvName()) + "]", "错误",
                     JOptionPane.ERROR_MESSAGE);
             return;
         }
@@ -1063,7 +1062,7 @@ public class AnswerAuditPanel {
         for (Map.Entry<String, List<Long>> entry : envIdGroups.entrySet()) {
             AiEnvConfig envConfig = dialog.findEnvByName(entry.getKey());
             if (envConfig == null) {
-                JOptionPane.showMessageDialog(dialog, "未找到回复所属环境配置 [" + AiQuestionMangerDialog.nullToEmpty(entry.getKey()) + "]", "错误",
+                JOptionPane.showMessageDialog(dialog, "未找到回复所属环境配置 [" + AiQuestionPanel.nullToEmpty(entry.getKey()) + "]", "错误",
                         JOptionPane.ERROR_MESSAGE);
                 return;
             }
@@ -1148,7 +1147,7 @@ public class AnswerAuditPanel {
         for (Map.Entry<String, List<Long>> entry : envIdGroups.entrySet()) {
             AiEnvConfig envConfig = dialog.findEnvByName(entry.getKey());
             if (envConfig == null) {
-                JOptionPane.showMessageDialog(dialog, "未找到回复所属环境配置 [" + AiQuestionMangerDialog.nullToEmpty(entry.getKey()) + "]", "错误",
+                JOptionPane.showMessageDialog(dialog, "未找到回复所属环境配置 [" + AiQuestionPanel.nullToEmpty(entry.getKey()) + "]", "错误",
                         JOptionPane.ERROR_MESSAGE);
                 return;
             }
@@ -1407,14 +1406,14 @@ public class AnswerAuditPanel {
                 case ACOL_CHECK -> answer.getId() != null ? isChecked(answer) : null;
                 case ACOL_ID -> answer.getId();
                 case ACOL_PROJECT -> answerProjectDisplayText(answer);
-                case ACOL_QUERY -> AiQuestionMangerDialog.nullToEmpty(answer.getQuery());
-                case ACOL_ANSWER -> AiQuestionMangerDialog.nullToEmpty(answer.getAnswer());
+                case ACOL_QUERY -> AiQuestionPanel.nullToEmpty(answer.getQuery());
+                case ACOL_ANSWER -> AiQuestionPanel.nullToEmpty(answer.getAnswer());
                 case ACOL_USER -> answerUserDisplayText(answer);
                 case ACOL_MODIFY -> answer.isModifyAllowed() ? ALLOW_MODIFY_YES : ALLOW_MODIFY_NO;
                 case ACOL_SOURCE_TRAINING -> answer.isFromTraining() ? SOURCE_TRAINING_YES : SOURCE_TRAINING_NO;
                 case ACOL_SOURCE_ID -> answer.getSourceId() != null ? String.valueOf(answer.getSourceId()) : "";
-                case ACOL_CREATE_TIME -> AiQuestionMangerDialog.nullToEmpty(answer.getCreateTime());
-                case ACOL_UPDATE_TIME -> AiQuestionMangerDialog.nullToEmpty(answer.getUpdateTime());
+                case ACOL_CREATE_TIME -> AiQuestionPanel.nullToEmpty(answer.getCreateTime());
+                case ACOL_UPDATE_TIME -> AiQuestionPanel.nullToEmpty(answer.getUpdateTime());
                 default -> "";
             };
         }

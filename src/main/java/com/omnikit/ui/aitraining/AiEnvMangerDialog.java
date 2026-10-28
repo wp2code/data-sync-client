@@ -6,13 +6,15 @@
  *
  * Written by 软件研究中心（深圳曼顿科技有限公司）
  */
-package com.omnikit.ui;
+package com.omnikit.ui.aitraining;
 
 import com.omnikit.components.ChildLayoutPanel;
 import com.omnikit.components.FullscreenJDialog;
 import com.omnikit.components.LinkJLabel;
 import com.omnikit.components.OptionJPanel;
 import com.omnikit.model.AiEnvConfig;
+import com.omnikit.components.ButtonFactory;
+import com.omnikit.ui.UiConstants;
 import com.omnikit.util.ConfigUtil;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;

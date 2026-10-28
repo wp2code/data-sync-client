@@ -1,5 +1,6 @@
-package com.omnikit.ui;
+package com.omnikit.components;
 
+import com.omnikit.ui.UiConstants;
 import java.awt.*;
 import javax.swing.*;
 

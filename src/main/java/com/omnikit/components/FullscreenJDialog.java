@@ -1,6 +1,5 @@
 package com.omnikit.components;
 
-import com.omnikit.ui.AbsDialog;
 import java.awt.*;
 import javax.swing.*;
 

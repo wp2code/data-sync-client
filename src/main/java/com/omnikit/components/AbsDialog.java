@@ -1,4 +1,4 @@
-package com.omnikit.ui;
+package com.omnikit.components;
 
 import java.awt.*;
 import javax.swing.*;

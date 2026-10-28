@@ -70,17 +70,18 @@ com.omnikit/  (src/main/java)
 │   ├── AiQuestion / AiAnswer / AiEnvConfig / AiMetaConfig       # AI training
 │   ├── ProgramConfig               # External program config (types: JAVA / PYTHON / OTHER)
 │   └── ProjectItem / Side          # UI helpers (Side = SOURCE | TARGET)
-├── ui/                              # All Swing windows and panels
-│   ├── OmniKitUI.java               # Single main JFrame: sync controls, log area, DDL viewer, settings menu
+├── ui/                              # Swing 主窗口、内容面板与配置对话框
+│   ├── OmniKitUI.java               # Main JFrame shell: menu card switching, online update, data-source/GitLab dialogs, exit flow; F11 maximize / Esc restore
+│   ├── DataSyncPanel.java           # 数据同步内容面板: source/target DB selection, connection mgmt (ConnectThread), batch sync, DDL/INSERT export, schema diff + ALTER execution, sync log area
 │   ├── DataSourceManagerDialog.java # Data source CRUD + connection test
 │   ├── GitLabMangerDialog.java      # GitLab auth config
-│   ├── ScriptMangerDialog.java      # SQL script editor + push to GitLab
-│   ├── AiQuestionMangerDialog.java  # AI training shell (tab switching, shared helpers)
+│   ├── ScriptPanel.java             # SQL script editor + run against DB + push/sync to GitLab (embedded panel)
+│   ├── AiQuestionPanel.java         # AI training shell panel (tab switching, shared helpers/statics)
 │   ├── QuestionTrainingPanel.java   # Question tab: pagination, manual entry, Excel import, batch save/update/delete, trigger training
 │   ├── AnswerAuditPanel.java        # Reply tab: paginated replies, view/update/delete
 │   ├── AiEnvMangerDialog.java       # AI environment config (host, headers, API paths, JSON examples)
-│   ├── ProgramContainerDialog.java  # External program container (list + config form + live console)
-│   ├── TrainingCastTimeDialog.java  # Training duration query (auto-refresh)
+│   ├── ProgramContainerPanel.java   # External program container (list + config form + live console; embedded panel)
+│   ├── TrainingCastTimeDialog.java  # Training duration query (auto-refresh; takes a Component owner)
 │   ├── ButtonFactory.java           # Unified button styling (primary/destructive/secondary/toolbar/link/pill)
 │   ├── AbsDialog.java               # Base dialog with centered positioning
 │   └── UiConstants.java             # Colors, fonts, VERSION (from version.properties), GitHub addr, log tag constants
@@ -108,7 +109,7 @@ com.omnikit/  (src/main/java)
 
 ### Data Flow for Table Sync
 
-1. User selects source/target data sources, schema, and table in `OmniKitUI`
+1. User selects source/target data sources, schema, and table in `DataSyncPanel` (the default card of `OmniKitUI`)
 2. `OmniKitService.syncTableWithConn()` is invoked (typically via `SwingWorker` for non-blocking UI)
 3. Connections are established or reused via `DbConnector.getConnection()`
 4. Source data is read via `SELECT *` from source table
@@ -133,7 +134,7 @@ com.omnikit/  (src/main/java)
 - On first API call, it loads `GitLabAuthConfig` from SQLite and logs in automatically
 - Uses **Guava Cache** for project lists (2-hour TTL) and branch lists (2-minute TTL)
 - Supports: `createOrUpdateFile()` (auto-detects create vs update), `getFile()`, `getRawFile()`, `commit()` with `CommitAction`
-- The `ScriptMangerDialog` lets users push SQL script content to a GitLab project/branch/file path
+- The `ScriptPanel` lets users push SQL script content to a GitLab project/branch/file path
 
 ### AI Training
 
@@ -144,7 +145,7 @@ com.omnikit/  (src/main/java)
 
 ### External Program Container
 
-- `ProcessContainerService` (singleton) owns process sessions; `ProgramContainerDialog` is just a view — closing the dialog keeps processes running, reopening restores state badges and historical logs
+- `ProcessContainerService` (singleton) owns process sessions; `ProgramContainerPanel` is just a view — processes keep running independent of the UI, and reopening the card restores state badges and historical logs
 - Supports program types `JAVA` (custom JRE/JDK), `PYTHON` (interpreter/venv, entry script prefixed), `OTHER` (bat/exe/PATH commands)
 - Child process output is decoded by `EncodingDetectReader` (UTF-8 vs GBK detection)
 - On app exit, a ShutdownHook in `Main` calls `stopAll()` unless the user chose to keep processes running (main window close dialog)
@@ -173,11 +174,12 @@ com.omnikit/  (src/main/java)
 ### UI Architecture
 
 - **FlatLaf FlatDarkLaf** theme applied in `Main.main()` before any UI creation, with focus ring width 1.5px, component arc 6px, and global text antialiasing for CJK rendering
-- `OmniKitUI` is the single main `JFrame`. All other windows are `JDialog` subclasses extending `AbsDialog` or `FullscreenJDialog`
+- `OmniKitUI` is the single main `JFrame` acting as a shell: a top menu bar switches content cards via `CardLayout`. The four main features are embedded `JPanel`s, not dialogs — `DataSyncPanel` (eagerly created), `AiQuestionPanel`, `ScriptPanel`, and `ProgramContainerPanel` (lazily created on first visit). Modal config windows (`DataSourceManagerDialog`, `GitLabMangerDialog`, `AiEnvMangerDialog`, `TrainingCastTimeDialog`) remain `JDialog` subclasses extending `AbsDialog` or `FullscreenJDialog`
+- Window-level keys are bound on `OmniKitUI`'s root pane: `F11` toggles maximize/restore, `ESC` restores from maximized (inactive when not maximized so dialogs keep their own ESC-close behavior)
+- Panel-level shortcuts use the panel's own `InputMap`/`ActionMap` (`WHEN_IN_FOCUSED_WINDOW`): `Ctrl+S` saves in `ScriptPanel` and `ProgramContainerPanel`
 - The log output area is a `JEditorPane` rendering HTML content — `LogUtil` provides helpers that generate colored HTML spans
 - Buttons are created via `ButtonFactory` for consistent styling
 - SVG icons are rendered via Apache Batik in `IconUtil` to produce `ImageIcon` objects at various sizes (16x16, 24x24, 32x32)
-- Fullscreen-capable dialogs (`FullscreenJDialog`) support `F11` to toggle fullscreen and `ESC` to close
 
 ### Build & Packaging
 
@@ -192,6 +194,6 @@ com.omnikit/  (src/main/java)
 ### Gotchas
 
 - On Windows run `gradlew.bat`; the project, packages and all identifiers are `omnikit`
-- Source/dest connections are cached in `ConnectionWrapper` fields on `OmniKitUI`; changing data source or database, or using "刷新连接" (`refreshConnection`), closes the old connection and reconnects — stale connections after editing a data source config are the first suspect for sync failures
+- Source/dest connections are cached in `ConnectionWrapper` fields on `DataSyncPanel`; changing data source or database, or using "刷新连接" (`refreshConnection`), closes the old connection and reconnects — stale connections after editing a data source config are the first suspect for sync failures. On app exit, `OmniKitUI.exitApplication()` releases them via `DataSyncPanel.closeConnectionsForExit()`
 - Chinese text must stay UTF-8 — files are compiled with `-Dfile.encoding`-safe UTF-8 options; don't let editors save Java sources as GBK
-- `ScriptMangerDialog` / `GitLabMangerDialog` / `AiEnvMangerDialog` filenames keep the historical "Manger" (sic) spelling — don't "fix" it, references exist across UI code
+- `GitLabMangerDialog` / `AiEnvMangerDialog` filenames keep the historical "Manger" (sic) spelling — don't "fix" it, references exist across UI code

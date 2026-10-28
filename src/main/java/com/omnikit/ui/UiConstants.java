@@ -59,6 +59,8 @@ public final class UiConstants {
     // ─── 颜色 ───
     public static final Color COLOR_PRIMARY = new Color(0x4F46E5);
     
+    public static final Color COLOR_SOURCE = new Color(0xB0E546);
+    
     public static final Color COLOR_ACTIVE = new Color(0x3EB7DC);
     
     public static final Color COLOR_SUCCESS = new Color(0x059669);

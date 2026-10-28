@@ -1,12 +1,13 @@
-package com.omnikit.ui;
+package com.omnikit.ui.programs;
 
+import com.omnikit.components.ButtonFactory;
 import com.omnikit.components.CustomTextField;
-import com.omnikit.components.FullscreenJDialog;
 import com.omnikit.components.OptionJPanel;
 import com.omnikit.components.combobox.IconItem;
 import com.omnikit.components.combobox.IconJComboBox;
 import com.omnikit.core.ProcessContainerService;
 import com.omnikit.model.ProgramConfig;
+import com.omnikit.ui.UiConstants;
 import com.omnikit.util.ConfigUtil;
 import com.omnikit.util.GlobalUtil;
 import com.omnikit.util.IconUtil;
@@ -24,14 +25,14 @@ import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 
 /**
- * 程序容器对话框
+ * 程序容器面板
  * <p>
- * 左侧程序列表（状态徽标）+ 右侧配置表单与控制台，支持启动/停止/重启与实时输出查看。 进程会话由 {@link ProcessContainerService} 单例持有：关闭对话框进程继续后台运行， 重新打开可恢复状态徽标与历史日志。
+ * 左侧程序列表（状态徽标）+ 右侧配置表单与控制台，支持启动/停止/重启与实时输出查看。 进程会话由 {@link ProcessContainerService} 单例持有：进程继续后台运行， 重新打开可恢复状态徽标与历史日志。
  *
  * @author liuweiping
  * @date 2026-10-19
  **/
-public class ProgramContainerDialog extends FullscreenJDialog {
+public class ProgramContainerPanel extends JPanel {
     
     private static final ProcessContainerService PROCESS_SERVICE = ProcessContainerService.getInstance();
     
@@ -127,9 +128,14 @@ public class ProgramContainerDialog extends FullscreenJDialog {
     private JTextArea consoleArea;
     
     /**
-     * 右侧表单/控制台垂直分割：窗口打开时按比例定位（控制台占更大区域）
+     * 右侧表单/控制台垂直分割：分割条按表单首选高度自适应定位（配置区完整展示不滚动，控制台占剩余空间）
      */
     private JSplitPane rightSplitPane;
+    
+    /**
+     * 控制台最小保留高度：窗口过矮时表单退化为滚动展示，保证控制台始终可用
+     */
+    private static final int MIN_CONSOLE_HEIGHT = 160;
     
     private ProgramConfig selectedConfig;
     
@@ -145,27 +151,13 @@ public class ProgramContainerDialog extends FullscreenJDialog {
      */
     private Timer flushTimer;
     
-    public ProgramContainerDialog(Frame owner) {
-        super("PROGRAM", owner, "程序容器", true, 1100, 840);
+    public ProgramContainerPanel() {
         SQLiteConfigUtil.getInstance().initialize();
         initUI();
         refreshProgramList();
-        bindFullscreenShortcuts();
-        // 关闭对话框仅销毁视图：停止定时器、卸载回调，进程继续后台运行
-        setDefaultCloseOperation(DISPOSE_ON_CLOSE);
-        addWindowListener(new WindowAdapter() {
-            
-            @Override
-            public void windowOpened(WindowEvent e) {
-                // 布局完成后按比例定位分割条：表单约 45%，控制台约 55%
-                rightSplitPane.setDividerLocation(0.45);
-            }
-            
-            @Override
-            public void windowClosed(WindowEvent e) {
-                cleanupOnClose();
-            }
-        });
+        bindSaveShortcut();
+        // 布局完成后按表单实际高度定位分割条：配置区完整展示，不出滚动条
+        SwingUtilities.invokeLater(this::fitFormDivider);
         flushTimer = new Timer(200, e -> flushPendingOutput());
         flushTimer.start();
     }
@@ -213,7 +205,7 @@ public class ProgramContainerDialog extends FullscreenJDialog {
         listScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
         leftPanel.add(listScrollPane, BorderLayout.CENTER);
         
-        JButton addBtn = ButtonFactory.createPrimary("新建程序");
+        JButton addBtn = ButtonFactory.createPrimary("新增程序");
         addBtn.addActionListener(e -> createNewProgram());
         JPanel leftBtnPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
         leftBtnPanel.add(addBtn);
@@ -222,8 +214,15 @@ public class ProgramContainerDialog extends FullscreenJDialog {
         // ── 右侧：配置表单 + 控制台 ──
         JPanel rightPanel = new JPanel(new BorderLayout(5, 5));
         rightSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, createFormPanel(), createConsolePanel());
-        // 窗口拉伸时额外空间 45% 给表单，其余归控制台，配置项尽量不被压缩
-        rightSplitPane.setResizeWeight(0.45);
+        // 拉伸/收缩时额外空间全部归控制台，配置区始终保持表单首选高度（不出滚动条）
+        rightSplitPane.setResizeWeight(0.0);
+        // 窗口尺寸变化时重新按表单高度定位分割条，避免配置区被裁切出现滚动条
+        rightSplitPane.addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentResized(ComponentEvent e) {
+                fitFormDivider();
+            }
+        });
         rightPanel.add(rightSplitPane, BorderLayout.CENTER);
         
         JSplitPane rootSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, leftPanel, rightPanel);
@@ -240,8 +239,7 @@ public class ProgramContainerDialog extends FullscreenJDialog {
         formPanel = new JPanel(new GridBagLayout());
         createFormFields();
         rebuildFormPanel();
-        // 表单置于可滚动容器：程序类型切换后行数变化或窗口较矮时，
-        // 配置项可滚动查看，不会被控制台区域遮挡或裁切
+        // 表单置于可滚动容器：仅作为窗口过矮时的兜底（分割条正常按表单首选高度定位，不出现滚动条）
         JScrollPane scroll = new JScrollPane(formPanel);
         scroll.setBorder(BorderFactory.createTitledBorder("程序配置"));
         scroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
@@ -249,6 +247,18 @@ public class ProgramContainerDialog extends FullscreenJDialog {
         scroll.getVerticalScrollBar().setUnitIncrement(16);
         formScroll = scroll;
         return scroll;
+    }
+    
+    /**
+     * 按表单首选高度定位分割条：配置区完整展示不出现滚动条，剩余高度全部给控制台。 窗口过矮时以控制台最小高度兜底，配置区退化为滚动展示。 控制台双击全屏状态或尚未完成布局时跳过
+     */
+    private void fitFormDivider() {
+        if (consoleFullscreen || formScroll == null || rightSplitPane.getHeight() <= 0) {
+            return;
+        }
+        int formHeight = formScroll.getPreferredSize().height;
+        int maxFormHeight = rightSplitPane.getHeight() - rightSplitPane.getDividerSize() - MIN_CONSOLE_HEIGHT;
+        rightSplitPane.setDividerLocation(Math.min(formHeight, maxFormHeight));
     }
     
     /**
@@ -368,6 +378,8 @@ public class ProgramContainerDialog extends FullscreenJDialog {
         
         formPanel.revalidate();
         formPanel.repaint();
+        // 行数随程序类型变化（Java/Python 多一行），布局完成后重新适配分割条高度
+        SwingUtilities.invokeLater(this::fitFormDivider);
     }
     
     /**
@@ -521,7 +533,7 @@ public class ProgramContainerDialog extends FullscreenJDialog {
                     consoleArea.selectAll();
                     consoleArea.copy();
                     consoleArea.setCaretPosition(0);
-                    JOptionPane.showMessageDialog(ProgramContainerDialog.this, "控制台内容已复制到剪贴板", "提示", JOptionPane.INFORMATION_MESSAGE);
+                    JOptionPane.showMessageDialog(ProgramContainerPanel.this, "控制台内容已复制到剪贴板", "提示", JOptionPane.INFORMATION_MESSAGE);
                 });
                 JMenuItem clearItem = new JMenuItem("清空控制台");
                 clearItem.addActionListener(ev -> clearConsole());
@@ -553,7 +565,7 @@ public class ProgramContainerDialog extends FullscreenJDialog {
     }
     
     /**
-     * 双击控制台切换全屏展示：直接移除表单区让控制台占满整个右侧区域； 再双击放回表单并恢复约 45% 的占比。 不用 setDividerLocation(1.0)——它受表单最小尺寸 clamp 且在布局变化后可能被重置，导致全屏不生效
+     * 双击控制台切换全屏展示：直接移除表单区让控制台占满整个右侧区域； 再双击放回表单并按表单高度重新定位分割条。 不用 setDividerLocation(1.0)——它受表单最小尺寸 clamp 且在布局变化后可能被重置，导致全屏不生效
      */
     private void toggleConsoleFullscreen() {
         consoleFullscreen = !consoleFullscreen;
@@ -561,7 +573,7 @@ public class ProgramContainerDialog extends FullscreenJDialog {
             rightSplitPane.setTopComponent(null);
         } else {
             rightSplitPane.setTopComponent(formScroll);
-            rightSplitPane.setDividerLocation(0.45);
+            SwingUtilities.invokeLater(this::fitFormDivider);
         }
     }
     
@@ -786,7 +798,7 @@ public class ProgramContainerDialog extends FullscreenJDialog {
     }
     
     /**
-     * 复制新增：以指定程序配置为模板填充新建表单，名称自动追加「-副本」后缀。 表单不关联已有程序（selectedConfig 置空），保存时按新建程序插入。
+     * 复制新增：以指定程序配置为模板填充新建表单，名称自动追加「-副本」后缀。 表单不关联已有程序（selectedConfig 置空），保存时按新增程序插入。
      */
     private void duplicateProgram(ProgramConfig config) {
         // 控制台处于双击全屏状态时自动恢复表单区，便于填写新配置
@@ -806,7 +818,7 @@ public class ProgramContainerDialog extends FullscreenJDialog {
     }
     
     /**
-     * 保存当前表单：新建程序插入并回填 id，已有程序更新；成功后刷新列表并保持选中。 校验失败或保存失败时弹出提示并返回 false。
+     * 保存当前表单：新增程序插入并回填 id，已有程序更新；成功后刷新列表并保持选中。 校验失败或保存失败时弹出提示并返回 false。
      */
     private boolean saveCurrentForm() {
         String name = nameField.getText().trim();
@@ -839,7 +851,7 @@ public class ProgramContainerDialog extends FullscreenJDialog {
                 return false;
             }
         } else {
-            // 新建程序
+            // 新增程序
             if (sameName != null) {
                 JOptionPane.showMessageDialog(this, "已存在同名程序，请重新命名", "错误", JOptionPane.WARNING_MESSAGE);
                 return false;
@@ -1117,25 +1129,12 @@ public class ProgramContainerDialog extends FullscreenJDialog {
     }
     
     /**
-     * 对话框关闭清理：停止定时器、卸载服务回调（进程继续后台运行）
-     */
-    private void cleanupOnClose() {
-        if (flushTimer != null) {
-            flushTimer.stop();
-        }
-        if (attachedId != null) {
-            PROCESS_SERVICE.detachListener(attachedId);
-            attachedId = null;
-        }
-    }
-    
-    /**
      * 绑定快捷键：Ctrl+S 保存程序配置
      */
-    private void bindFullscreenShortcuts() {
+    private void bindSaveShortcut() {
         KeyStroke ctrlS = KeyStroke.getKeyStroke(KeyEvent.VK_S, KeyEvent.CTRL_DOWN_MASK, true);
-        getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(ctrlS, "toggleSaveProgram");
-        getRootPane().getActionMap().put("toggleSaveProgram", new AbstractAction() {
+        getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(ctrlS, "toggleSaveProgram");
+        getActionMap().put("toggleSaveProgram", new AbstractAction() {
             
             @Override
             public void actionPerformed(ActionEvent e) {

@@ -6,19 +6,19 @@
  *
  * Written by 软件研究中心（深圳曼顿科技有限公司）
  */
-package com.omnikit.ui;
+package com.omnikit.ui.aitraining;
 
+import com.omnikit.components.ButtonFactory;
 import com.omnikit.components.ChildLayoutPanel;
-import com.omnikit.components.FullscreenJDialog;
 import com.omnikit.core.AiQuestionApiClient;
 import com.omnikit.model.AiEnvConfig;
 import com.omnikit.model.AiMetaConfig;
 import com.omnikit.model.AiQuestion;
+import com.omnikit.ui.UiConstants;
 import com.omnikit.util.ConfigUtil;
 import com.omnikit.util.LogUtil;
 import com.omnikit.util.SQLiteConfigUtil;
 import java.awt.*;
-import java.awt.event.*;
 import java.io.File;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -33,23 +33,22 @@ import javax.swing.border.EmptyBorder;
 import javax.swing.event.PopupMenuEvent;
 import javax.swing.event.PopupMenuListener;
 import javax.swing.table.DefaultTableCellRenderer;
-import javax.swing.table.JTableHeader;
 import javax.swing.table.TableCellRenderer;
 import javax.swing.text.JTextComponent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * AI 问题管理对话框（业务页签切换：问题训练 / 回复审计）
+ * AI 问题管理面板（业务页签切换：问题训练 / 回复审计）
  * <p>
- * 本类作为主对话框壳，负责环境选择、页签切换、共享工具方法与共享内部类（渲染器/编辑器）。<br> 问题训练功能由 {@link QuestionTrainingPanel} 实现，回复审计功能由 {@link AnswerAuditPanel} 实现。
+ * 本类作为主面板壳，负责环境选择、页签切换、共享工具方法与共享内部类（渲染器/编辑器）。<br> 问题训练功能由 {@link QuestionTrainingPanel} 实现，回复审计功能由 {@link AnswerAuditPanel} 实现。
  *
  * @author liuweiping
  * @date 2026-09-16
  **/
-public class AiQuestionMangerDialog extends FullscreenJDialog {
+public class AiQuestionPanel extends JPanel {
     
-    private static final Logger logger = LoggerFactory.getLogger(AiQuestionMangerDialog.class);
+    private static final Logger logger = LoggerFactory.getLogger(AiQuestionPanel.class);
     
     // ── 共享常量 ──
     
@@ -160,8 +159,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
      */
     private final Frame ownerFrame;
     
-    public AiQuestionMangerDialog(Frame owner) {
-        super("AIQUESTION", owner, "AI 问题管理", true, 1280, 780);
+    public AiQuestionPanel(Frame owner) {
         this.ownerFrame = owner;
         SQLiteConfigUtil.getInstance().initialize();
         initUI();
@@ -172,47 +170,12 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         refreshQuestionTable();
     }
     
-    // ────────── UI 初始化 ──────────
-    
-    /**
-     * 供面板调用的全屏切换公开方法（父类 toggleFullscreen 为 protected）
-     */
-    public void toggleFullscreenDialog() {
-        toggleFullscreen();
-    }
-    
-    private final MouseAdapter doubleClickFullscreenListener = new MouseAdapter() {
-        @Override
-        public void mouseClicked(MouseEvent e) {
-            if (e.getClickCount() == 2 && SwingUtilities.isLeftMouseButton(e)) {
-                toggleFullscreen();
-            }
-        }
-    };
-    
-    private void bindDoubleClickFullscreen(Component component) {
-        if (!isDoubleClickExcluded(component)) {
-            component.addMouseListener(doubleClickFullscreenListener);
-        }
-        if (component instanceof Container container) {
-            for (Component child : container.getComponents()) {
-                bindDoubleClickFullscreen(child);
-            }
-        }
-    }
-    
-    private static boolean isDoubleClickExcluded(Component component) {
-        return component instanceof JTable || component instanceof JTextComponent || component instanceof JComboBox
-                || component instanceof AbstractButton || component instanceof JScrollBar || component instanceof JList
-                || component instanceof JTabbedPane || component instanceof JTableHeader || component.getClass().getName().contains("Divider");
-    }
-    
     private void initUI() {
         setLayout(new BorderLayout(6, 6));
-        getRootPane().setBorder(new EmptyBorder(10, 12, 10, 12));
+        //        setBorder(new EmptyBorder(10, 12, 10, 12));
         
         // ── 顶栏：环境选择 ──
-        JPanel headerPanel = new JPanel(new BorderLayout(8, 0));
+        JPanel headerPanel = new JPanel(new BorderLayout(0, 0));
         envCombo = new JComboBox<>();
         envCombo.setRenderer((list, value, index, isSelected, cellHasFocus) -> {
             JLabel label = new JLabel(value == null ? "" : value.getEnvName() + "（" + value.getHost() + "）");
@@ -254,10 +217,8 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         statusLabel = new JLabel(" ");
         statusLabel.setFont(UiConstants.FONT_SANS_11);
         statusLabel.setBorder(new EmptyBorder(2, 4, 2, 4));
-        statusLabel.setToolTipText("双击空白区域可全屏 / 退出全屏（F11 / Esc）");
+        statusLabel.setToolTipText("F11 全屏 / 退出全屏（Esc 关闭）");
         add(statusLabel, BorderLayout.SOUTH);
-        
-        bindDoubleClickFullscreen(this);
     }
     
     private void onBusinessTabChanged() {
@@ -496,7 +457,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         }
         return LocalDateTime.ofInstant(Instant.ofEpochMilli(millis), ZoneId.systemDefault()).format(TRAINING_TIME_FORMATTER);
     }
-
+    
     /**
      * 将 {@link LocalDateTime} 格式化为 yyyy-MM-dd HH:mm:ss（null 返回空字符串）
      */
@@ -527,7 +488,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
         }
         return TRAINING_STATUS_TEXTS[index];
     }
-
+    
     /**
      * 训练模式展示文案：Auto-自动；Manual-手动；其余值原样展示
      */
@@ -541,7 +502,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
             default -> trainingModel;
         };
     }
-
+    
     /**
      * 训练模式展示颜色：自动为主题色，手动为灰色
      */
@@ -605,8 +566,7 @@ public class AiQuestionMangerDialog extends FullscreenJDialog {
     }
     
     /**
-     * 根据原始 userId 查找用户名称并格式化为「用户名称（用户ID）」<br>
-     * userId 为 0、-1 或空时统一展示「全局」（与 {@link AiQuestion#isGlobalCode(String)} 保持一致）
+     * 根据原始 userId 查找用户名称并格式化为「用户名称（用户ID）」<br> userId 为 0、-1 或空时统一展示「全局」（与 {@link AiQuestion#isGlobalCode(String)} 保持一致）
      */
     static String formatUserIdDisplay(String userId, List<String> userOptions) {
         if (AiQuestion.isGlobalCode(userId)) {

@@ -1,7 +1,10 @@
-package com.omnikit.ui;
+package com.omnikit.ui.scripts;
 
 import com.omnikit.core.GitLabService;
 import com.omnikit.model.GitLabAuthConfig;
+import com.omnikit.components.AbsDialog;
+import com.omnikit.components.ButtonFactory;
+import com.omnikit.ui.UiConstants;
 import com.omnikit.util.IconUtil;
 import com.omnikit.util.LogUtil;
 import com.omnikit.util.SQLiteConfigUtil;

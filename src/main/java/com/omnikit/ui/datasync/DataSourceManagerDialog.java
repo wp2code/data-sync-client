@@ -1,4 +1,4 @@
-package com.omnikit.ui;
+package com.omnikit.ui.datasync;
 
 import com.omnikit.components.ChildLayoutPanel;
 import com.omnikit.components.CustomTextField;
@@ -9,6 +9,7 @@ import com.omnikit.components.combobox.IconJComboBox;
 import com.omnikit.core.DbConnector;
 import com.omnikit.model.DataSource;
 import com.omnikit.model.DbType;
+import com.omnikit.components.ButtonFactory;
 import com.omnikit.util.ConfigUtil;
 import com.omnikit.util.GlobalUtil;
 import com.omnikit.util.IconUtil;
@@ -198,11 +199,9 @@ public class DataSourceManagerDialog extends FullscreenJDialog {
         final JButton deleteBtn = ButtonFactory.createDestructive("删除");
         testBtn = ButtonFactory.createSecondary("测试连接");
         final JButton saveBtn = ButtonFactory.createPrimary("保存");
-        final JButton cancelBtn = ButtonFactory.createSecondary("取消");
         btnPanel.add(deleteBtn);
         btnPanel.add(testBtn);
         btnPanel.add(saveBtn);
-        btnPanel.add(cancelBtn);
         bottomPanel.add(btnPanel, BorderLayout.SOUTH);
         
         // ── 右侧整体：表单 + 底部日志/按钮 ──
@@ -220,7 +219,6 @@ public class DataSourceManagerDialog extends FullscreenJDialog {
         // ── 事件绑定 ──
         deleteBtn.addActionListener(e -> deleteDataSource(selectedDataSource));
         saveBtn.addActionListener(e -> saveCurrent());
-        cancelBtn.addActionListener(e -> cancelEdit());
         testBtn.addActionListener(e -> testConnection());
         
         // 初始加载
@@ -486,15 +484,6 @@ public class DataSourceManagerDialog extends FullscreenJDialog {
         refreshList();
     }
     
-    private void cancelEdit() {
-        DataSource ds = selectedDataSource;
-        if (ds != null) {
-            loadConfigToForm(ds);
-        } else {
-            startNew();
-        }
-        dispose();
-    }
     
     private void testConnection() {
         DataSource ds = buildFromForm();

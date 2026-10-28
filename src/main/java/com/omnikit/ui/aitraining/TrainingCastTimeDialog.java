@@ -6,11 +6,13 @@
  *
  * Written by 软件研究中心（深圳曼顿科技有限公司）
  */
-package com.omnikit.ui;
+package com.omnikit.ui.aitraining;
 
 import com.omnikit.components.CustomTextField;
 import com.omnikit.core.AiQuestionApiClient;
 import com.omnikit.model.AiEnvConfig;
+import com.omnikit.components.ButtonFactory;
+import com.omnikit.ui.UiConstants;
 import java.awt.*;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -170,8 +172,8 @@ public class TrainingCastTimeDialog extends JDialog {
         void onAutoRefreshStopped(String trainingNo);
     }
     
-    public TrainingCastTimeDialog(Dialog owner, AiEnvConfig envConfig, String initialTrainingNo) {
-        super(owner, "训练耗时查询", false);
+    public TrainingCastTimeDialog(Component owner, AiEnvConfig envConfig, String initialTrainingNo) {
+        super((Frame) null, "训练耗时查询", false);
         this.envConfig = envConfig;
         setSize(560, 445);
         setResizable(false);

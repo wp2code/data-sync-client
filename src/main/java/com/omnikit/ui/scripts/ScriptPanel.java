@@ -1,8 +1,7 @@
-package com.omnikit.ui;
+package com.omnikit.ui.scripts;
 
 import com.omnikit.components.CustomTextField;
 import com.omnikit.components.FilterComboBox;
-import com.omnikit.components.FullscreenJDialog;
 import com.omnikit.components.OptionJPanel;
 import com.omnikit.components.combobox.IconItem;
 import com.omnikit.components.combobox.IconJComboBox;
@@ -14,6 +13,7 @@ import com.omnikit.model.DbType;
 import com.omnikit.model.FileParams;
 import com.omnikit.model.ProjectItem;
 import com.omnikit.model.Script;
+import com.omnikit.components.ButtonFactory;
 import com.omnikit.util.ConfigUtil;
 import com.omnikit.util.GlobalUtil;
 import com.omnikit.util.IconUtil;
@@ -43,14 +43,14 @@ import org.gitlab4j.api.models.RepositoryFile;
 import org.gitlab4j.api.models.RepositoryFileResponse;
 
 /**
- * 脚本管理对话框
+ * 脚本管理面板
  * <p>
  * 支持：新建脚本、选中脚本在控制台预览、编辑保存、删除脚本、在目标库执行脚本。
  *
  * @author liuweiping
  * @date 2026-07-03
  **/
-public class ScriptMangerDialog extends FullscreenJDialog {
+public class ScriptPanel extends JPanel {
     
     private final List<OptionJPanel> scriptPanelList = new ArrayList<>();
     
@@ -90,19 +90,13 @@ public class ScriptMangerDialog extends FullscreenJDialog {
     
     private OptionJPanel selectedPanel;
     
-    public ScriptMangerDialog(Frame owner) {
-        super("SCRIPT", owner, "脚本管理", true, 900, 720);
+    public ScriptPanel() {
         SQLiteConfigUtil.getInstance().initialize();
         initUI();
         refreshScriptList();
-        bindFullscreenShortcuts();
-        addWindowListener(new WindowAdapter() {
-            @Override
-            public void windowOpened(WindowEvent e) {
-                // 避免搜索框默认获得焦点，将焦点移到脚本列表
-                scriptListPanel.requestFocusInWindow();
-            }
-        });
+        bindSaveShortcut();
+        // 避免搜索框默认获得焦点，将焦点移到脚本列表
+        SwingUtilities.invokeLater(() -> scriptListPanel.requestFocusInWindow());
     }
     
     private void initUI() {
@@ -1202,12 +1196,12 @@ public class ScriptMangerDialog extends FullscreenJDialog {
     }
     
     /**
-     * 绑定全屏快捷键：Ctrl+s 保存脚本
+     * 绑定快捷键：Ctrl+S 保存脚本
      */
-    private void bindFullscreenShortcuts() {
+    private void bindSaveShortcut() {
         KeyStroke ctrlS = KeyStroke.getKeyStroke(KeyEvent.VK_S, KeyEvent.CTRL_DOWN_MASK, true);
-        getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(ctrlS, "toggleSaveScript");
-        getRootPane().getActionMap().put("toggleSaveScript", new AbstractAction() {
+        getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(ctrlS, "toggleSaveScript");
+        getActionMap().put("toggleSaveScript", new AbstractAction() {
             @Override
             public void actionPerformed(java.awt.event.ActionEvent e) {
                 saveSelectedScript();

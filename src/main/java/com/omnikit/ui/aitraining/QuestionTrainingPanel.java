@@ -6,7 +6,7 @@
  *
  * Written by 软件研究中心（深圳曼顿科技有限公司）
  */
-package com.omnikit.ui;
+package com.omnikit.ui.aitraining;
 
 import com.omnikit.components.CheckBoxComboBox;
 import com.omnikit.components.ChildLayoutPanel;
@@ -16,6 +16,8 @@ import com.omnikit.core.AiQuestionApiClient;
 import com.omnikit.model.AiEnvConfig;
 import com.omnikit.model.AiMetaConfig;
 import com.omnikit.model.AiQuestion;
+import com.omnikit.components.ButtonFactory;
+import com.omnikit.ui.UiConstants;
 import com.omnikit.util.ExcelExportUtil;
 import com.omnikit.util.ExcelQuestionUtil;
 import java.awt.*;
@@ -172,7 +174,7 @@ public class QuestionTrainingPanel {
     private static final int ACTION_COLUMN_WIDTH = 260;
     
     // ── 字段 ──
-    private final AiQuestionMangerDialog dialog;
+    private final AiQuestionPanel dialog;
     
     private final List<QuestionEntryRow> entryRows = new ArrayList<>();
     
@@ -244,7 +246,7 @@ public class QuestionTrainingPanel {
     
     private long totalCount = 0;
     
-    private int pageSize = AiQuestionMangerDialog.DEFAULT_PAGE_SIZE;
+    private int pageSize = AiQuestionPanel.DEFAULT_PAGE_SIZE;
     
     private final List<AiQuestion> allQuestions = new ArrayList<>();
     
@@ -275,7 +277,7 @@ public class QuestionTrainingPanel {
     
     // ────────── 构造 ──────────
     
-    QuestionTrainingPanel(AiQuestionMangerDialog dialog) {
+    QuestionTrainingPanel(AiQuestionPanel dialog) {
         this.dialog = dialog;
     }
     
@@ -442,7 +444,7 @@ public class QuestionTrainingPanel {
             if (question.isEmpty()) {
                 continue;
             }
-            String userId = AiQuestionMangerDialog.extractUserIdFromCombo(row.userIdField.getSelectedItem());
+            String userId = AiQuestionPanel.extractUserIdFromCombo(row.userIdField.getSelectedItem());
             if (!userId.isEmpty() && !SAME_AS_ABOVE.equals(userId)) {
                 resolvedUserId = userId;
             }
@@ -624,10 +626,10 @@ public class QuestionTrainingPanel {
         for (AiQuestion question : questions) {
             addEntryRow();
             QuestionEntryRow row = entryRows.get(entryRows.size() - 1);
-            row.questionField.setText(AiQuestionMangerDialog.nullToEmpty(question.getQuestion()));
-            row.userIdField.getEditor().setItem(AiQuestionMangerDialog.nullToEmpty(question.getUserId()));
-            row.classifyCombo.getEditor().setItem(AiQuestionMangerDialog.nullToEmpty(question.getQuestionClassify()));
-            row.trainingParamArea.setText(AiQuestionMangerDialog.nullToEmpty(question.getTrainingParam()));
+            row.questionField.setText(AiQuestionPanel.nullToEmpty(question.getQuestion()));
+            row.userIdField.getEditor().setItem(AiQuestionPanel.nullToEmpty(question.getUserId()));
+            row.classifyCombo.getEditor().setItem(AiQuestionPanel.nullToEmpty(question.getQuestionClassify()));
+            row.trainingParamArea.setText(AiQuestionPanel.nullToEmpty(question.getTrainingParam()));
             List<String> currentCodes = question.getProjectCodeList();
             if (row.projectSameAsAbove != null && currentCodes != null && currentCodes.equals(prevProjectCodes)) {
                 // 保持『同上』选中状态
@@ -640,7 +642,7 @@ public class QuestionTrainingPanel {
                 }
                 if (currentCodes != null && !currentCodes.isEmpty()) {
                     row.selectedProjectCodes.addAll(currentCodes);
-                    row.projectBtn.setText(AiQuestionMangerDialog.projectButtonLabel(currentCodes));
+                    row.projectBtn.setText(AiQuestionPanel.projectButtonLabel(currentCodes));
                 }
             }
             prevProjectCodes = currentCodes;
@@ -927,14 +929,14 @@ public class QuestionTrainingPanel {
         gbc.weightx = 1.0;
         panel.add(pasteUserIdField, gbc);
         
-        pasteProjectBtn = ButtonFactory.createSecondary(AiQuestionMangerDialog.projectButtonLabel(pasteSelectedProjects));
+        pasteProjectBtn = ButtonFactory.createSecondary(AiQuestionPanel.projectButtonLabel(pasteSelectedProjects));
         pasteProjectBtn.setToolTipText("点击选择所属项目（可多选，适用全部问题）");
         pasteProjectBtn.addActionListener(e -> {
             List<String> result = dialog.showProjectMultiSelectDialog("选择所属项目", pasteSelectedProjects);
             if (result != null) {
                 pasteSelectedProjects.clear();
                 pasteSelectedProjects.addAll(result);
-                pasteProjectBtn.setText(AiQuestionMangerDialog.projectButtonLabel(pasteSelectedProjects));
+                pasteProjectBtn.setText(AiQuestionPanel.projectButtonLabel(pasteSelectedProjects));
             }
         });
         gbc.gridx = 0;
@@ -1015,7 +1017,7 @@ public class QuestionTrainingPanel {
             JOptionPane.showMessageDialog(dialog, "请先输入问题内容", "提示", JOptionPane.WARNING_MESSAGE);
             return;
         }
-        String userId = AiQuestionMangerDialog.extractUserIdFromCombo(pasteUserIdField.getSelectedItem());
+        String userId = AiQuestionPanel.extractUserIdFromCombo(pasteUserIdField.getSelectedItem());
         String classify = dialog.editableComboText(pasteClassifyCombo).trim();
         String trainingParam = pasteTrainingParamArea.getText().trim();
         int autoTraining =
@@ -1053,7 +1055,7 @@ public class QuestionTrainingPanel {
         pasteUserIdField.setSelectedItem(null);
         pasteUserIdField.getEditor().setItem("");
         pasteSelectedProjects.clear();
-        pasteProjectBtn.setText(AiQuestionMangerDialog.projectButtonLabel(pasteSelectedProjects));
+        pasteProjectBtn.setText(AiQuestionPanel.projectButtonLabel(pasteSelectedProjects));
         pasteClassifyCombo.getEditor().setItem("");
         pasteAutoTrainingCombo.setSelectedItem("允许");
         pasteTrainingParamArea.setText("");
@@ -1092,7 +1094,7 @@ public class QuestionTrainingPanel {
                 userFilterCombo.addItem(ALL_USER);
                 userFilterCombo.addItem(AiQuestion.GLOBAL_DISPLAY_TEXT);
                 for (String userOption : dialog.userOptions) {
-                    userFilterCombo.addItem(AiQuestionMangerDialog.formatUserOption(userOption));
+                    userFilterCombo.addItem(AiQuestionPanel.formatUserOption(userOption));
                 }
                 if (previousUserFilter != null) {
                     userFilterCombo.setSelectedItem(previousUserFilter);
@@ -1105,10 +1107,10 @@ public class QuestionTrainingPanel {
     
     void refreshProjectOptionsInPanel() {
         pasteSelectedProjects.clear();
-        pasteProjectBtn.setText(AiQuestionMangerDialog.projectButtonLabel(pasteSelectedProjects));
+        pasteProjectBtn.setText(AiQuestionPanel.projectButtonLabel(pasteSelectedProjects));
         for (QuestionEntryRow row : entryRows) {
             row.selectedProjectCodes.clear();
-            row.projectBtn.setText(AiQuestionMangerDialog.projectButtonLabel(row.selectedProjectCodes));
+            row.projectBtn.setText(AiQuestionPanel.projectButtonLabel(row.selectedProjectCodes));
         }
     }
     
@@ -1489,7 +1491,7 @@ public class QuestionTrainingPanel {
         userFilterCombo.addItem(ALL_USER);
         userFilterCombo.addItem(AiQuestion.GLOBAL_DISPLAY_TEXT);
         for (String userOption : dialog.userOptions) {
-            userFilterCombo.addItem(AiQuestionMangerDialog.formatUserOption(userOption));
+            userFilterCombo.addItem(AiQuestionPanel.formatUserOption(userOption));
         }
         userFilterCombo.setPreferredSize(new Dimension(160, 26));
         userFilterCombo.setToolTipText("按用户过滤问题列表，选项来自当前环境用户列表");
@@ -1522,45 +1524,45 @@ public class QuestionTrainingPanel {
         questionTable.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         questionTable.setRowHeight(28);
         questionTable.getTableHeader().setReorderingAllowed(false);
-        int[] columnWidths = {AiQuestionMangerDialog.CHECK_COLUMN_WIDTH, 50, 280, 90, 120, 100, 150, 110, 150, 90, 80, 90, 90, 140, 140, 140, 100,
+        int[] columnWidths = {AiQuestionPanel.CHECK_COLUMN_WIDTH, 50, 280, 90, 120, 100, 150, 110, 150, 90, 80, 90, 90, 140, 140, 140, 100,
                 110, ACTION_COLUMN_WIDTH};
         for (int i = 0; i < columnWidths.length; i++) {
             questionTable.getColumnModel().getColumn(i).setPreferredWidth(columnWidths[i]);
         }
         TableColumn checkColumn = questionTable.getColumnModel().getColumn(COL_CHECK);
-        checkColumn.setMinWidth(AiQuestionMangerDialog.CHECK_COLUMN_WIDTH);
-        checkColumn.setMaxWidth(AiQuestionMangerDialog.CHECK_COLUMN_WIDTH);
-        checkColumn.setCellRenderer(new AiQuestionMangerDialog.CheckBoxCellRenderer());
+        checkColumn.setMinWidth(AiQuestionPanel.CHECK_COLUMN_WIDTH);
+        checkColumn.setMaxWidth(AiQuestionPanel.CHECK_COLUMN_WIDTH);
+        checkColumn.setCellRenderer(new AiQuestionPanel.CheckBoxCellRenderer());
         checkColumn.setHeaderRenderer(
-                new AiQuestionMangerDialog.HeaderCheckBoxRenderer(() -> tableModel.isCurrentPageAllChecked(), () -> tableModel.getRowCount()));
+                new AiQuestionPanel.HeaderCheckBoxRenderer(() -> tableModel.isCurrentPageAllChecked(), () -> tableModel.getRowCount()));
         TableColumn actionColumn = questionTable.getColumnModel().getColumn(COL_ACTION);
         actionColumn.setMinWidth(ACTION_COLUMN_WIDTH);
         actionColumn.setMaxWidth(ACTION_COLUMN_WIDTH);
         questionTable.getColumnModel().getColumn(COL_ID).setCellRenderer(dialog.centeredRenderer());
-        questionTable.getColumnModel().getColumn(COL_PROJECT).setCellRenderer(new AiQuestionMangerDialog.TextCellRenderer(16));
-        questionTable.getColumnModel().getColumn(COL_QUESTION).setCellRenderer(new AiQuestionMangerDialog.TextCellRenderer(48));
-        questionTable.getColumnModel().getColumn(COL_CLASSIFY).setCellRenderer(new AiQuestionMangerDialog.TextCellRenderer(12));
-        questionTable.getColumnModel().getColumn(COL_USER).setCellRenderer(new AiQuestionMangerDialog.UserIdCellRenderer(dialog.userOptions));
-        questionTable.getColumnModel().getColumn(COL_TRAINING_PARAM).setCellRenderer(new AiQuestionMangerDialog.TextCellRenderer(24));
+        questionTable.getColumnModel().getColumn(COL_PROJECT).setCellRenderer(new AiQuestionPanel.TextCellRenderer(16));
+        questionTable.getColumnModel().getColumn(COL_QUESTION).setCellRenderer(new AiQuestionPanel.TextCellRenderer(48));
+        questionTable.getColumnModel().getColumn(COL_CLASSIFY).setCellRenderer(new AiQuestionPanel.TextCellRenderer(12));
+        questionTable.getColumnModel().getColumn(COL_USER).setCellRenderer(new AiQuestionPanel.UserIdCellRenderer(dialog.userOptions));
+        questionTable.getColumnModel().getColumn(COL_TRAINING_PARAM).setCellRenderer(new AiQuestionPanel.TextCellRenderer(24));
         questionTable.getColumnModel().getColumn(COL_TRAINING_NO).setCellRenderer(dialog.centeredRenderer());
-        questionTable.getColumnModel().getColumn(COL_ANSWER).setCellRenderer(new AiQuestionMangerDialog.TextCellRenderer(24));
-        AiQuestionMangerDialog.SelectableTextEditor questionTextEditor = new AiQuestionMangerDialog.SelectableTextEditor();
+        questionTable.getColumnModel().getColumn(COL_ANSWER).setCellRenderer(new AiQuestionPanel.TextCellRenderer(24));
+        AiQuestionPanel.SelectableTextEditor questionTextEditor = new AiQuestionPanel.SelectableTextEditor();
         questionTable.getColumnModel().getColumn(COL_QUESTION).setCellEditor(questionTextEditor);
         questionTable.getColumnModel().getColumn(COL_ANSWER).setCellEditor(questionTextEditor);
         questionTable.getColumnModel().getColumn(COL_TRAINING_NO).setCellEditor(questionTextEditor);
-        questionTable.getColumnModel().getColumn(COL_ANSWER_ID).setCellRenderer(new AiQuestionMangerDialog.AnswerIdCellRenderer());
+        questionTable.getColumnModel().getColumn(COL_ANSWER_ID).setCellRenderer(new AiQuestionPanel.AnswerIdCellRenderer());
         questionTable.getColumnModel().getColumn(COL_TRAINING_STATUS).setCellRenderer((table, value, isSelected, hasFocus, row, column) -> {
             Integer status = (Integer) value;
-            JLabel label = new JLabel(AiQuestionMangerDialog.trainingStatusText(status));
+            JLabel label = new JLabel(AiQuestionPanel.trainingStatusText(status));
             label.setHorizontalAlignment(SwingConstants.CENTER);
-            label.setForeground(AiQuestionMangerDialog.trainingStatusColor(status));
+            label.setForeground(AiQuestionPanel.trainingStatusColor(status));
             return label;
         });
         questionTable.getColumnModel().getColumn(COL_TRAINING_MODEL).setCellRenderer((table, value, isSelected, hasFocus, row, column) -> {
             String trainingModel = value != null ? value.toString() : null;
-            JLabel label = new JLabel(AiQuestionMangerDialog.trainingModelText(trainingModel));
+            JLabel label = new JLabel(AiQuestionPanel.trainingModelText(trainingModel));
             label.setHorizontalAlignment(SwingConstants.CENTER);
-            label.setForeground(AiQuestionMangerDialog.trainingModelColor(trainingModel));
+            label.setForeground(AiQuestionPanel.trainingModelColor(trainingModel));
             return label;
         });
         questionTable.getColumnModel().getColumn(COL_SUBMIT_TRAINING_TIME).setCellRenderer(dialog.centeredRenderer());
@@ -1573,10 +1575,10 @@ public class QuestionTrainingPanel {
             label.setForeground("允许".equals(value.toString()) ? UiConstants.COLOR_SUCCESS : UiConstants.COLOR_DANGER);
             return label;
         });
-        questionTable.getColumnModel().getColumn(COL_REMARK).setCellRenderer(new AiQuestionMangerDialog.TextCellRenderer(20));
+        questionTable.getColumnModel().getColumn(COL_REMARK).setCellRenderer(new AiQuestionPanel.TextCellRenderer(20));
         questionTable.getColumnModel().getColumn(COL_ACTION).setCellRenderer(
-                new AiQuestionMangerDialog.ActionCellRenderer(() -> hoverActionRow, () -> hoverActionZone, "查看问题详情（全部字段）", true,
-                        AiQuestionMangerDialog.ACTION_DELETE));
+                new AiQuestionPanel.ActionCellRenderer(() -> hoverActionRow, () -> hoverActionZone, "查看问题详情（全部字段）", true,
+                        AiQuestionPanel.ACTION_DELETE));
         questionTable.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -1653,12 +1655,12 @@ public class QuestionTrainingPanel {
         pageRightPanel.add(totalLabel);
         pageRightPanel.add(Box.createHorizontalStrut(12));
         pageRightPanel.add(new JLabel("每页："));
-        pageSizeCombo = new JComboBox<>(AiQuestionMangerDialog.DEFAULT_PAGE_SCOPE);
+        pageSizeCombo = new JComboBox<>(AiQuestionPanel.DEFAULT_PAGE_SCOPE);
         pageSizeCombo.setEditable(true);
         pageSizeCombo.setPreferredSize(new Dimension(76, 26));
         pageSizeCombo.setToolTipText(
-                "选择或输入每页条数（" + AiQuestionMangerDialog.MIN_PAGE_SIZE + " ~ " + AiQuestionMangerDialog.MAX_PAGE_SIZE + "），回车或失去焦点生效");
-        pageSizeCombo.setSelectedItem(String.valueOf(AiQuestionMangerDialog.DEFAULT_PAGE_SIZE));
+                "选择或输入每页条数（" + AiQuestionPanel.MIN_PAGE_SIZE + " ~ " + AiQuestionPanel.MAX_PAGE_SIZE + "），回车或失去焦点生效");
+        pageSizeCombo.setSelectedItem(String.valueOf(AiQuestionPanel.DEFAULT_PAGE_SIZE));
         pageSizeCombo.addActionListener(e -> applyPageSizeFromCombo());
         if (pageSizeCombo.getEditor().getEditorComponent() instanceof JTextField editorField) {
             editorField.addFocusListener(new FocusAdapter() {
@@ -1682,9 +1684,6 @@ public class QuestionTrainingPanel {
         int row = questionTable.rowAtPoint(e.getPoint());
         int column = questionTable.columnAtPoint(e.getPoint());
         if (row < 0 || column < 0 || row >= tableModel.getRowCount()) {
-            if (e.getClickCount() == 2 && SwingUtilities.isLeftMouseButton(e)) {
-                dialog.toggleFullscreenDialog();
-            }
             return;
         }
         AiQuestion question = tableModel.getQuestionAt(row);
@@ -1699,12 +1698,12 @@ public class QuestionTrainingPanel {
             }
         } else if (column == COL_ACTION) {
             Rectangle cellRect = questionTable.getCellRect(row, column, false);
-            int zone = AiQuestionMangerDialog.actionZoneAt(e.getX(), cellRect, 4);
-            if (zone == AiQuestionMangerDialog.ACTION_VIEW) {
+            int zone = AiQuestionPanel.actionZoneAt(e.getX(), cellRect, 4);
+            if (zone == AiQuestionPanel.ACTION_VIEW) {
                 showQuestionDetail(question);
-            } else if (zone == AiQuestionMangerDialog.ACTION_EDIT) {
+            } else if (zone == AiQuestionPanel.ACTION_EDIT) {
                 editQuestion(question);
-            } else if (zone == AiQuestionMangerDialog.ACTION_TRAIN) {
+            } else if (zone == AiQuestionPanel.ACTION_TRAIN) {
                 trainSingleQuestion(question);
             } else {
                 deleteQuestion(question);
@@ -1725,7 +1724,7 @@ public class QuestionTrainingPanel {
             int hitColumn = questionTable.columnAtPoint(point);
             if (hitRow >= 0 && hitColumn == COL_ACTION) {
                 row = hitRow;
-                zone = AiQuestionMangerDialog.actionZoneAt(point.x, questionTable.getCellRect(hitRow, COL_ACTION, false), 4);
+                zone = AiQuestionPanel.actionZoneAt(point.x, questionTable.getCellRect(hitRow, COL_ACTION, false), 4);
                 clickable = true;
             } else if (hitRow >= 0 && hitColumn == COL_CHECK) {
                 clickable = true;
@@ -1927,7 +1926,7 @@ public class QuestionTrainingPanel {
         if (classifyFilter == null) {
             return true;
         }
-        return classifyFilter.equals(AiQuestionMangerDialog.nullToEmpty(question.getQuestionClassify()).trim());
+        return classifyFilter.equals(AiQuestionPanel.nullToEmpty(question.getQuestionClassify()).trim());
     }
     
     private List<String> extractProjects(List<AiQuestion> questions) {
@@ -1980,7 +1979,7 @@ public class QuestionTrainingPanel {
         if (projectFilter == null) {
             return true;
         }
-        return projectFilter.equals(AiQuestionMangerDialog.nullToEmpty(question.getProjectName()).trim());
+        return projectFilter.equals(AiQuestionPanel.nullToEmpty(question.getProjectName()).trim());
     }
     
     /**
@@ -1988,8 +1987,8 @@ public class QuestionTrainingPanel {
      * projectCode 但名称正常」的项目。
      */
     private static String projectDisplayText(AiQuestion question) {
-        String name = AiQuestionMangerDialog.nullToEmpty(question.getProjectName()).trim();
-        if (name.isEmpty() || AiQuestion.GLOBAL_CODE.equals(AiQuestionMangerDialog.nullToEmpty(question.getProjectCode()).trim())) {
+        String name = AiQuestionPanel.nullToEmpty(question.getProjectName()).trim();
+        if (name.isEmpty() || AiQuestion.GLOBAL_CODE.equals(AiQuestionPanel.nullToEmpty(question.getProjectCode()).trim())) {
             return AiQuestion.GLOBAL_DISPLAY_TEXT;
         }
         return name;
@@ -2000,7 +1999,7 @@ public class QuestionTrainingPanel {
      */
     private static String userDisplayText(AiQuestion question) {
         return AiQuestion.isGlobalCode(question.getUserId()) ? AiQuestion.GLOBAL_DISPLAY_TEXT
-                : AiQuestionMangerDialog.nullToEmpty(question.getUserId()).trim();
+                : AiQuestionPanel.nullToEmpty(question.getUserId()).trim();
     }
     
     private String selectedUserFilter() {
@@ -2013,7 +2012,7 @@ public class QuestionTrainingPanel {
         if (AiQuestion.GLOBAL_DISPLAY_TEXT.equals(text)) {
             return GLOBAL_USER_FILTER_VALUE;
         }
-        return AiQuestionMangerDialog.extractUserIdFromDisplayText(text);
+        return AiQuestionPanel.extractUserIdFromDisplayText(text);
     }
     
     private boolean matchesUserFilter(AiQuestion question, String userIdFilter) {
@@ -2022,9 +2021,9 @@ public class QuestionTrainingPanel {
         }
         // 选中「全局」（传参 0）时匹配全部全局记录：0、-1 或空
         if (AiQuestion.isGlobalCode(userIdFilter)) {
-            return AiQuestion.isGlobalCode(AiQuestionMangerDialog.nullToEmpty(question.getUserId()).trim());
+            return AiQuestion.isGlobalCode(AiQuestionPanel.nullToEmpty(question.getUserId()).trim());
         }
-        return userIdFilter.equals(AiQuestionMangerDialog.nullToEmpty(question.getUserId()).trim());
+        return userIdFilter.equals(AiQuestionPanel.nullToEmpty(question.getUserId()).trim());
     }
     
     private void onSearchFieldChanged() {
@@ -2111,9 +2110,9 @@ public class QuestionTrainingPanel {
         if (keyword == null || keyword.isEmpty()) {
             return true;
         }
-        String questionText = AiQuestionMangerDialog.nullToEmpty(question.getQuestion()).toLowerCase();
-        String answerText = AiQuestionMangerDialog.nullToEmpty(question.getAnswer()).toLowerCase();
-        String trainingNoText = AiQuestionMangerDialog.nullToEmpty(question.getTrainingNo()).toLowerCase();
+        String questionText = AiQuestionPanel.nullToEmpty(question.getQuestion()).toLowerCase();
+        String answerText = AiQuestionPanel.nullToEmpty(question.getAnswer()).toLowerCase();
+        String trainingNoText = AiQuestionPanel.nullToEmpty(question.getTrainingNo()).toLowerCase();
         return questionText.contains(keyword) || answerText.contains(keyword) || trainingNoText.contains(keyword);
     }
     
@@ -2139,9 +2138,9 @@ public class QuestionTrainingPanel {
             size = Integer.parseInt(text);
         } catch (NumberFormatException ignored) {
         }
-        if (size < AiQuestionMangerDialog.MIN_PAGE_SIZE || size > AiQuestionMangerDialog.MAX_PAGE_SIZE) {
+        if (size < AiQuestionPanel.MIN_PAGE_SIZE || size > AiQuestionPanel.MAX_PAGE_SIZE) {
             pageSizeCombo.getEditor().setItem(String.valueOf(pageSize));
-            dialog.setStatus("每页条数请输入 " + AiQuestionMangerDialog.MIN_PAGE_SIZE + " ~ " + AiQuestionMangerDialog.MAX_PAGE_SIZE + " 之间的整数",
+            dialog.setStatus("每页条数请输入 " + AiQuestionPanel.MIN_PAGE_SIZE + " ~ " + AiQuestionPanel.MAX_PAGE_SIZE + " 之间的整数",
                     false);
             return;
         }
@@ -2172,13 +2171,13 @@ public class QuestionTrainingPanel {
         upperPanel.setBorder(BorderFactory.createEmptyBorder(4, 4, 4, 4));
         
         JPanel questionRow = buildLabeledDetailField("问题：",
-                buildBorderlessCopyableField(AiQuestionMangerDialog.nullToEmpty(question.getQuestion())));
+                buildBorderlessCopyableField(AiQuestionPanel.nullToEmpty(question.getQuestion())));
         JPanel answerRow = buildLabeledDetailField("固定回复：",
-                AiQuestionMangerDialog.readonlyArea(AiQuestionMangerDialog.nullToEmpty(question.getAnswer()), 8));
+                AiQuestionPanel.readonlyArea(AiQuestionPanel.nullToEmpty(question.getAnswer()), 8));
         JPanel paramRow = buildLabeledDetailField("训练参数：",
-                AiQuestionMangerDialog.readonlyArea(AiQuestionMangerDialog.nullToEmpty(question.getTrainingParam()), 4));
+                AiQuestionPanel.readonlyArea(AiQuestionPanel.nullToEmpty(question.getTrainingParam()), 4));
         JPanel remarkRow = buildLabeledDetailField("备注：",
-                AiQuestionMangerDialog.readonlyArea(AiQuestionMangerDialog.nullToEmpty(question.getRemark()), 2));
+                AiQuestionPanel.readonlyArea(AiQuestionPanel.nullToEmpty(question.getRemark()), 2));
         // 纵向对齐所有 label（取最大宽度统一设置 preferredSize）
         alignDetailFieldLabels(questionRow, answerRow, paramRow, remarkRow);
         
@@ -2198,30 +2197,30 @@ public class QuestionTrainingPanel {
         // 所属项目 / 所属用户：为空或 -1 时统一显示「全局」（与列表、导出共用同一套展示规则）
         addDetailInfoRow(lowerPanel, "所属项目：", projectDisplayText(question));
         addDetailInfoRow(lowerPanel, "所属用户：", AiQuestion.isGlobalCode(question.getUserId()) ? AiQuestion.GLOBAL_DISPLAY_TEXT
-                : AiQuestionMangerDialog.formatUserIdDisplay(AiQuestionMangerDialog.nullToEmpty(question.getUserId()), dialog.userOptions));
-        addDetailInfoRow(lowerPanel, "分类：", AiQuestionMangerDialog.nullToEmpty(question.getQuestionClassify()));
+                : AiQuestionPanel.formatUserIdDisplay(AiQuestionPanel.nullToEmpty(question.getUserId()), dialog.userOptions));
+        addDetailInfoRow(lowerPanel, "分类：", AiQuestionPanel.nullToEmpty(question.getQuestionClassify()));
         addDetailInfoRow(lowerPanel, "回复ID：", question.getAnswerId() != null ? String.valueOf(question.getAnswerId()) : "");
         addDetailInfoRow(lowerPanel, "开启训练：", question.isTrainingEnabled() ? "开启" : "不开启");
-        addDetailInfoRow(lowerPanel, "训练状态：", AiQuestionMangerDialog.trainingStatusText(question.getTrainingStatus()));
-        addDetailInfoRow(lowerPanel, "训练模式：", AiQuestionMangerDialog.trainingModelText(question.getTrainingModel()));
-        addDetailInfoRow(lowerPanel, "智能体类型：", AiQuestionMangerDialog.nullToEmpty(question.getAgentType()), DEFAULT_DISPLAY_TEXT);
-        addDetailInfoRow(lowerPanel, "训练模型：", AiQuestionMangerDialog.nullToEmpty(question.getCoreLlmName()), DEFAULT_DISPLAY_TEXT);
-        addDetailInfoRow(lowerPanel, "意图识别模型：", AiQuestionMangerDialog.nullToEmpty(question.getIntentionLlmName()), DEFAULT_DISPLAY_TEXT);
+        addDetailInfoRow(lowerPanel, "训练状态：", AiQuestionPanel.trainingStatusText(question.getTrainingStatus()));
+        addDetailInfoRow(lowerPanel, "训练模式：", AiQuestionPanel.trainingModelText(question.getTrainingModel()));
+        addDetailInfoRow(lowerPanel, "智能体类型：", AiQuestionPanel.nullToEmpty(question.getAgentType()), DEFAULT_DISPLAY_TEXT);
+        addDetailInfoRow(lowerPanel, "训练模型：", AiQuestionPanel.nullToEmpty(question.getCoreLlmName()), DEFAULT_DISPLAY_TEXT);
+        addDetailInfoRow(lowerPanel, "意图识别模型：", AiQuestionPanel.nullToEmpty(question.getIntentionLlmName()), DEFAULT_DISPLAY_TEXT);
         addDetailInfoRow(lowerPanel, "重试次数：", question.getRetryCount() == null ? "" : String.valueOf(question.getRetryCount()));
-        addDetailInfoRow(lowerPanel, "训练触发时间：", AiQuestionMangerDialog.formatEpochMillis(question.getInitTrainingTime()));
-        addDetailInfoRow(lowerPanel, "训练提交时间：", AiQuestionMangerDialog.formatEpochMillis(question.getSubmitTrainingTime()));
-        addDetailInfoRow(lowerPanel, "训练开始时间：", AiQuestionMangerDialog.formatEpochMillis(question.getStartTrainingTime()));
+        addDetailInfoRow(lowerPanel, "训练触发时间：", AiQuestionPanel.formatEpochMillis(question.getInitTrainingTime()));
+        addDetailInfoRow(lowerPanel, "训练提交时间：", AiQuestionPanel.formatEpochMillis(question.getSubmitTrainingTime()));
+        addDetailInfoRow(lowerPanel, "训练开始时间：", AiQuestionPanel.formatEpochMillis(question.getStartTrainingTime()));
         // 训练状态为「超时(4)」时：标签改为「训练超时时间」，值依然取 lastTrainingTime（即后端记录的超时时刻）
         String lastTrainingTimeLabel =
                 question.getTrainingStatus() != null && question.getTrainingStatus() == AiQuestion.TRAINING_STATUS_TIMEOUT ? "训练超时时间："
                         : "训练完成时间：";
-        addDetailInfoRow(lowerPanel, lastTrainingTimeLabel, AiQuestionMangerDialog.formatEpochMillis(question.getLastTrainingTime()));
-        String trainingCost = AiQuestionMangerDialog.trainingCostText(question);
+        addDetailInfoRow(lowerPanel, lastTrainingTimeLabel, AiQuestionPanel.formatEpochMillis(question.getLastTrainingTime()));
+        String trainingCost = AiQuestionPanel.trainingCostText(question);
         addDetailInfoRow(lowerPanel, "训练耗时：", trainingCost.isEmpty() ? "" : trainingCost + " 秒");
-        addDetailInfoRow(lowerPanel, "创建时间：", AiQuestionMangerDialog.formatLocalDateTime(question.getCreateTime()));
-        addDetailInfoRow(lowerPanel, "更新时间：", AiQuestionMangerDialog.formatLocalDateTime(question.getUpdateTime()));
-        addDetailInfoRow(lowerPanel, "批次号：", buildBorderlessCopyableField(AiQuestionMangerDialog.nullToEmpty(question.getTrainingNo())));
-        addDetailInfoRow(lowerPanel, "任务ID：", buildBorderlessCopyableField(AiQuestionMangerDialog.nullToEmpty(question.getTrainingTaskId())));
+        addDetailInfoRow(lowerPanel, "创建时间：", AiQuestionPanel.formatLocalDateTime(question.getCreateTime()));
+        addDetailInfoRow(lowerPanel, "更新时间：", AiQuestionPanel.formatLocalDateTime(question.getUpdateTime()));
+        addDetailInfoRow(lowerPanel, "批次号：", buildBorderlessCopyableField(AiQuestionPanel.nullToEmpty(question.getTrainingNo())));
+        addDetailInfoRow(lowerPanel, "任务ID：", buildBorderlessCopyableField(AiQuestionPanel.nullToEmpty(question.getTrainingTaskId())));
         addDetailInfoRow(lowerPanel, "自动训练：", question.isAutoTrainingAllowed() ? "允许" : "不允许");
         
         // ── 上下分割条：用户可拖拽调节上下栏高度 ──
@@ -2347,7 +2346,7 @@ public class QuestionTrainingPanel {
         }
         AiEnvConfig envConfig = dialog.findEnvByName(question.getEnvName());
         if (envConfig == null) {
-            JOptionPane.showMessageDialog(dialog, "未找到问题所属环境配置 [" + AiQuestionMangerDialog.nullToEmpty(question.getEnvName()) + "]",
+            JOptionPane.showMessageDialog(dialog, "未找到问题所属环境配置 [" + AiQuestionPanel.nullToEmpty(question.getEnvName()) + "]",
                     "错误", JOptionPane.ERROR_MESSAGE);
             return;
         }
@@ -2364,10 +2363,10 @@ public class QuestionTrainingPanel {
     }
     
     private void showAnswerInfoDetail(Long answerId, String questionText, String fixedAnswer, LinkedHashMap<String, String> fields) {
-        String query = AiQuestionMangerDialog.firstNonBlank(fields.get("query"), fields.get("question"), questionText);
-        JScrollPane answerScroll = AiQuestionMangerDialog.readonlyArea(AiQuestionMangerDialog.nullToEmpty(fields.get("answer")), 15);
+        String query = AiQuestionPanel.firstNonBlank(fields.get("query"), fields.get("question"), questionText);
+        JScrollPane answerScroll = AiQuestionPanel.readonlyArea(AiQuestionPanel.nullToEmpty(fields.get("answer")), 15);
         answerScroll.setBorder(BorderFactory.createTitledBorder("回复内容（回复审计）"));
-        JScrollPane fixedScroll = AiQuestionMangerDialog.readonlyArea(AiQuestionMangerDialog.nullToEmpty(fixedAnswer), 15);
+        JScrollPane fixedScroll = AiQuestionPanel.readonlyArea(AiQuestionPanel.nullToEmpty(fixedAnswer), 15);
         fixedScroll.setBorder(BorderFactory.createTitledBorder("固定回复（问题训练）"));
         JSplitPane comparePane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, answerScroll, fixedScroll);
         comparePane.setResizeWeight(0.5);
@@ -2379,7 +2378,7 @@ public class QuestionTrainingPanel {
         gbc.insets = new Insets(6, 6, 6, 6);
         gbc.anchor = GridBagConstraints.WEST;
         dialog.addFormRow(form, gbc, 0, new JLabel("回复ID："), new JLabel(String.valueOf(answerId)));
-        dialog.addFormRow(form, gbc, 1, new JLabel("回复问题："), new JLabel(AiQuestionMangerDialog.nullToEmpty(query)));
+        dialog.addFormRow(form, gbc, 1, new JLabel("回复问题："), new JLabel(AiQuestionPanel.nullToEmpty(query)));
         gbc.gridx = 0;
         gbc.gridy = 2;
         gbc.gridwidth = 2;
@@ -2389,7 +2388,7 @@ public class QuestionTrainingPanel {
         gbc.gridwidth = 1;
         gbc.fill = GridBagConstraints.NONE;
         gbc.weightx = 0;
-        dialog.addFormRow(form, gbc, 3, new JLabel("是否允许修改："), new JLabel(AiQuestionMangerDialog.answerModifyText(fields.get("allowModify"))));
+        dialog.addFormRow(form, gbc, 3, new JLabel("是否允许修改："), new JLabel(AiQuestionPanel.answerModifyText(fields.get("allowModify"))));
         JOptionPane.showMessageDialog(dialog, form, "回复详情", JOptionPane.PLAIN_MESSAGE);
     }
     
@@ -2398,7 +2397,7 @@ public class QuestionTrainingPanel {
             JOptionPane.showMessageDialog(dialog, "请等待当前操作完成", "提示", JOptionPane.WARNING_MESSAGE);
             return;
         }
-        JTextField questionArea = new JTextField(AiQuestionMangerDialog.nullToEmpty(question.getQuestion()));
+        JTextField questionArea = new JTextField(AiQuestionPanel.nullToEmpty(question.getQuestion()));
         // 所属用户：首项「全局」对应用户ID 为空 / 0 / -1 的记录（与列表、详情展示规则一致），其余为「用户ID - 名称」
         FilterComboBox<String> userIdCombo = new FilterComboBox<>();
         userIdCombo.addItem(AiQuestion.GLOBAL_DISPLAY_TEXT);
@@ -2406,7 +2405,7 @@ public class QuestionTrainingPanel {
             userIdCombo.addItem(userOption);
         }
         userIdCombo.setToolTipText("单选所属用户；选择「全局」表示不绑定具体用户（提交空值，与 0 等价）");
-        String currentUserId = AiQuestionMangerDialog.nullToEmpty(question.getUserId());
+        String currentUserId = AiQuestionPanel.nullToEmpty(question.getUserId());
         if (AiQuestion.isGlobalCode(currentUserId)) {
             // 用户ID 为空 / 0 / -1 统一回显「全局」，避免下拉留空或显示裸 ID
             userIdCombo.setSelectedIndex(0);
@@ -2414,7 +2413,7 @@ public class QuestionTrainingPanel {
             boolean matched = false;
             for (int i = 1; i < userIdCombo.getItemCount(); i++) {
                 String item = userIdCombo.getItemAt(i);
-                if (item != null && AiQuestionMangerDialog.extractUserIdFromCombo(item).equals(currentUserId)) {
+                if (item != null && AiQuestionPanel.extractUserIdFromCombo(item).equals(currentUserId)) {
                     userIdCombo.setSelectedIndex(i);
                     matched = true;
                     break;
@@ -2452,7 +2451,7 @@ public class QuestionTrainingPanel {
             }
         }
         if (currentProjectCode.isEmpty() && !projectCodePresent) {
-            String currentProjectName = AiQuestionMangerDialog.nullToEmpty(question.getProjectName()).trim();
+            String currentProjectName = AiQuestionPanel.nullToEmpty(question.getProjectName()).trim();
             if (!currentProjectName.isEmpty()) {
                 for (String[] project : dialog.projectOptions) {
                     String code = project[0];
@@ -2481,7 +2480,7 @@ public class QuestionTrainingPanel {
         for (String classify : dialog.classifySuggestions) {
             classifyCombo.addItem(classify);
         }
-        String currentClassify = AiQuestionMangerDialog.nullToEmpty(question.getQuestionClassify());
+        String currentClassify = AiQuestionPanel.nullToEmpty(question.getQuestionClassify());
         if (!currentClassify.isEmpty()) {
             boolean classifyMatched = false;
             for (int i = 0; i < classifyCombo.getItemCount(); i++) {
@@ -2495,10 +2494,10 @@ public class QuestionTrainingPanel {
                 classifyCombo.getEditor().setItem(currentClassify);
             }
         }
-        JTextArea trainingParamArea = new JTextArea(AiQuestionMangerDialog.nullToEmpty(question.getTrainingParam()), 5, 30);
+        JTextArea trainingParamArea = new JTextArea(AiQuestionPanel.nullToEmpty(question.getTrainingParam()), 5, 30);
         trainingParamArea.setLineWrap(true);
         trainingParamArea.setWrapStyleWord(true);
-        JTextArea answerArea = new JTextArea(AiQuestionMangerDialog.nullToEmpty(question.getAnswer()), 10, 30);
+        JTextArea answerArea = new JTextArea(AiQuestionPanel.nullToEmpty(question.getAnswer()), 10, 30);
         answerArea.setLineWrap(true);
         answerArea.setWrapStyleWord(true);
         JComboBox<String> enableCombo = new JComboBox<>(new String[] {"开启", "不开启"});
@@ -2515,8 +2514,8 @@ public class QuestionTrainingPanel {
         dialog.addFormRow(form, gbc, 1, new JLabel("所属用户："), userIdCombo);
         dialog.addFormRow(form, gbc, 2, new JLabel("所属项目："), projectCombo);
         dialog.addFormRow(form, gbc, 3, new JLabel("分类："), classifyCombo);
-        dialog.addFormRow(form, gbc, 4, new JLabel("训练参数："), AiQuestionMangerDialog.dialogScroll(trainingParamArea, 5));
-        dialog.addFormRow(form, gbc, 5, new JLabel("固定回复："), AiQuestionMangerDialog.dialogScroll(answerArea, 10));
+        dialog.addFormRow(form, gbc, 4, new JLabel("训练参数："), AiQuestionPanel.dialogScroll(trainingParamArea, 5));
+        dialog.addFormRow(form, gbc, 5, new JLabel("固定回复："), AiQuestionPanel.dialogScroll(answerArea, 10));
         dialog.addFormRow(form, gbc, 6, new JLabel("开启训练："), enableCombo);
         dialog.addFormRow(form, gbc, 7, new JLabel("自动训练："), autoTrainingEditCombo);
         
@@ -2541,7 +2540,7 @@ public class QuestionTrainingPanel {
         // 所属用户：以编辑器文本为准；「全局」或手动输入 0 / -1 / 空统一归一化为空值提交（与「全局」展示规则一致）
         String userEditorText = dialog.editableComboText(userIdCombo).trim();
         String newUserId = (AiQuestion.GLOBAL_DISPLAY_TEXT.equals(userEditorText) || AiQuestion.isGlobalCode(userEditorText)) ? ""
-                : AiQuestionMangerDialog.extractUserIdFromCombo(userEditorText).trim();
+                : AiQuestionPanel.extractUserIdFromCombo(userEditorText).trim();
         question.setQuestion(newQuestion);
         question.setUserId(newUserId.isEmpty() ? null : newUserId);
         question.setQuestionClassify(newClassify.isEmpty() ? null : newClassify);
@@ -2567,7 +2566,7 @@ public class QuestionTrainingPanel {
         question.setProjectCode(newProjectCode);
         AiEnvConfig envConfig = dialog.findEnvByName(question.getEnvName());
         if (envConfig == null) {
-            JOptionPane.showMessageDialog(dialog, "未找到问题所属环境配置 [" + AiQuestionMangerDialog.nullToEmpty(question.getEnvName()) + "]",
+            JOptionPane.showMessageDialog(dialog, "未找到问题所属环境配置 [" + AiQuestionPanel.nullToEmpty(question.getEnvName()) + "]",
                     "错误", JOptionPane.ERROR_MESSAGE);
             return;
         }
@@ -2580,7 +2579,7 @@ public class QuestionTrainingPanel {
             return () -> {
                 dialog.invalidateLoadedData();
                 refreshQuestionTable();
-                dialog.setStatus("更新问题成功：" + AiQuestionMangerDialog.abbreviate(newQuestion, 30) + "（" + message + "）", true);
+                dialog.setStatus("更新问题成功：" + AiQuestionPanel.abbreviate(newQuestion, 30) + "（" + message + "）", true);
             };
         });
     }
@@ -2592,7 +2591,7 @@ public class QuestionTrainingPanel {
         }
         AiEnvConfig envConfig = dialog.findEnvByName(question.getEnvName());
         if (envConfig == null) {
-            JOptionPane.showMessageDialog(dialog, "未找到问题所属环境配置 [" + AiQuestionMangerDialog.nullToEmpty(question.getEnvName()) + "]",
+            JOptionPane.showMessageDialog(dialog, "未找到问题所属环境配置 [" + AiQuestionPanel.nullToEmpty(question.getEnvName()) + "]",
                     "错误", JOptionPane.ERROR_MESSAGE);
             return;
         }
@@ -2601,7 +2600,7 @@ public class QuestionTrainingPanel {
             return;
         }
         int confirm = JOptionPane.showConfirmDialog(dialog,
-                "确定删除问题 [" + AiQuestionMangerDialog.abbreviate(question.getQuestion(), 30) + "] 吗？",
+                "确定删除问题 [" + AiQuestionPanel.abbreviate(question.getQuestion(), 30) + "] 吗？",
                 "确认删除-环境 [" + envConfig.getEnvName() + "]", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
         if (confirm != JOptionPane.YES_OPTION) {
             return;
@@ -2611,7 +2610,7 @@ public class QuestionTrainingPanel {
             return () -> {
                 dialog.invalidateLoadedData();
                 refreshQuestionTable();
-                dialog.setStatus("已删除问题：" + AiQuestionMangerDialog.abbreviate(question.getQuestion(), 30) + "（" + message + "）", true);
+                dialog.setStatus("已删除问题：" + AiQuestionPanel.abbreviate(question.getQuestion(), 30) + "（" + message + "）", true);
             };
         });
     }
@@ -2637,13 +2636,13 @@ public class QuestionTrainingPanel {
         if (trainingStatus != null && (trainingStatus == AiQuestion.TRAINING_STATUS_RUNNING
                 || trainingStatus == AiQuestion.TRAINING_STATUS_SUBMITTED)) {
             JOptionPane.showMessageDialog(dialog,
-                    "该问题处于「" + AiQuestionMangerDialog.trainingStatusText(trainingStatus) + "」状态，不允许再次触发训练（如需中止请使用「停止训练」）。",
+                    "该问题处于「" + AiQuestionPanel.trainingStatusText(trainingStatus) + "」状态，不允许再次触发训练（如需中止请使用「停止训练」）。",
                     "提示", JOptionPane.WARNING_MESSAGE);
             return;
         }
         AiEnvConfig envConfig = dialog.findEnvByName(question.getEnvName());
         if (envConfig == null) {
-            JOptionPane.showMessageDialog(dialog, "未找到问题所属环境配置 [" + AiQuestionMangerDialog.nullToEmpty(question.getEnvName()) + "]",
+            JOptionPane.showMessageDialog(dialog, "未找到问题所属环境配置 [" + AiQuestionPanel.nullToEmpty(question.getEnvName()) + "]",
                     "错误", JOptionPane.ERROR_MESSAGE);
             return;
         }
@@ -2662,7 +2661,7 @@ public class QuestionTrainingPanel {
         JLabel envLabel = new JLabel("问题ID " + question.getId());
         envLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         confirmPanel.add(envLabel);
-        JLabel questionCaptionLabel = new JLabel("问题：" + AiQuestionMangerDialog.nullToEmpty(question.getQuestion()));
+        JLabel questionCaptionLabel = new JLabel("问题：" + AiQuestionPanel.nullToEmpty(question.getQuestion()));
         questionCaptionLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         confirmPanel.add(questionCaptionLabel);
         // 单问题训练并发数固定为 1，不开放编辑
@@ -2701,7 +2700,7 @@ public class QuestionTrainingPanel {
             return () -> {
                 dialog.invalidateLoadedData();
                 refreshQuestionTable();
-                dialog.setStatus("触发训练成功：" + AiQuestionMangerDialog.abbreviate(questionText, 30) + "（" + message + "）", true);
+                dialog.setStatus("触发训练成功：" + AiQuestionPanel.abbreviate(questionText, 30) + "（" + message + "）", true);
             };
         });
     }
@@ -2733,8 +2732,8 @@ public class QuestionTrainingPanel {
             List<String> lines = new ArrayList<>();
             for (int i = 0; i < trainingBusyQuestions.size() && i < maxShown; i++) {
                 AiQuestion question = trainingBusyQuestions.get(i);
-                lines.add(" ID " + question.getId() + "（" + AiQuestionMangerDialog.trainingStatusText(question.getTrainingStatus()) + "）："
-                        + AiQuestionMangerDialog.abbreviate(question.getQuestion(), 30));
+                lines.add(" ID " + question.getId() + "（" + AiQuestionPanel.trainingStatusText(question.getTrainingStatus()) + "）："
+                        + AiQuestionPanel.abbreviate(question.getQuestion(), 30));
             }
             if (trainingBusyQuestions.size() > maxShown) {
                 lines.add(" …等共 " + trainingBusyQuestions.size() + " 条");
@@ -2756,7 +2755,7 @@ public class QuestionTrainingPanel {
             List<String> lines = new ArrayList<>();
             for (int i = 0; i < missingUserIdQuestions.size() && i < maxShown; i++) {
                 AiQuestion question = missingUserIdQuestions.get(i);
-                lines.add(" ID " + question.getId() + "：" + AiQuestionMangerDialog.abbreviate(question.getQuestion(), 30));
+                lines.add(" ID " + question.getId() + "：" + AiQuestionPanel.abbreviate(question.getQuestion(), 30));
             }
             if (missingUserIdQuestions.size() > maxShown) {
                 lines.add(" …等共 " + missingUserIdQuestions.size() + " 条");
@@ -2783,7 +2782,7 @@ public class QuestionTrainingPanel {
         List<Long> ids = onlyEntry.getValue();
         AiEnvConfig envConfig = dialog.findEnvByName(envName);
         if (envConfig == null) {
-            JOptionPane.showMessageDialog(dialog, "未找到问题所属环境配置 [" + AiQuestionMangerDialog.nullToEmpty(envName) + "]", "错误",
+            JOptionPane.showMessageDialog(dialog, "未找到问题所属环境配置 [" + AiQuestionPanel.nullToEmpty(envName) + "]", "错误",
                     JOptionPane.ERROR_MESSAGE);
             return;
         }
@@ -2922,7 +2921,7 @@ public class QuestionTrainingPanel {
         List<Long> ids = onlyEntry.getValue();
         AiEnvConfig envConfig = dialog.findEnvByName(envName);
         if (envConfig == null) {
-            JOptionPane.showMessageDialog(dialog, "未找到问题所属环境配置 [" + AiQuestionMangerDialog.nullToEmpty(envName) + "]", "错误",
+            JOptionPane.showMessageDialog(dialog, "未找到问题所属环境配置 [" + AiQuestionPanel.nullToEmpty(envName) + "]", "错误",
                     JOptionPane.ERROR_MESSAGE);
             return;
         }
@@ -2937,8 +2936,8 @@ public class QuestionTrainingPanel {
             List<String> lines = new ArrayList<>();
             for (int i = 0; i < skippedQuestions.size() && i < maxShown; i++) {
                 AiQuestion question = skippedQuestions.get(i);
-                lines.add(" ID " + question.getId() + "（" + AiQuestionMangerDialog.trainingStatusText(question.getTrainingStatus()) + "）："
-                        + AiQuestionMangerDialog.abbreviate(question.getQuestion(), 30));
+                lines.add(" ID " + question.getId() + "（" + AiQuestionPanel.trainingStatusText(question.getTrainingStatus()) + "）："
+                        + AiQuestionPanel.abbreviate(question.getQuestion(), 30));
             }
             if (skippedQuestions.size() > maxShown) {
                 lines.add(" …等共 " + skippedQuestions.size() + " 条");
@@ -3000,7 +2999,7 @@ public class QuestionTrainingPanel {
         List<Long> ids = onlyEntry.getValue();
         AiEnvConfig envConfig = dialog.findEnvByName(envName);
         if (envConfig == null) {
-            JOptionPane.showMessageDialog(dialog, "未找到问题所属环境配置 [" + AiQuestionMangerDialog.nullToEmpty(envName) + "]", "错误",
+            JOptionPane.showMessageDialog(dialog, "未找到问题所属环境配置 [" + AiQuestionPanel.nullToEmpty(envName) + "]", "错误",
                     JOptionPane.ERROR_MESSAGE);
             return;
         }
@@ -3070,7 +3069,7 @@ public class QuestionTrainingPanel {
             // 必须先拦截「不更新」——extractUserIdFromCombo 会把它原样当作用户ID返回
             String userEditorText = dialog.editableComboText(userIdCombo).trim();
             userId = BATCH_NO_UPDATE_OPTION.equals(userEditorText) || userEditorText.isEmpty() ? ""
-                    : AiQuestionMangerDialog.extractUserIdFromCombo(userEditorText).trim();
+                    : AiQuestionPanel.extractUserIdFromCombo(userEditorText).trim();
             trainingParam = trainingParamArea.getText().trim();
             autoTrainingIndex = autoTrainingCombo.getSelectedIndex();
             batchProjectIndex = batchProjectCombo.getSelectedIndex();
@@ -3128,7 +3127,7 @@ public class QuestionTrainingPanel {
         List<Long> ids = onlyEntry.getValue();
         AiEnvConfig envConfig = dialog.findEnvByName(envName);
         if (envConfig == null) {
-            JOptionPane.showMessageDialog(dialog, "未找到问题所属环境配置 [" + AiQuestionMangerDialog.nullToEmpty(envName) + "]", "错误",
+            JOptionPane.showMessageDialog(dialog, "未找到问题所属环境配置 [" + AiQuestionPanel.nullToEmpty(envName) + "]", "错误",
                     JOptionPane.ERROR_MESSAGE);
             return;
         }
@@ -3283,21 +3282,21 @@ public class QuestionTrainingPanel {
                 case COL_CHECK -> question.getId() != null ? isChecked(question) : null;
                 case COL_ID -> question.getId();
                 case COL_PROJECT -> projectDisplayText(question);
-                case COL_QUESTION -> AiQuestionMangerDialog.nullToEmpty(question.getQuestion());
-                case COL_CLASSIFY -> AiQuestionMangerDialog.nullToEmpty(question.getQuestionClassify());
+                case COL_QUESTION -> AiQuestionPanel.nullToEmpty(question.getQuestion());
+                case COL_CLASSIFY -> AiQuestionPanel.nullToEmpty(question.getQuestionClassify());
                 case COL_USER -> userDisplayText(question);
-                case COL_TRAINING_PARAM -> AiQuestionMangerDialog.nullToEmpty(question.getTrainingParam());
-                case COL_TRAINING_NO -> AiQuestionMangerDialog.nullToEmpty(question.getTrainingNo());
-                case COL_ANSWER -> AiQuestionMangerDialog.nullToEmpty(question.getAnswer());
+                case COL_TRAINING_PARAM -> AiQuestionPanel.nullToEmpty(question.getTrainingParam());
+                case COL_TRAINING_NO -> AiQuestionPanel.nullToEmpty(question.getTrainingNo());
+                case COL_ANSWER -> AiQuestionPanel.nullToEmpty(question.getAnswer());
                 case COL_ANSWER_ID -> question.getAnswerId();
                 case COL_AUTO_TRAINING -> question.isAutoTrainingAllowed() ? "允许" : "不允许";
                 case COL_TRAINING_MODEL -> question.getTrainingModel();
                 case COL_TRAINING_STATUS -> question.getTrainingStatus();
-                case COL_SUBMIT_TRAINING_TIME -> AiQuestionMangerDialog.formatEpochMillisTime(question.getSubmitTrainingTime());
-                case COL_START_TRAINING_TIME -> AiQuestionMangerDialog.formatEpochMillisTime(question.getStartTrainingTime());
-                case COL_LAST_TRAINING_TIME -> AiQuestionMangerDialog.formatEpochMillisTime(question.getLastTrainingTime());
-                case COL_TRAINING_COST -> AiQuestionMangerDialog.trainingCostText(question);
-                case COL_REMARK -> AiQuestionMangerDialog.nullToEmpty(question.getRemark());
+                case COL_SUBMIT_TRAINING_TIME -> AiQuestionPanel.formatEpochMillisTime(question.getSubmitTrainingTime());
+                case COL_START_TRAINING_TIME -> AiQuestionPanel.formatEpochMillisTime(question.getStartTrainingTime());
+                case COL_LAST_TRAINING_TIME -> AiQuestionPanel.formatEpochMillisTime(question.getLastTrainingTime());
+                case COL_TRAINING_COST -> AiQuestionPanel.trainingCostText(question);
+                case COL_REMARK -> AiQuestionPanel.nullToEmpty(question.getRemark());
                 default -> "";
             };
         }
@@ -3344,7 +3343,7 @@ public class QuestionTrainingPanel {
                 projectSameAsAbove.setFont(UiConstants.FONT_SANS_11);
             }
             projectBtn = ButtonFactory.createSecondary(
-                    rowIndex > 0 ? SAME_AS_ABOVE : AiQuestionMangerDialog.projectButtonLabel(selectedProjectCodes));
+                    rowIndex > 0 ? SAME_AS_ABOVE : AiQuestionPanel.projectButtonLabel(selectedProjectCodes));
             projectBtn.setToolTipText("点击选择所属项目（可多选）");
             if (projectSameAsAbove != null) {
                 projectBtn.setEnabled(false);
@@ -3354,7 +3353,7 @@ public class QuestionTrainingPanel {
                 if (result != null) {
                     selectedProjectCodes.clear();
                     selectedProjectCodes.addAll(result);
-                    projectBtn.setText(AiQuestionMangerDialog.projectButtonLabel(selectedProjectCodes));
+                    projectBtn.setText(AiQuestionPanel.projectButtonLabel(selectedProjectCodes));
                     if (projectSameAsAbove != null && projectSameAsAbove.isSelected()) {
                         projectSameAsAbove.setSelected(false);
                     }
@@ -3368,7 +3367,7 @@ public class QuestionTrainingPanel {
                         projectBtn.setText(SAME_AS_ABOVE);
                     } else {
                         selectedProjectCodes.clear();
-                        projectBtn.setText(AiQuestionMangerDialog.projectButtonLabel(selectedProjectCodes));
+                        projectBtn.setText(AiQuestionPanel.projectButtonLabel(selectedProjectCodes));
                     }
                 });
             }
