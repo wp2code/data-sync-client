@@ -1,44 +1,40 @@
-# DataSync Client
+# OmniKit
 
-DataSync Client 是一款基于 Java 17 + Swing 的桌面数据库同步工具，支持 **MySQL** 与 **PostgreSQL** 之间的全表数据同步与表结构差异同步，并内置 GitLab 集成、AI 问题管理与在线自动更新能力。
+OmniKit 是一款基于 Java 17 + Swing 的桌面效率工具，集数据库数据同步、GitLab 脚本管理、AI 训练、程序容器与在线自动更新于一体。
 
 ![Java 17](https://img.shields.io/badge/Java-17-blue)
 ![Gradle](https://img.shields.io/badge/Build-Gradle-green)
 ![Swing](https://img.shields.io/badge/UI-Swing%20FlatLaf-orange)
-![Version](https://img.shields.io/badge/Version-1.1.1-brightgreen)
+![Version](https://img.shields.io/badge/Version-2.0.0-brightgreen)
 
 ## 功能特性
 
 ### 数据同步
 
-- **数据源管理**：保存、编辑、测试多个 MySQL / PostgreSQL 数据源配置，SQLite 本地持久化。
-- **表数据同步**：全量读取源表数据，以 Upsert（插入或更新）方式同步到目标表，500 行一批次、单事务提交，失败自动回滚。
-- **表结构同步**：对比源表与目标表的列（类型 / 可空 / 默认值 / 注释）与索引差异，自动生成 ALTER TABLE 脚本，支持一键执行。
+- **数据源管理**：保存、编辑、测试多个 MySQL / PostgreSQL 数据源配置。
+- **表数据同步**：将源表数据全量同步到目标表，自动插入或更新已有记录，同步失败自动回滚。
+- **表结构同步**：对比源表与目标表的列与索引差异，自动生成变更脚本，支持一键执行。
 
 ### GitLab 集成
 
 - **OAuth2 登录**：配置 GitLab 认证信息后自动登录。
-- **SQL 脚本管理**：脚本编辑后可直接推送到 GitLab 指定项目 / 分支 / 文件路径，支持创建与更新（自动检测）、多文件提交。
-- **项目 / 分支缓存**：基于 Guava Cache 缓存项目列表与分支列表，减少 API 调用。
+- **SQL 脚本管理**：脚本编辑后可直接推送到 GitLab 指定项目 / 分支 / 文件路径，支持创建与更新、多文件提交。
 
-### AI 问题管理
+### AI 训练
 
-- **问题训练**：分页查询远端问题列表（服务端筛选训练状态），支持界面手动录入、Excel 批量导入（含运行时生成的导入模板与填写说明）、批量保存 / 更新 / 删除、触发训练与批量更新训练参数。
+- **问题训练**：分页查询问题列表，支持界面手动录入、Excel 批量导入、批量保存 / 更新 / 删除、触发训练与批量更新训练参数。
 - **回复审计**：分页查询问题回复列表，支持回复详情查看、更新与删除。
-- **环境管理**：多环境（测试 / 生产等）接口配置，支持自定义 Host、通用请求头与各接口路径，每个接口提供请求 / 响应 JSON 示例查看。
-- **Excel 导入导出**：问题列表与回复列表均可导出为 `.xlsx` 文件。
+- **环境管理**：多环境（测试 / 生产等）接口配置，支持自定义 Host、请求头与各接口路径。
+- **Excel 导入导出**：问题列表与回复列表均可导出为 Excel 文件。
 
-### 在线自动更新
+### 程序容器
 
-- 启动时静默检查 GitHub Releases 新版本，发现新版本才提示。
-- 支持下载进度展示、SHA-256 校验、自动替换 exe 并重启（JRE 不随版本升级，无需重新下载）。
-- 更新可靠性保障：网络类异常自动重试（指数退避，最多 3 次）、下载中断自动清理半成品文件、exe 被安全软件占用时自动转延迟替换（进程退出后由辅助脚本完成替换并重启）。
-- 日志面板提供「检查更新」按钮，可手动检查；Release 描述正文即版本日志，随升级提示一并展示。
+- **外部程序管理**：配置并启动 / 停止 / 重启外部程序，支持 Java、Python 及通用命令（脚本、可执行文件）。
+- **后台运行**：关闭对话框后进程继续运行，重新打开可恢复运行状态与历史日志。
+- **控制台输出**：实时查看程序输出，自动处理编码，避免中文乱码。
+- **退出保护**：关闭应用时可选择停止或保留后台运行的程序，下次启动可检测并停止遗留进程。
 
-### 通用
 
-- **现代暗色 UI**：FlatLaf 主题，日志区彩色 HTML 输出。
-- **Windows 可执行文件**：打包为自带 JRE 的 `DataSync.exe`，双击即可运行，无需本机安装 JDK。
 
 ## 技术栈
 
@@ -49,12 +45,13 @@ DataSync Client 是一款基于 Java 17 + Swing 的桌面数据库同步工具�
 | PostgreSQL JDBC | 42.7.3 | PostgreSQL JDBC 驱动 |
 | SQLite JDBC | 3.45.2.0 | 本地配置持久化 |
 | gitlab4j-api | 6.3.0 | GitLab API 集成 |
-| Guava | 33.6.0 | 缓存（项目 / 分支列表） |
+| Guava | 33.6.0-jre | 缓存（项目 / 分支列表） |
 | Jackson | 2.17.2 | JSON 处理（AI 接口 / GitHub API） |
 | Apache POI | 5.2.5 | Excel 导入导出 |
 | Apache Batik | 1.18 | SVG 图标渲染 |
 | Logback | 1.5.6 | 日志（控制台 + 文件滚动） |
 | Lombok | 1.18.32 | 简化模型类代码 |
+| JUnit 5 | 5.10.2 | 单元测试 |
 
 ## 快速开始
 
@@ -72,6 +69,9 @@ DataSync Client 是一款基于 Java 17 + Swing 的桌面数据库同步工具�
 # 运行程序
 ./gradlew run
 
+# 运行单元测试（JUnit 5）
+./gradlew test
+
 # 完整构建（编译 + 测试 + 瘦 JAR + Windows .exe + ZIP 分发包）
 ./gradlew build
 ```
@@ -80,9 +80,9 @@ Windows 环境下请将 `./gradlew` 替换为 `gradlew.bat`。
 
 构建产物：
 
-- 瘦 JAR：`build/libs/data-sync-client-1.1.1.jar`（依赖位于同目录 `build/libs/lib/`，通过 MANIFEST `Class-Path` 引用）
-- Windows 可执行文件：`build/launch4j/DataSync.exe`（自带 `jre/` 与 `lib/` 目录）
-- ZIP 分发包：`build/distributions/DataSync-1.1.1-win-x64.zip`（解压即可运行，无需 JAVA_HOME）
+- 瘦 JAR：`build/libs/omnikit-client-2.0.0.jar`（依赖位于同目录 `build/libs/lib/`，通过 MANIFEST `Class-Path` 引用）
+- Windows 可执行文件：`build/launch4j/OmniKit.exe`（自带 `jre/` 与 `lib/` 目录）
+- ZIP 分发包：`build/distributions/OmniKit-2.0.0-win-x64.zip`（解压即可运行，无需 JAVA_HOME）
 
 ## 使用说明
 
@@ -100,61 +100,71 @@ Windows 环境下请将 `./gradlew` 替换为 `gradlew.bat`。
 2. 在 **脚本管理** 中新建 / 编辑 SQL 脚本。
 3. 选择目标 GitLab 项目、分支与文件路径，推送脚本内容。
 
-### AI 问题管理
+### AI 训练
 
 1. 点击 **AI 环境** 配置环境信息（Host、请求头、问题训练 / 回复审计相关接口路径）。
-2. 在 **AI 问题管理** 中切换「问题训练」/「回复审计」页签：
+2. 在 **AI 训练** 中切换「问题训练」/「回复审计」页签：
    - **问题训练**：分页查询、手动录入、导入 Excel（可先下载模板）、批量保存 / 更新 / 删除、触发训练；
    - **回复审计**：分页查询问题回复、查看 / 更新 / 删除回复详情。
 3. 问题列表与回复列表均可导出为 Excel。
 
-### 检查更新
+### 程序容器
 
-- 程序启动时自动静默检查 GitHub Releases 新版本；
-- 也可在日志面板点击 **检查更新** 手动检查，确认后自动下载、校验并重启完成升级。
+1. 在程序容器左侧列表新增程序配置，选择程序类型：
+   - **Java 程序**：填写主程序入口 / JAR 与可选的 JRE / JDK 路径；
+   - **Python 程序**：填写入口脚本与可选的解释器 / 虚拟环境路径；
+   - **其他命令**：填写可执行文件、bat 脚本或 PATH 中的命令名。
+2. 配置命令参数、工作目录与输出编码（自动探测 / UTF-8 / GBK）。
+3. 点击 **启动 / 停止 / 重启**，右侧控制台实时展示输出。
+4. 关闭对话框不影响进程运行，重新打开可恢复状态与历史日志。
 
-## 数据源配置字段
+### 设置
 
-| 字段 | 说明 |
-| --- | --- |
-| 名称 | 数据源唯一标识 |
-| 数据库类型 | MySQL / PostgreSQL |
-| 主机 | 数据库服务器地址 |
-| 端口 | 数据库端口 |
-| 数据库 | 目标数据库名 |
-| Schema | 仅 PostgreSQL 使用，默认 `public` |
-| 用户名 | 数据库用户名 |
-| 密码 | 数据库密码 |
+点击主界面右上角的 **设置** 按钮打开下拉菜单，集中提供以下入口：
+
+- **数据源管理**：新增、编辑、删除并测试 MySQL / PostgreSQL 数据源配置；
+- **GitLab 配置**：填写 GitLab 地址与 OAuth2 凭证；
+- **检查更新**：菜单项中灰显当前版本号，点击即可手动检查新版本；
+- **帮助**：打开项目 GitHub 主页。
+
 
 ## 项目结构
 
 ```
-src/main/java/com/datasync/
-├─ Main.java                       # 程序入口（FlatLaf 主题初始化）
+src/main/java/com/omnikit/
+├─ Main.java                       # 程序入口（FlatLaf 主题初始化 + 退出钩子清理子进程）
 ├─ core/
-│  ├─ DataSyncService.java         # 同步引擎：数据同步、结构对比、DDL 生成
+│  ├─ OmniKitService.java          # 同步引擎：数据同步、结构对比、DDL 生成
 │  ├─ DbConnector.java             # JDBC 连接工厂 + Schema 元数据读取
 │  ├─ GitLabService.java           # GitLab OAuth2 登录与文件 / 提交操作（单例）
 │  ├─ AiQuestionApiClient.java     # AI 问题远端接口客户端（单例）
-│  └─ UpdateService.java           # GitHub Releases 在线更新
-├─ model/                          # 数据模型（数据源、脚本、AI 问题 / 回复 / 环境等）
+│  ├─ UpdateService.java           # GitHub Releases 在线更新
+│  ├─ ProcessContainerService.java # 外部进程生命周期与输出日志管理（单例）
+│  └─ EncodingDetectReader.java    # 子进程输出编码探测 Reader
+├─ model/                          # 数据模型（数据源、脚本、AI 问题 / 回复 / 环境、程序容器等）
 ├─ ui/
-│  ├─ DataSyncUI.java              # 主界面
+│  ├─ OmniKitUI.java               # 主界面
 │  ├─ DataSourceManagerDialog.java # 数据源管理
 │  ├─ GitLabMangerDialog.java      # GitLab 认证配置
 │  ├─ ScriptMangerDialog.java      # SQL 脚本管理
-│  ├─ AiQuestionMangerDialog.java  # AI 问题管理（问题训练 / 回复审计页签）
+│  ├─ AiQuestionMangerDialog.java  # AI 训练（问题训练 / 回复审计页签）
 │  ├─ QuestionTrainingPanel.java   # 问题训练面板
 │  ├─ AnswerAuditPanel.java        # 回复审计面板
-│  └─ AiEnvMangerDialog.java       # AI 环境管理
+│  ├─ AiEnvMangerDialog.java       # AI 环境管理
+│  ├─ ProgramContainerDialog.java  # 程序容器（列表 + 配置表单 + 控制台）
+│  ├─ TrainingCastTimeDialog.java  # 训练耗时查询
+│  └─ ButtonFactory.java           # 统一按钮样式工厂
 ├─ components/                     # 自定义 Swing 组件
 └─ util/
    ├─ SQLiteConfigUtil.java        # SQLite 配置持久化（含兼容性迁移）
+   ├─ ConfigUtil.java              # 配置访问静态门面
    ├─ ExcelQuestionUtil.java       # AI 问题 Excel 导入 / 模板生成
    ├─ ExcelExportUtil.java         # AI 问题 / 回复 Excel 导出
    ├─ LogUtil.java                 # 彩色 HTML 日志
    └─ IconUtil.java                # SVG 图标渲染
 ```
+
+单元测试位于 `src/test/java/com/omnikit/core/`，覆盖程序容器与在线更新核心逻辑。
 
 ## 打包发布
 
@@ -167,7 +177,7 @@ src/main/java/com/datasync/
 生成后可通过以下命令运行（需保证 `lib/` 与 JAR 同目录，即位于 `build/libs/` 下）：
 
 ```bash
-java -jar build/libs/data-sync-client-1.1.1.jar
+java -jar build/libs/omnikit-client-2.0.0.jar
 ```
 
 ### 生成 Windows .exe（自带 JRE + 依赖）
@@ -179,11 +189,11 @@ java -jar build/libs/data-sync-client-1.1.1.jar
 
 构建过程中会自动从 Eclipse Temurin 下载 Windows x64 JRE（项目根目录存在 `jre.zip` 时优先使用本地文件），并解压到 `build/launch4j/jre` 目录。最终产物：
 
-- Windows 可执行文件：`build/launch4j/DataSync.exe`
+- Windows 可执行文件：`build/launch4j/OmniKit.exe`
 - 内置 JRE 目录：`build/launch4j/jre/`
 - 第三方依赖目录：`build/launch4j/lib/`（瘦 JAR 所需的运行时依赖）
 
-运行 `DataSync.exe` 时，程序会优先使用同目录下的 `jre` 文件夹，无需用户本机安装 JDK。
+运行 `OmniKit.exe` 时，程序会优先使用同目录下的 `jre` 文件夹，无需用户本机安装 JDK。
 
 ### 生成 ZIP 分发包
 
@@ -191,7 +201,7 @@ java -jar build/libs/data-sync-client-1.1.1.jar
 ./gradlew packageZip
 ```
 
-将 `DataSync.exe`、`jre/` 与 `lib/` 打包为 `build/distributions/DataSync-<version>-win-x64.zip`，解压即可运行。`./gradlew build` 会依次完成瘦 JAR、`.exe` 与 ZIP 分发包的全部构建。
+将 `OmniKit.exe`、`jre/` 与 `lib/` 打包为 `build/distributions/OmniKit-<version>-win-x64.zip`，解压即可运行。`./gradlew build` 会依次完成瘦 JAR、`.exe` 与 ZIP 分发包的全部构建。
 
 ## 版本发布
 
@@ -207,15 +217,18 @@ java -jar build/libs/data-sync-client-1.1.1.jar
 
 - Tag 必须位于 `main` 分支历史中，且与 `build.gradle` 版本号一致；
 - 从 CHANGELOG.md 提取对应版本小节作为 Release 描述；
-- 构建 `.exe` 与 ZIP 分发包，生成 `DataSync.exe.sha256` 校验文件，并作为 Release 资产发布。
+- 构建 `.exe` 与 ZIP 分发包，生成 `OmniKit.exe.sha256` 校验文件，并作为 Release 资产发布。
 
 **Release 资产清单（客户端在线更新依赖）：**
 
 | 资产 | 用途 |
 | --- | --- |
-| `DataSync.exe` | 在线更新的升级目标（必需） |
-| `DataSync.exe.sha256` | 下载完整性校验（可选，缺失时跳过校验） |
-| `DataSync-<version>-win-x64.zip` | 新用户完整分发包（解压即用） |
+| `OmniKit.exe` | 在线更新的升级目标（必需） |
+| `OmniKit.exe.sha256` | 下载完整性校验（可选，缺失时跳过校验） |
+| `OmniKit-<version>-win-x64.zip` | 新用户完整分发包（解压即用） |
+| `DataSync.exe` / `DataSync.exe.sha256` | 旧名兼容资产：与 `OmniKit.exe` 内容相同的副本，供改名前安装的旧版本在线更新（迁移期保留，可择期移除） |
+
+> **改名迁移说明**：工具由 DataSync Client 更名为 OmniKit。改名前安装的旧版本程序内固定按 `DataSync.exe` 资产名查找升级包，CI 在迁移期会同时以旧名发布同一构建，旧版本可正常在线更新（更新后文件名仍为 DataSync.exe，下次手动重新安装为新目录结构即可）。
 
 ## 许可证
 

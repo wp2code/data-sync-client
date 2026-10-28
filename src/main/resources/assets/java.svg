@@ -1,0 +1,12 @@
+<svg class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" width="256" height="256">
+
+    <path
+        d="M870.4 972.8H153.6c-56.32 0-102.4-46.08-102.4-102.4V153.6c0-56.32 46.08-102.4 102.4-102.4h716.8c56.32 0 102.4 46.08 102.4 102.4v716.8c0 56.32-46.08 102.4-102.4 102.4z"
+        fill="#E76F00" p-id="1"></path>
+    <path d="M440 300 v70 M560 270 v100" stroke="#FFFFFF" stroke-width="36" stroke-linecap="round" fill="none" p-id="2"></path>
+    <path
+        d="M320 430 h380 v170 a90 90 0 0 1 -90 90 h-200 a90 90 0 0 1 -90 -90 z"
+        fill="#FFFFFF" p-id="3"></path>
+    <path d="M700 470 h20 a55 55 0 0 1 0 110 h-20" stroke="#FFFFFF" stroke-width="36" fill="none" p-id="4"></path>
+    <rect x="270" y="730" width="484" height="40" rx="20" fill="#FFFFFF" p-id="5"></rect>
+</svg>

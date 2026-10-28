@@ -17,7 +17,8 @@ name: Release
 #   · UiConstants.VERSION 必须从 version.properties 动态加载
 #   · CHANGELOG.md 必须包含 "## [vX.Y.Z]" 对应段落
 #
-# 产物：DataSync.exe（含 SHA-256）+ Windows x64 分发 ZIP → GitHub Release
+# 产物：OmniKit.exe（含 SHA-256）+ Windows x64 分发 ZIP → GitHub Release
+# 迁移期说明：同时以旧名 DataSync.exe 发布同一构建，保证旧版本客户端在线更新可用
 # ═══════════════════════════════════════════════════════════════
 on:
   push:
@@ -156,7 +157,7 @@ jobs:
           echo "build.gradle version = $gradle_version"
 
           # 2) UiConstants.VERSION must load dynamically from version.properties
-          ui_file="src/main/java/com/datasync/ui/UiConstants.java"
+          ui_file="src/main/java/com/omnikit/ui/UiConstants.java"
           if [ ! -f "$ui_file" ]; then
             echo "::error::$ui_file not found"
             exit 1
@@ -190,9 +191,11 @@ jobs:
         with:
           name: release-artifacts-${{ env.TAG_NAME }}
           path: |
+            build/launch4j/OmniKit.exe
+            build/launch4j/OmniKit.exe.sha256
             build/launch4j/DataSync.exe
             build/launch4j/DataSync.exe.sha256
-            build/distributions/DataSync-*-win-x64.zip
+            build/distributions/OmniKit-*-win-x64.zip
             release_notes.md
           if-no-files-found: warn
           retention-days: 14
@@ -201,13 +204,18 @@ jobs:
       - name: Generate SHA-256 checksum
         shell: pwsh
         run: |
-          $exe = "build/launch4j/DataSync.exe"
+          $exe = "build/launch4j/OmniKit.exe"
           if (-not (Test-Path $exe)) {
             throw "EXE not found: $exe (build may have failed)"
           }
           $hash = (Get-FileHash -Algorithm SHA256 $exe).Hash.ToLower()
+          "$hash  OmniKit.exe" | Out-File -Encoding ascii build/launch4j/OmniKit.exe.sha256
+          # 兼容旧版本在线更新：老版本客户端按 DataSync.exe 资产名查找升级包，
+          # 迁移期内同时以旧名发布同一构建（内容由 sha256 保证一致）
+          Copy-Item $exe build/launch4j/DataSync.exe
           "$hash  DataSync.exe" | Out-File -Encoding ascii build/launch4j/DataSync.exe.sha256
           Write-Host "::notice::SHA-256 = $hash"
+          Get-Content build/launch4j/OmniKit.exe.sha256
           Get-Content build/launch4j/DataSync.exe.sha256
 
       # ── 9. 提取 CHANGELOG.md 中本版本的段落作为 Release 描述 ──
@@ -250,8 +258,10 @@ jobs:
           tag_name: ${{ env.TAG_NAME }}
           body_path: release_notes.md
           files: |
+            build/launch4j/OmniKit.exe
+            build/launch4j/OmniKit.exe.sha256
             build/launch4j/DataSync.exe
             build/launch4j/DataSync.exe.sha256
-            build/distributions/DataSync-*-win-x64.zip
+            build/distributions/OmniKit-*-win-x64.zip
           fail_on_unmatched_files: true
           generate_release_notes: false

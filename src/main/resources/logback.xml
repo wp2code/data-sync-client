@@ -8,11 +8,11 @@
         </encoder>
     </appender>
     
-    <!-- 滚动文件输出：logs/datasync.log -->
+    <!-- 滚动文件输出：logs/omnikit.log -->
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>logs/datasync.log</file>
+        <file>logs/omnikit.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <fileNamePattern>logs/datasync.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <fileNamePattern>logs/omnikit.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
             <maxHistory>30</maxHistory>
             <totalSizeCap>1GB</totalSizeCap>
             <timeBasedFileNamingAndTriggeringPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedFNATP">
@@ -26,7 +26,7 @@
     </appender>
     
     <!-- 项目日志级别 -->
-    <logger name="com.datasync" level="DEBUG"/>
+    <logger name="com.omnikit" level="DEBUG"/>
     
     <!-- 第三方库日志级别 -->
     <logger name="org.gitlab4j" level="WARN"/>

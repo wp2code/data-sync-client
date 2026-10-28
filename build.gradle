@@ -4,7 +4,7 @@ plugins {
     id 'edu.sc.seis.launch4j' version '3.0.5'
 }
 
-group = 'com.datasync'
+group = 'com.omnikit'
 version = '2.0.0'
 ext {
     // 内置 JRE 版本（Eclipse Temurin）
@@ -95,21 +95,21 @@ test {
 }
 
 application {
-    mainClass = 'com.datasync.Main'
+    mainClass = 'com.omnikit.Main'
 }
 
 // 临时冒烟测试任务（验证后删除）
 tasks.register('smokeTestExcel', JavaExec) {
     group = 'verification'
     classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'com.datasync.SmokeTestExcel'
+    mainClass = 'com.omnikit.SmokeTestExcel'
 }
 
 // 临时冒烟测试任务（验证后删除）：AI 问题管理双击全屏
 tasks.register('smokeTestFullscreen', JavaExec) {
     group = 'verification'
     classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'com.datasync.SmokeTestFullscreen'
+    mainClass = 'com.omnikit.SmokeTestFullscreen'
 }
 
 // 将所有运行时第三方依赖 JAR 单独拷贝到 build/libs/lib/ 目录
@@ -134,8 +134,8 @@ tasks.named('build') {
 jar {
     manifest {
         attributes(
-                'Main-Class': 'com.datasync.Main',
-                'Implementation-Title': 'DataSync',
+                'Main-Class': 'com.omnikit.Main',
+                'Implementation-Title': 'OmniKit',
                 'Implementation-Version': project.version
         )
     }
@@ -152,14 +152,14 @@ jar {
     }
 }
 
-// ── Launch4j：将 Fat JAR 打包成 Windows .exe 双击运行程序 ──
+// ── Launch4j：将 JAR 打包成 Windows .exe 双击运行程序 ──
 launch4j {
     // 输出目录（明确指定避免配置缓存警告）
     outputDir = layout.buildDirectory.dir("launch4j").get().asFile.absolutePath
     // 输出文件名
-    outfile = 'DataSync.exe'
+    outfile = 'OmniKit.exe'
     // 主类
-    mainClassName = 'com.datasync.Main'
+    mainClassName = 'com.omnikit.Main'
     // 使用 Fat JAR（执行 gradlew jar 后生成）
     jarTask = tasks.jar
     // 图标（使用正斜杠路径避免 windres RC 转义问题）
@@ -174,17 +174,17 @@ launch4j {
     jvmOptions = ['-Dfile.encoding=UTF-8']
     // 启动时不显示控制台
     dontWrapJar = false
-    fileDescription = 'DataSync- 数据库同步工具'
-    productName = 'DataSync'
-    internalName = 'DataSync'
-    copyright = 'DataSync'
+    fileDescription = 'OmniKit - 一体化研发效率工具'
+    productName = 'OmniKit'
+    internalName = 'OmniKit'
+    copyright = 'OmniKit'
     // 要求管理员权限（可选）
     // requiresAdmin = false
 }
 
 // 生成 ICO 图标（优先使用 src/main/resources/app.ico，否则渲染 icon.svg 风格图标）
 tasks.register('generateIcon') {
-    def customIco = file("${projectDir}/src/main/resources/app.ico")
+    def customIco = file("${projectDir}/src/main/resources/assets/app.ico")
     def outputFileProvider = layout.buildDirectory.file("tmp/app.ico")
 
     outputs.file(outputFileProvider)
@@ -276,16 +276,16 @@ tasks.register('packageZip', Zip) {
     dependsOn 'copyLibs'
     dependsOn 'createExe'
 
-    archiveBaseName = 'DataSync'
+    archiveBaseName = 'OmniKit'
     archiveVersion = project.version.toString()
     archiveClassifier = 'win-x64'
     archiveExtension = 'zip'
     destinationDirectory = layout.buildDirectory.dir('distributions')
 
-    // 直接打包 build/launch4j/：该目录下 Launch4j 插件已同步出 DataSync.exe、jre/、lib/（依赖 JAR）。
+    // 直接打包 build/launch4j/：该目录下 Launch4j 插件已同步出 OmniKit.exe、jre/、lib/（依赖 JAR）。
     // 运行目录结构：
-    //   DataSync-x.y.z-win-x64/
-    //     ├── DataSync.exe
+    //   OmniKit-x.y.z-win-x64/
+    //     ├── OmniKit.exe
     //     ├── jre/
     //     └── lib/   ← 第三方依赖 JAR（由 Launch4j 在 createExe 时生成）
     from(layout.buildDirectory.dir('launch4j'))
