@@ -28,6 +28,12 @@ public class ProgramConfig {
      */
     public static final String TYPE_OTHER = "OTHER";
 
+    /**
+     * 程序类型：HTTP 静态文件服务（内置 http-server，无需外部运行时）。 「程序/命令」为服务根目录，「参数」为启动参数（默认端口
+     * 8080），支持 -p/--port 端口、-a/--address 监听地址、-P/--proxy 代理、-S/--tls 启用 HTTPS 与 -C/--cert、-K/--key 证书私钥
+     */
+    public static final String TYPE_HTTP_SERVER = "HTTP_SERVER";
+
     private Long id;
 
     /**

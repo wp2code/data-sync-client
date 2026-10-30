@@ -15,6 +15,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
+import lombok.Getter;
 
 /**
  * 数据同步核心业务类 封装单表全量数据同步逻辑：字段解析、SQL 动态构建、批量插入、事务管控、异常回滚
@@ -1017,6 +1018,7 @@ public class OmniKitService {
     /**
      * 差异类型（列 + 索引）
      */
+    @Getter
     public enum DiffType {
         ADD_COLUMN("新增列"),
         DROP_COLUMN("删除多余列"),
@@ -1030,10 +1032,6 @@ public class OmniKitService {
         
         DiffType(String label) {
             this.label = label;
-        }
-        
-        public String getLabel() {
-            return label;
         }
     }
     

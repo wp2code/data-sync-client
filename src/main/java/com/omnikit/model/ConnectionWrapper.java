@@ -1,11 +1,15 @@
 package com.omnikit.model;
 
 import java.sql.Connection;
+import lombok.Getter;
+import lombok.Setter;
 
 /**
  * @author liuweiping
  * @date 2026-06-26
  **/
+@Getter
+@Setter
 public class ConnectionWrapper {
     
     private Connection connection;
@@ -15,21 +19,5 @@ public class ConnectionWrapper {
     public ConnectionWrapper(DataSource dataSource, Connection connection) {
         this.dataSource = dataSource;
         this.connection = connection;
-    }
-    
-    public Connection getConnection() {
-        return connection;
-    }
-    
-    public void setConnection(Connection connection) {
-        this.connection = connection;
-    }
-    
-    public DataSource getDataSource() {
-        return dataSource;
-    }
-    
-    public void setDataSource(DataSource dataSource) {
-        this.dataSource = dataSource;
     }
 }

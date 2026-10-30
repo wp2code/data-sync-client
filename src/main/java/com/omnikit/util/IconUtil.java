@@ -35,6 +35,8 @@ public final class IconUtil {
     
     private static ImageIcon pythonIcon;
     
+    private static ImageIcon httpServerIcon;
+    
     private static ImageIcon otherProgramIcon;
     
     /**
@@ -88,6 +90,12 @@ public final class IconUtil {
             }
             return pythonIcon;
         }
+        if (ProgramConfig.TYPE_HTTP_SERVER.equals(programType)) {
+            if (httpServerIcon == null) {
+                httpServerIcon = loadSvgIcon("assets/http.svg");
+            }
+            return httpServerIcon;
+        }
         if (otherProgramIcon == null) {
             otherProgramIcon = loadSvgIcon("assets/generic.svg");
         }
@@ -135,6 +143,9 @@ public final class IconUtil {
         }
         if (resourceName.contains("python")) {
             return createLetterIcon('P', new Color(0x3776AB));
+        }
+        if (resourceName.contains("http")) {
+            return createLetterIcon('H', new Color(0x4A9EFF));
         }
         if (resourceName.contains("generic")) {
             return createLetterIcon('▶', new Color(0x7A8290));

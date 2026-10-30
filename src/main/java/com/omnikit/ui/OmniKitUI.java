@@ -1,5 +1,6 @@
 package com.omnikit.ui;
 
+import com.omnikit.components.AbsJPanl;
 import com.omnikit.components.ButtonFactory;
 import com.omnikit.core.GitLabService;
 import com.omnikit.core.ProcessContainerService;
@@ -42,13 +43,13 @@ public class OmniKitUI extends JFrame {
     private boolean updateCheckInProgress = false;
     
     // ────────── 上下栏布局：上栏菜单 + 下栏内容卡片 ──────────
-    private static final String CARD_SYNC = "sync";
+    private static final String CARD_SYNC = DataSyncPanel.NAME;
     
-    private static final String CARD_AI = "ai";
+    private static final String CARD_AI = AiQuestionPanel.NAME;
     
-    private static final String CARD_SCRIPT = "script";
+    private static final String CARD_SCRIPT = ScriptPanel.NAME;
     
-    private static final String CARD_CONTAINER = "container";
+    private static final String CARD_CONTAINER = ProgramContainerPanel.NAME;
     
     private CardLayout contentCards;
     
@@ -135,10 +136,8 @@ public class OmniKitUI extends JFrame {
      */
     private void bindF11Maximize() {
         JRootPane rootPane = getRootPane();
-        rootPane.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
-                .put(KeyStroke.getKeyStroke(KeyEvent.VK_F11, 0), "toggleMaximize");
-        rootPane.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
-                .put(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), "restoreMaximize");
+        rootPane.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke(KeyEvent.VK_F11, 0), "toggleMaximize");
+        rootPane.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), "restoreMaximize");
         rootPane.getActionMap().put("toggleMaximize", new AbstractAction() {
             @Override
             public void actionPerformed(ActionEvent e) {
@@ -226,6 +225,16 @@ public class OmniKitUI extends JFrame {
         activeCard = card;
         contentCards.show(contentCardPanel, card);
         updateMenuSelection();
+        final Component[] components = contentCardPanel.getComponents();
+        for (final Component component : components) {
+            if (component instanceof AbsJPanl cp) {
+                if (!activeCard.equals(cp.name())) {
+                    cp.destroy();
+                } else {
+                    cp.refresh();
+                }
+            }
+        }
     }
     
     /**

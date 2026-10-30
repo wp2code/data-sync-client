@@ -1,5 +1,6 @@
 package com.omnikit.ui.datasync;
 
+import com.omnikit.components.AbsJPanl;
 import com.omnikit.components.ButtonFactory;
 import com.omnikit.components.ChildLayoutPanel;
 import com.omnikit.components.CustomTextField;
@@ -43,8 +44,8 @@ import lombok.extern.slf4j.Slf4j;
  * 数据同步内容面板 — 源/目标库选择、连接管理、批量同步、DDL/INSERT 导出、表结构比较
  */
 @Slf4j
-public class DataSyncPanel extends JPanel {
-    
+public class DataSyncPanel extends AbsJPanl {
+    public static final String NAME = "sync";
     // ────────── 源库选择组件 ──────────
     private IconJComboBox srcConfigCombo;
     
@@ -1664,6 +1665,11 @@ public class DataSyncPanel extends JPanel {
     
     public void appendLog(String msg) {
         LogUtil.appendLog(msg, LogUtil.DATA_SYNC_UI_LOG_AREA);
+    }
+    
+    @Override
+    public String name() {
+        return NAME;
     }
     
     public static class ConnectThread extends Thread {

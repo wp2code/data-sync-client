@@ -8,12 +8,13 @@
  */
 package com.omnikit.ui.aitraining;
 
+import com.omnikit.components.AbsJPanl;
+import com.omnikit.components.ButtonFactory;
 import com.omnikit.components.CustomTextField;
 import com.omnikit.core.AiQuestionApiClient;
 import com.omnikit.model.AiAnswer;
 import com.omnikit.model.AiEnvConfig;
 import com.omnikit.model.AiQuestion;
-import com.omnikit.components.ButtonFactory;
 import com.omnikit.ui.UiConstants;
 import com.omnikit.util.ExcelExportUtil;
 import java.awt.*;
@@ -42,7 +43,7 @@ import org.slf4j.LoggerFactory;
  * @author liuweiping
  * @date 2026-09-16
  */
-public class AnswerAuditPanel {
+public class AnswerAuditPanel extends AbsJPanl {
     
     private static final Logger logger = LoggerFactory.getLogger(AnswerAuditPanel.class);
     
@@ -310,8 +311,8 @@ public class AnswerAuditPanel {
         answerCheckColumn.setMinWidth(AiQuestionPanel.CHECK_COLUMN_WIDTH);
         answerCheckColumn.setMaxWidth(AiQuestionPanel.CHECK_COLUMN_WIDTH);
         answerCheckColumn.setCellRenderer(new AiQuestionPanel.CheckBoxCellRenderer());
-        answerCheckColumn.setHeaderRenderer(new AiQuestionPanel.HeaderCheckBoxRenderer(() -> answerTableModel.isCurrentPageAllChecked(),
-                () -> answerTableModel.getRowCount()));
+        answerCheckColumn.setHeaderRenderer(
+                new AiQuestionPanel.HeaderCheckBoxRenderer(() -> answerTableModel.isCurrentPageAllChecked(), () -> answerTableModel.getRowCount()));
         TableColumn answerActionColumn = answerTable.getColumnModel().getColumn(ACOL_ACTION);
         answerActionColumn.setMinWidth(ANSWER_ACTION_COLUMN_WIDTH);
         answerActionColumn.setMaxWidth(ANSWER_ACTION_COLUMN_WIDTH);
@@ -351,8 +352,8 @@ public class AnswerAuditPanel {
         answerTable.getColumnModel().getColumn(ACOL_CREATE_TIME).setCellRenderer(new AiQuestionPanel.TextCellRenderer(20));
         answerTable.getColumnModel().getColumn(ACOL_UPDATE_TIME).setCellRenderer(new AiQuestionPanel.TextCellRenderer(20));
         answerTable.getColumnModel().getColumn(ACOL_ACTION).setCellRenderer(
-                new AiQuestionPanel.ActionCellRenderer(() -> answerHoverActionRow, () -> answerHoverActionZone, "查看回复详情（全部字段）",
-                        false, AiQuestionPanel.ANSWER_ACTION_DELETE));
+                new AiQuestionPanel.ActionCellRenderer(() -> answerHoverActionRow, () -> answerHoverActionZone, "查看回复详情（全部字段）", false,
+                        AiQuestionPanel.ANSWER_ACTION_DELETE));
         answerTable.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -433,6 +434,11 @@ public class AnswerAuditPanel {
         panel.add(pagePanel, BorderLayout.SOUTH);
         
         return panel;
+    }
+    
+    @Override
+    public String name() {
+        return "AI-Answer-Audit";
     }
     
     // ────────── 筛选与搜索 ──────────
@@ -627,8 +633,7 @@ public class AnswerAuditPanel {
         }
         if (size < AiQuestionPanel.MIN_PAGE_SIZE || size > AiQuestionPanel.MAX_PAGE_SIZE) {
             answerPageSizeCombo.getEditor().setItem(String.valueOf(answerPageSize));
-            dialog.setStatus("每页条数请输入 " + AiQuestionPanel.MIN_PAGE_SIZE + " ~ " + AiQuestionPanel.MAX_PAGE_SIZE + " 之间的整数",
-                    false);
+            dialog.setStatus("每页条数请输入 " + AiQuestionPanel.MIN_PAGE_SIZE + " ~ " + AiQuestionPanel.MAX_PAGE_SIZE + " 之间的整数", false);
             return;
         }
         if (size == answerPageSize) {
@@ -842,10 +847,8 @@ public class AnswerAuditPanel {
         gbc.insets = new Insets(6, 6, 6, 6);
         gbc.anchor = GridBagConstraints.WEST;
         dialog.addFormRow(form, gbc, 0, new JLabel("ID："), new JLabel(answer.getId() != null ? String.valueOf(answer.getId()) : ""));
-        dialog.addFormRow(form, gbc, 1, new JLabel("问题："),
-                AiQuestionPanel.readonlyArea(AiQuestionPanel.nullToEmpty(answer.getQuery()), 2));
-        dialog.addFormRow(form, gbc, 2, new JLabel("回复内容："),
-                AiQuestionPanel.readonlyArea(AiQuestionPanel.nullToEmpty(answer.getAnswer()), 15));
+        dialog.addFormRow(form, gbc, 1, new JLabel("问题："), AiQuestionPanel.readonlyArea(AiQuestionPanel.nullToEmpty(answer.getQuery()), 2));
+        dialog.addFormRow(form, gbc, 2, new JLabel("回复内容："), AiQuestionPanel.readonlyArea(AiQuestionPanel.nullToEmpty(answer.getAnswer()), 15));
         dialog.addFormRow(form, gbc, 3, new JLabel("所属项目："), new JLabel(answerProjectDisplayText(answer)));
         dialog.addFormRow(form, gbc, 4, new JLabel("所属用户："), new JLabel(answerUserDisplayText(answer)));
         dialog.addFormRow(form, gbc, 5, new JLabel("是否允许修改："), new JLabel(answer.isModifyAllowed() ? ALLOW_MODIFY_YES : ALLOW_MODIFY_NO));

@@ -124,7 +124,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
     private AiEnvConfig editingEnv;
     
     public AiEnvMangerDialog(Frame owner) {
-        super("AIENV", owner, "问题保存环境管理", true, 980, 620);
+        super("AIENV", owner, "环境管理", true, 980, 620);
         initUI();
         refreshEnvList();
         selectDefaultEnv();

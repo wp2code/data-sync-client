@@ -1,25 +1,27 @@
 package com.omnikit.ui.scripts;
 
+import com.mysql.cj.util.StringUtils;
+import com.omnikit.components.AbsJPanl;
+import com.omnikit.components.ButtonFactory;
 import com.omnikit.components.CustomTextField;
 import com.omnikit.components.FilterComboBox;
 import com.omnikit.components.OptionJPanel;
 import com.omnikit.components.combobox.IconItem;
 import com.omnikit.components.combobox.IconJComboBox;
-import com.omnikit.core.OmniKitService;
 import com.omnikit.core.DbConnector;
 import com.omnikit.core.GitLabService;
+import com.omnikit.core.OmniKitService;
 import com.omnikit.model.DataSource;
 import com.omnikit.model.DbType;
 import com.omnikit.model.FileParams;
 import com.omnikit.model.ProjectItem;
 import com.omnikit.model.Script;
-import com.omnikit.components.ButtonFactory;
+import com.omnikit.ui.UiConstants;
 import com.omnikit.util.ConfigUtil;
 import com.omnikit.util.GlobalUtil;
 import com.omnikit.util.IconUtil;
 import com.omnikit.util.LogUtil;
 import com.omnikit.util.SQLiteConfigUtil;
-import com.mysql.cj.util.StringUtils;
 import java.awt.*;
 import java.awt.event.*;
 import java.io.File;
@@ -50,7 +52,9 @@ import org.gitlab4j.api.models.RepositoryFileResponse;
  * @author liuweiping
  * @date 2026-07-03
  **/
-public class ScriptPanel extends JPanel {
+public class ScriptPanel extends AbsJPanl {
+    
+    public static final String NAME = "script";
     
     private final List<OptionJPanel> scriptPanelList = new ArrayList<>();
     
@@ -97,6 +101,11 @@ public class ScriptPanel extends JPanel {
         bindSaveShortcut();
         // 避免搜索框默认获得焦点，将焦点移到脚本列表
         SwingUtilities.invokeLater(() -> scriptListPanel.requestFocusInWindow());
+    }
+    
+    @Override
+    public String name() {
+        return NAME;
     }
     
     private void initUI() {
@@ -615,16 +624,43 @@ public class ScriptPanel extends JPanel {
         }).start();
     }
     
+    /**
+     * 表单标签：右对齐，保证冒号纵向成列
+     */
+    private JLabel formLabel(String text) {
+        JLabel label = new JLabel(text, SwingConstants.RIGHT);
+        label.setFont(UiConstants.FONT_SANS_12);
+        return label;
+    }
+    
+    /**
+     * 统一一组标签的宽度（取最宽者），使各输入框左侧起点一致
+     */
+    private void alignLabelWidth(List<JLabel> labels) {
+        int maxWidth = 0;
+        for (JLabel label : labels) {
+            maxWidth = Math.max(maxWidth, label.getPreferredSize().width);
+        }
+        Dimension size = new Dimension(maxWidth, 25);
+        for (JLabel label : labels) {
+            label.setPreferredSize(size);
+            label.setMinimumSize(size);
+        }
+    }
+    
     private void addFormRow(JPanel panel, GridBagConstraints gbc, int row, JLabel label, JComponent field) {
         gbc.gridx = 0;
         gbc.gridy = row;
         gbc.weightx = 0;
+        gbc.weighty = 0;
         gbc.fill = GridBagConstraints.NONE;
+        gbc.anchor = GridBagConstraints.EAST;
         panel.add(label, gbc);
         
         gbc.gridx = 1;
         gbc.weightx = 1;
         gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.anchor = GridBagConstraints.WEST;
         panel.add(field, gbc);
     }
     
@@ -664,26 +700,39 @@ public class ScriptPanel extends JPanel {
         });
         
         JPanel panel = new JPanel(new GridBagLayout());
+        panel.setBorder(new EmptyBorder(10, 12, 5, 12));
         GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.insets = new Insets(6, 6, 6, 6);
         gbc.anchor = GridBagConstraints.WEST;
-        addFormRow(panel, gbc, 0, new JLabel("脚本名称:"), nameField);
-        addFormRow(panel, gbc, 1, new JLabel("数据库类型:"), dbTypeInput);
-        addFormRow(panel, gbc, 2, new JLabel("项目:"), projectCombo);
-        addFormRow(panel, gbc, 3, new JLabel("分支:"), branchCombo);
-        addFormRow(panel, gbc, 4, new JLabel("文件路径（.sql）:"), filePathField);
+        
+        JLabel nameLabel = formLabel("脚本名称:");
+        JLabel dbTypeLabel = formLabel("数据库类型:");
+        JLabel projectLabel = formLabel("项目:");
+        JLabel branchLabel = formLabel("分支:");
+        JLabel filePathLabel = formLabel("文件路径:");
+        JLabel remarkLabel = formLabel("备注:");
+        remarkLabel.setVerticalAlignment(SwingConstants.TOP);
+        alignLabelWidth(List.of(nameLabel, dbTypeLabel, projectLabel, branchLabel, filePathLabel, remarkLabel));
+        
+        addFormRow(panel, gbc, 0, nameLabel, nameField);
+        addFormRow(panel, gbc, 1, dbTypeLabel, dbTypeInput);
+        addFormRow(panel, gbc, 2, projectLabel, projectCombo);
+        addFormRow(panel, gbc, 3, branchLabel, branchCombo);
+        addFormRow(panel, gbc, 4, filePathLabel, filePathField);
         
         // 备注：允许垂直方向压缩/伸展
         gbc.gridx = 0;
         gbc.gridy = 5;
         gbc.weightx = 0;
         gbc.weighty = 1;
-        gbc.fill = GridBagConstraints.BOTH;
-        gbc.anchor = GridBagConstraints.NORTHWEST;
-        panel.add(new JLabel("备注:"), gbc);
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.anchor = GridBagConstraints.NORTHEAST;
+        panel.add(remarkLabel, gbc);
         
         gbc.gridx = 1;
         gbc.weightx = 1;
+        gbc.fill = GridBagConstraints.BOTH;
+        gbc.anchor = GridBagConstraints.WEST;
         panel.add(remarkScroll, gbc);
         
         int option = JOptionPane.showConfirmDialog(this, panel, title, JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);

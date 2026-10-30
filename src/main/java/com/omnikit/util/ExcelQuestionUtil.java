@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
+import lombok.Getter;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.DataFormatter;
@@ -120,19 +121,12 @@ public final class ExcelQuestionUtil {
     /**
      * 解析结果：问题列表与错误信息（errors 非空时不应导入任何数据）
      */
+    @Getter
     public static class ParseResult {
         
         private final List<AiQuestion> questions = new ArrayList<>();
         
         private final List<String> errors = new ArrayList<>();
-        
-        public List<AiQuestion> getQuestions() {
-            return questions;
-        }
-        
-        public List<String> getErrors() {
-            return errors;
-        }
     }
     
     /**

@@ -2,10 +2,12 @@ package com.omnikit.model;
 
 import com.omnikit.components.combobox.IconItem;
 import com.omnikit.util.IconUtil;
+import lombok.Getter;
 
 /**
  * 数据库类型枚举，替代魔法字符串 "mysql"/"postgresql"
  */
+@Getter
 public enum DbType {
     MYSQL("mysql", "com.mysql.cj.jdbc.Driver", 3306, "MySQL"),
     POSTGRESQL("postgresql", "org.postgresql.Driver", 5432, "PostgreSQL");
@@ -42,21 +44,5 @@ public enum DbType {
     public static IconItem getIconItem(String s) {
         final DbType dbType = fromString(s);
         return dbType.equals(POSTGRESQL) ? POSTGRESQL_ITEM : MYSQL_ITEM;
-    }
-    
-    public String getKey() {
-        return key;
-    }
-    
-    public String getDriverClass() {
-        return driverClass;
-    }
-    
-    public int getDefaultPort() {
-        return defaultPort;
-    }
-    
-    public String getDisplayName() {
-        return displayName;
     }
 }

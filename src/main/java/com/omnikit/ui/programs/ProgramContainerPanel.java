@@ -1,10 +1,13 @@
 package com.omnikit.ui.programs;
 
+import com.omnikit.components.AbsJPanl;
 import com.omnikit.components.ButtonFactory;
 import com.omnikit.components.CustomTextField;
 import com.omnikit.components.OptionJPanel;
 import com.omnikit.components.combobox.IconItem;
 import com.omnikit.components.combobox.IconJComboBox;
+import com.omnikit.core.HttpServerOptions;
+import com.omnikit.core.HttpStaticFileServer;
 import com.omnikit.core.ProcessContainerService;
 import com.omnikit.model.ProgramConfig;
 import com.omnikit.ui.UiConstants;
@@ -14,6 +17,8 @@ import com.omnikit.util.IconUtil;
 import com.omnikit.util.SQLiteConfigUtil;
 import java.awt.*;
 import java.awt.event.*;
+import java.io.File;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -32,7 +37,9 @@ import javax.swing.event.DocumentListener;
  * @author liuweiping
  * @date 2026-10-19
  **/
-public class ProgramContainerPanel extends JPanel {
+public class ProgramContainerPanel extends AbsJPanl {
+    
+    public static final String NAME = "container";
     
     private static final ProcessContainerService PROCESS_SERVICE = ProcessContainerService.getInstance();
     
@@ -91,6 +98,11 @@ public class ProgramContainerPanel extends JPanel {
     
     private JPanel programRow;
     
+    /**
+     * 程序类型行：类型下拉框 + 帮助按钮（切换类型后点帮助即可查看该类型的说明与示例）
+     */
+    private JPanel typeRow;
+    
     private JPanel workDirRow;
     
     private JPanel jrePathRow;
@@ -102,9 +114,10 @@ public class ProgramContainerPanel extends JPanel {
     /**
      * 程序类型下拉标签与持久化值（下标一一对应）
      */
-    private static final String[] TYPE_LABELS = {"Java 程序", "Python 程序", "其他程序"};
+    private static final String[] TYPE_LABELS = {"Java 程序", "Python 程序", "HTTP 服务", "其他程序"};
     
-    private static final String[] TYPE_VALUES = {ProgramConfig.TYPE_JAVA, ProgramConfig.TYPE_PYTHON, ProgramConfig.TYPE_OTHER};
+    private static final String[] TYPE_VALUES = {ProgramConfig.TYPE_JAVA, ProgramConfig.TYPE_PYTHON, ProgramConfig.TYPE_HTTP_SERVER,
+            ProgramConfig.TYPE_OTHER};
     
     /**
      * 程序性设置下拉选中项时，抑制触发表单重建的回调
@@ -122,6 +135,16 @@ public class ProgramContainerPanel extends JPanel {
     private JButton restartBtn;
     
     private JButton clearBtn;
+    
+    /**
+     * 内置 HTTP 服务的浏览器访问按钮（仅 HTTP 服务运行中可用）
+     */
+    private JButton openBtn;
+    
+    /**
+     * 帮助按钮（位于「程序配置」的程序类型行右侧）：按程序类型打印配置说明与完整示例到控制台
+     */
+    private JButton helpBtn;
     
     private JLabel statusLabel;
     
@@ -149,7 +172,7 @@ public class ProgramContainerPanel extends JPanel {
     /**
      * 控制台批量刷新定时器（200ms）
      */
-    private Timer flushTimer;
+    private final Timer flushTimer;
     
     public ProgramContainerPanel() {
         SQLiteConfigUtil.getInstance().initialize();
@@ -160,6 +183,25 @@ public class ProgramContainerPanel extends JPanel {
         SwingUtilities.invokeLater(this::fitFormDivider);
         flushTimer = new Timer(200, e -> flushPendingOutput());
         flushTimer.start();
+    }
+    
+    @Override
+    public void destroy() {
+        if (flushTimer != null && flushTimer.isRunning()) {
+            flushTimer.stop();
+        }
+    }
+    
+    @Override
+    public void refresh() {
+        if (flushTimer != null && !flushTimer.isRunning()) {
+            flushTimer.start();
+        }
+    }
+    
+    @Override
+    public String name() {
+        return NAME;
     }
     
     private void initUI() {
@@ -293,6 +335,14 @@ public class ProgramContainerPanel extends JPanel {
         }
         updateTypeExamples();
         
+        // 程序类型行：类型下拉框 + 帮助按钮
+        helpBtn = ButtonFactory.createToolbar("帮助");
+        helpBtn.setToolTipText("打印当前程序类型的配置字段说明、参数说明与完整示例到控制台");
+        helpBtn.addActionListener(e -> printTypeHelp());
+        typeRow = new JPanel(new BorderLayout(5, 0));
+        typeRow.add(typeComboBox, BorderLayout.CENTER);
+        typeRow.add(helpBtn, BorderLayout.EAST);
+        
         // 程序/命令行：输入框 + 浏览按钮
         browseProgramBtn = ButtonFactory.createToolbar("浏览...");
         browseProgramBtn.addActionListener(e -> browseProgramPath());
@@ -346,16 +396,23 @@ public class ProgramContainerPanel extends JPanel {
         gbc.anchor = GridBagConstraints.WEST;
         gbc.fill = GridBagConstraints.HORIZONTAL;
         
+        // HTTP 服务：根目录即「程序/命令」、端口即「参数」，无需工作目录与运行环境字段
+        boolean httpServer = ProgramConfig.TYPE_HTTP_SERVER.equals(selectedTypeValue());
         List<JComponent[]> rows = new ArrayList<>();
-        rows.add(new JComponent[] {formLabel("程序类型:"), typeComboBox});
+        rows.add(new JComponent[] {formLabel("程序类型:"), typeRow});
         rows.add(new JComponent[] {formLabel("名称:"), nameField});
-        rows.add(new JComponent[] {formLabel("程序/命令:"), programRow});
-        rows.add(new JComponent[] {formLabel("参数:"), argumentsField});
-        rows.add(new JComponent[] {formLabel("工作目录:"), workDirRow});
-        if (ProgramConfig.TYPE_JAVA.equals(selectedTypeValue())) {
-            rows.add(new JComponent[] {formLabel("JRE/JDK:"), jrePathRow});
-        } else if (ProgramConfig.TYPE_PYTHON.equals(selectedTypeValue())) {
-            rows.add(new JComponent[] {formLabel("Python:"), pythonPathRow});
+        if (httpServer) {
+            rows.add(new JComponent[] {formLabel("服务目录:"), programRow});
+            rows.add(new JComponent[] {formLabel("参数:"), argumentsField});
+        } else {
+            rows.add(new JComponent[] {formLabel("程序/命令:"), programRow});
+            rows.add(new JComponent[] {formLabel("参数:"), argumentsField});
+            rows.add(new JComponent[] {formLabel("工作目录:"), workDirRow});
+            if (ProgramConfig.TYPE_JAVA.equals(selectedTypeValue())) {
+                rows.add(new JComponent[] {formLabel("JRE/JDK:"), jrePathRow});
+            } else if (ProgramConfig.TYPE_PYTHON.equals(selectedTypeValue())) {
+                rows.add(new JComponent[] {formLabel("Python:"), pythonPathRow});
+            }
         }
         rows.add(new JComponent[] {formLabel("备注:"), remarkField});
         
@@ -434,6 +491,13 @@ public class ProgramContainerPanel extends JPanel {
                 programPathField.setToolTipText("填 Python 项目入口脚本路径（如 D:\\proj\\main.py），" + "启动时自动前置配置的解释器（未配置则用系统 PATH 的 python）；"
                         + "也可填完整命令行，如 python -m uvicorn app:app --port 8000");
             }
+            case ProgramConfig.TYPE_HTTP_SERVER -> {
+                programPathField.setPlaceholder("如：D:\\dist 或 D:\\www\\static");
+                argumentsField.setPlaceholder("如：-p 8080 -a 127.0.0.1 -S -C cert.pem -K key.pem");
+                programPathField.setToolTipText(
+                        "静态文件服务根目录：启动后以 http://localhost:<端口>/ 对外提供该目录下文件的访问，" + "支持 index.html 默认页与目录浏览；"
+                                + "也可放 TLS 证书文件（cert.pem / key.pem），配合 -S 参数以 https:// 访问");
+            }
             case ProgramConfig.TYPE_JAVA -> {
                 programPathField.setPlaceholder("如：java -jar D:\\app\\ebx-pawn.jar");
                 argumentsField.setPlaceholder("如：--server.port=8080 --spring.profiles.active=prod");
@@ -447,9 +511,24 @@ public class ProgramContainerPanel extends JPanel {
                         "可填完整命令行（首词为程序，如 D:\\server\\startup.bat）" + "或单个程序/脚本路径，参数填到「参数」框；含空格的段用双引号包裹");
             }
         }
-        argumentsField.setToolTipText("传给程序的运行参数，多个用空格分隔；" + (ProgramConfig.TYPE_JAVA.equals(selectedTypeValue())
-                ? "JVM 参数（如 -Xms512m -Dfile.encoding=UTF-8）需写在「程序/命令」中，置于 -jar 之前"
-                : "Python 项目的入口脚本可直接写在「程序/命令」中，此处填脚本参数"));
+        if (ProgramConfig.TYPE_HTTP_SERVER.equals(selectedTypeValue())) {
+            argumentsField.setToolTipText(
+                    "<html>HTTP 服务启动参数，多个用空格分隔：<br>" + "-p / --port 端口号（1-65535，留空默认 " + HttpStaticFileServer.DEFAULT_PORT
+                            + "）<br>" + "-a / --address 监听与访问地址（如 127.0.0.1、localhost、0.0.0.0；留空监听全部网卡）<br>"
+                            + "-P / --proxy 代理地址：接口请求（任意方法）与本地文件不存在的请求均转发，" + "携带原始接口路径、查询串、请求头与请求体<br>"
+                            + "--proxy-prefix /api：命中前缀的请求无条件走代理，不被本地同名文件遮蔽（多个用逗号分隔）<br>"
+                            + "--cors[=headers]：开启 CORS（默认 Access-Control-Allow-Origin: * 并本地应答预检）；" + "可传逗号分隔的头列表，每项为「名称」或「名称:值」<br>"
+                            + "-S / --tls / --ssl：启用 HTTPS（TLS/SSL），访问地址变为 https://<br>"
+                            + "-C / --cert 证书文件路径（PEM，默认 cert.pem）；-K / --key 私钥文件路径（PEM，默认 key.pem，"
+                            + "需未加密的 PKCS#8 或 RSA PKCS#1）<br>" + "证书与私钥的相对路径优先按服务根目录解析；自签证书可用 openssl req -x509 -newkey rsa:2048 -nodes "
+                            + "-keyout key.pem -out cert.pem -days 365 生成（浏览器会提示不受信任，确认后继续访问即可）<br>"
+                            + "示例：--port=8080 --cors=Access-Control-Allow-Origin:http://localhost:5173,"
+                            + "Access-Control-Allow-Credentials:true<br>" + "示例：-S -C D:\\cert\\server.pem -K D:\\cert\\server.key</html>");
+        } else {
+            argumentsField.setToolTipText("传给程序的运行参数，多个用空格分隔；" + (ProgramConfig.TYPE_JAVA.equals(selectedTypeValue())
+                    ? "JVM 参数（如 -Xms512m -Dfile.encoding=UTF-8）需写在「程序/命令」中，置于 -jar 之前"
+                    : "Python 项目的入口脚本可直接写在「程序/命令」中，此处填脚本参数"));
+        }
     }
     
     private JLabel formLabel(String text) {
@@ -477,10 +556,15 @@ public class ProgramContainerPanel extends JPanel {
         restartBtn.addActionListener(e -> restartProgram());
         clearBtn = ButtonFactory.createToolbar("清空");
         clearBtn.addActionListener(e -> clearConsole());
+        // 内置 HTTP 服务专用：在默认浏览器中打开服务地址
+        openBtn = ButtonFactory.createToolbar("访问");
+        openBtn.setToolTipText("在默认浏览器中打开当前 HTTP 服务地址");
+        openBtn.addActionListener(e -> openInBrowser());
         btnPanel.add(startBtn);
         btnPanel.add(stopBtn);
         btnPanel.add(restartBtn);
         btnPanel.add(clearBtn);
+        btnPanel.add(openBtn);
         
         statusLabel = new JLabel("（未选择程序）");
         statusLabel.setFont(UiConstants.FONT_SANS_12);
@@ -831,6 +915,10 @@ public class ProgramContainerPanel extends JPanel {
             JOptionPane.showMessageDialog(this, "程序/命令不能为空", "提示", JOptionPane.WARNING_MESSAGE);
             return false;
         }
+        // HTTP 服务：目录必须真实存在，端口需为合法端口号
+        if (ProgramConfig.TYPE_HTTP_SERVER.equals(selectedTypeValue()) && !validateHttpServerForm(programPath)) {
+            return false;
+        }
         ProgramConfig sameName = ConfigUtil.loadProgramConfigByName(name);
         if (selectedConfig != null) {
             // 更新已有程序
@@ -880,10 +968,29 @@ public class ProgramContainerPanel extends JPanel {
         return true;
     }
     
+    /**
+     * 校验 HTTP 服务表单：服务目录必须存在且为目录，启动参数（端口、代理地址等）需可解析
+     */
+    private boolean validateHttpServerForm(String rootPath) {
+        File root = new File(rootPath);
+        if (!root.isDirectory()) {
+            JOptionPane.showMessageDialog(this, "HTTP 服务目录不存在或不是目录：" + rootPath, "提示", JOptionPane.WARNING_MESSAGE);
+            return false;
+        }
+        String invalid = HttpServerOptions.parse(argumentsField.getText()).invalidMessage();
+        if (invalid != null) {
+            JOptionPane.showMessageDialog(this, "HTTP 服务参数有误：" + invalid, "提示", JOptionPane.WARNING_MESSAGE);
+            return false;
+        }
+        return true;
+    }
+    
     private void browseProgramPath() {
+        // HTTP 服务的「程序/命令」字段语义为服务根目录，浏览时选择目录
+        boolean httpServer = ProgramConfig.TYPE_HTTP_SERVER.equals(selectedTypeValue());
         JFileChooser chooser = new JFileChooser();
-        chooser.setDialogTitle("选择程序或脚本");
-        chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+        chooser.setDialogTitle(httpServer ? "选择 HTTP 服务根目录" : "选择程序或脚本");
+        chooser.setFileSelectionMode(httpServer ? JFileChooser.DIRECTORIES_ONLY : JFileChooser.FILES_ONLY);
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             programPathField.setText(chooser.getSelectedFile().getAbsolutePath());
         }
@@ -980,6 +1087,50 @@ public class ProgramContainerPanel extends JPanel {
                 updateActionState();
             });
         }, "program-container-restart").start();
+    }
+    
+    /**
+     * 在默认浏览器中打开当前运行的内置 HTTP 服务地址；不支持桌面浏览时提示手动访问
+     */
+    private void openInBrowser() {
+        if (selectedConfig == null) {
+            return;
+        }
+        String url = PROCESS_SERVICE.getHttpServerUrl(selectedConfig.getId());
+        if (url == null) {
+            return;
+        }
+        if (!Desktop.isDesktopSupported() || !Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+            JOptionPane.showMessageDialog(this, "当前环境不支持自动打开浏览器，请手动访问：" + url, "提示", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        new Thread(() -> {
+            try {
+                Desktop.getDesktop().browse(new URI(url));
+            } catch (Exception ex) {
+                SwingUtilities.invokeLater(
+                        () -> JOptionPane.showMessageDialog(this, "打开浏览器失败，请手动访问：" + url, "错误", JOptionPane.ERROR_MESSAGE));
+            }
+        }, "program-container-open-browser").start();
+    }
+    
+    /**
+     * 打印当前程序类型的配置帮助到控制台：含字段说明、参数说明与完整示例（含实际执行的命令行）。
+     * <p>
+     * 选中已有程序时按其类型打印，未选中（新建状态）时按表单「程序类型」下拉框的当前类型打印。 帮助内容只写界面控制台，不混入程序日志文件
+     */
+    private void printTypeHelp() {
+        String type = selectedConfig != null ? selectedConfig.resolveProgramType() : selectedTypeValue();
+        String text = ProgramHelpDoc.helpText(type);
+        // 输出行末无换行时先补一行，避免与进程输出粘连
+        int length = consoleArea.getDocument().getLength();
+        if (length > 0 && !consoleArea.getText().endsWith("\n")) {
+            consoleArea.append("\n");
+        }
+        int start = consoleArea.getDocument().getLength();
+        consoleArea.append(text);
+        // 定位到帮助开头：内容较长时保证首行可见（后续进程输出刷新会再次滚到末尾）
+        consoleArea.setCaretPosition(start);
     }
     
     private void clearConsole() {
@@ -1104,11 +1255,14 @@ public class ProgramContainerPanel extends JPanel {
         boolean running = hasSelection && PROCESS_SERVICE.isRunning(selectedConfig.getId());
         // 接管运行：应用重启后检测到上次启动的进程仍在后台，不能重复启动/重启，可停止与查看日志
         boolean externalRunning = hasSelection && !running && isExternallyRunning(selectedConfig);
+        // 内置 HTTP 服务运行中获取访问地址（非 HTTP 服务返回 null）
+        String httpUrl = hasSelection ? PROCESS_SERVICE.getHttpServerUrl(selectedConfig.getId()) : null;
         startBtn.setEnabled(hasSelection && !running && !externalRunning);
         stopBtn.setEnabled(running || externalRunning);
         restartBtn.setEnabled(running);
         clearBtn.setEnabled(hasSelection);
         deleteBtn.setEnabled(hasSelection);
+        openBtn.setEnabled(httpUrl != null);
         // 运行中的程序禁用编辑（含接管运行），防止配置与运行实例不一致
         setFormEditable(!hasSelection || (!running && !externalRunning));
         
@@ -1116,7 +1270,9 @@ public class ProgramContainerPanel extends JPanel {
             statusLabel.setText("（未选择程序）");
             statusLabel.setForeground(Color.GRAY);
         } else if (running) {
-            statusLabel.setText("运行中 PID=" + PROCESS_SERVICE.getPid(selectedConfig.getId()));
+            String url = PROCESS_SERVICE.getHttpServerUrl(selectedConfig.getId());
+            // 内置 HTTP 服务无 PID，展示访问地址更有意义
+            statusLabel.setText(url != null ? "运行中 " + url : "运行中 PID=" + PROCESS_SERVICE.getPid(selectedConfig.getId()));
             statusLabel.setForeground(UiConstants.COLOR_SUCCESS_LIGHT);
         } else if (externalRunning) {
             statusLabel.setText("运行中 PID=" + selectedConfig.getLastPid() + "（接管）");

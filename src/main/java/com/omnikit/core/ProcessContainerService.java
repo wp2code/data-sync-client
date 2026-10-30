@@ -116,6 +116,12 @@ public class ProcessContainerService {
 
         volatile Process process;
 
+        /**
+         * 内置 HTTP 静态服务会话（程序类型为 HTTP 服务时非空）：运行在宿主进程内，
+         * 无子进程与 PID——因此不参与「应用重启后按 PID 接管」的外部进程检测
+         */
+        volatile HttpStaticFileServer httpServer;
+
         volatile long pid = -1;
 
         volatile Integer exitCode;
@@ -140,7 +146,11 @@ public class ProcessContainerService {
 
         boolean isAlive() {
             Process p = process;
-            return p != null && p.isAlive();
+            if (p != null && p.isAlive()) {
+                return true;
+            }
+            HttpStaticFileServer server = httpServer;
+            return server != null && server.isRunning();
         }
     }
 
@@ -162,6 +172,10 @@ public class ProcessContainerService {
             return "程序/命令不能为空";
         }
         long id = config.getId();
+        // 内置 HTTP 静态服务：与宿主同进程，不派生子进程，走独立分支
+        if (ProgramConfig.TYPE_HTTP_SERVER.equals(config.resolveProgramType())) {
+            return startHttpServer(config, onOutput, onStateChanged);
+        }
         ProcessSession existing = sessions.get(id);
         if (existing != null && existing.isAlive()) {
             return "程序已在运行中，请先停止";
@@ -243,6 +257,59 @@ public class ProcessContainerService {
     }
 
     /**
+     * 启动内置 HTTP 静态文件服务（程序类型为 {@link ProgramConfig#TYPE_HTTP_SERVER}）： 「程序/命令」为服务根目录，「参数」按
+     * {@link HttpServerOptions} 解析（端口与代理地址等扩展选项）。 服务运行在宿主进程内——不写 lastPid，避免退出后被误判为「后台外部进程」而误杀自身。
+     *
+     * @return 启动成功返回 null，失败返回错误提示
+     */
+    private String startHttpServer(ProgramConfig config, Consumer<String> onOutput, Runnable onStateChanged) {
+        long id = config.getId();
+        ProcessSession existing = sessions.get(id);
+        if (existing != null && existing.isAlive()) {
+            return "服务已在运行中，请先停止";
+        }
+        File root = new File(stripOuterQuotes(config.getProgramPath().trim()));
+        if (!root.isDirectory()) {
+            return "HTTP 服务目录无效或不存在: " + root.getAbsolutePath();
+        }
+        // 「参数」支持扩展选项：端口（-p/--port/裸端口）、代理地址（-P/--proxy）与 TLS（-S/--tls、-C/--cert、-K/--key）
+        HttpServerOptions options = HttpServerOptions.parse(config.getArguments());
+        String invalid = options.invalidMessage();
+        if (invalid != null) {
+            return "HTTP 服务参数有误：" + invalid;
+        }
+        ProcessSession session = existing != null ? existing : new ProcessSession(config);
+        // 先入会话并绑定回调，保证启动日志进入缓冲；启动失败再回收新建的会话
+        if (existing == null) {
+            sessions.put(id, session);
+        }
+        synchronized (session) {
+            session.outputConsumer = onOutput;
+            session.stateChangedCallback = onStateChanged;
+            session.exitCode = null;
+        }
+        HttpStaticFileServer server = new HttpStaticFileServer(root, options, line -> appendLog(session, line));
+        String error = server.start();
+        if (error != null) {
+            if (existing == null) {
+                sessions.remove(id);
+            }
+            return error;
+        }
+        session.httpServer = server;
+        // 内置服务与宿主同生命周期：清空可能残留的外部进程号，接管检测不再生效
+        config.setLastPid(null);
+        try {
+            ConfigUtil.updateProgramPid(id, null);
+        } catch (Exception e) {
+            logger.warn("[ProgramContainer] 清空进程号失败: {}", config.getName(), e);
+        }
+        logger.info("[ProgramContainer] HTTP 服务已启动: {} (端口={}, 代理={})", config.getName(), options.getPort(),
+                options.isProxyEnabled() ? options.getProxy() : "-");
+        return null;
+    }
+
+    /**
      * 接管后台运行的进程（应用重启后仅有 PID 无 Process 句柄的场景）：
      * 为其建立会话并启动日志文件 tail——历史输出同步读入缓冲（UI 可立即恢复展示），
      * 之后按轮询增量回调。仅当会话不存在且 PID 存活时生效
@@ -275,11 +342,34 @@ public class ProcessContainerService {
         if (session == null) {
             return;
         }
+        // 内置 HTTP 服务：直接停止服务并触发状态回调（无子进程可销毁）
+        HttpStaticFileServer server = session.httpServer;
+        if (server != null) {
+            stopHttpServer(session, server);
+            return;
+        }
         Process process = session.process;
         if (process == null || !process.isAlive()) {
             return;
         }
         destroyProcess(process);
+    }
+
+    /**
+     * 停止内置 HTTP 服务：解绑会话 → 停止服务（阻塞，禁止 EDT 调用）→ 记录退出码并触发状态回调
+     */
+    private void stopHttpServer(ProcessSession session, HttpStaticFileServer server) {
+        session.httpServer = null;
+        server.stop();
+        synchronized (session) {
+            // 内置服务无进程退出码：置空，界面统一展示「已停止」
+            session.exitCode = null;
+        }
+        logger.info("[ProgramContainer] HTTP 服务已停止: {}", session.config.getName());
+        Runnable callback = session.stateChangedCallback;
+        if (callback != null) {
+            callback.run();
+        }
     }
 
     /**
@@ -368,7 +458,12 @@ public class ProcessContainerService {
      */
     public void stopAll() {
         List<Process> alive = new ArrayList<>();
-        for (ProcessSession session : sessions.values()) {
+        // 遍历副本：停止 HTTP 服务会触发状态回调，回调内可能读写 sessions，避免并发修改
+        for (ProcessSession session : new ArrayList<>(sessions.values())) {
+            HttpStaticFileServer server = session.httpServer;
+            if (server != null && server.isRunning()) {
+                stopHttpServer(session, server);
+            }
             Process p = session.process;
             if (p != null && p.isAlive()) {
                 p.destroy();
@@ -437,6 +532,15 @@ public class ProcessContainerService {
     public long getPid(long id) {
         ProcessSession session = sessions.get(id);
         return session != null ? session.pid : -1;
+    }
+
+    /**
+     * 获取内置 HTTP 服务的访问地址（如 http://localhost:8080/）； 非 HTTP 服务或未运行返回 null
+     */
+    public String getHttpServerUrl(long id) {
+        ProcessSession session = sessions.get(id);
+        HttpStaticFileServer server = session == null ? null : session.httpServer;
+        return server == null || !server.isRunning() ? null : server.getUrl();
     }
 
     /**

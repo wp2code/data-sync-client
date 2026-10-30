@@ -1,10 +1,17 @@
 package com.omnikit.model;
 
 import java.time.LocalDateTime;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.Setter;
 
 /**
  * 数据源配置实体类 统一封装源库/目标库的连接参数，提供 MySQL / PostgreSQL 的 JDBC URL 自动生成能力
+ * <p>
+ * 常规字段的访问器由 Lombok 的 {@code @Getter/@Setter} 生成；{@code dbType} 与 {@code schema} 存在自定义逻辑，仍手写访问器。
  */
+@Getter
+@Setter
 public class DataSource {
     
     // ────────── 基础字段 ──────────
@@ -12,6 +19,11 @@ public class DataSource {
     
     private String sourceName;            // 自定义数据源名称（唯一，用于持久化识别）
     
+    /**
+     * 数据库类型枚举：字符串与枚举两种取值语义（见 getDbType() / getDbTypeEnum() / setDbTypeEnum()），不走 Lombok 生成
+     */
+    @Getter(AccessLevel.NONE)
+    @Setter(AccessLevel.NONE)
     private DbType dbType = DbType.MYSQL; // 数据库类型枚举
     
     private String host;                  // 主机地址
@@ -117,23 +129,7 @@ public class DataSource {
                 && username != null && !username.isBlank();
     }
     
-    // ────────── Getter / Setter ──────────
-    
-    public Long getId() {
-        return id;
-    }
-    
-    public void setId(Long id) {
-        this.id = id;
-    }
-    
-    public String getSourceName() {
-        return sourceName;
-    }
-    
-    public void setSourceName(String sourceName) {
-        this.sourceName = sourceName;
-    }
+    // ────────── 自定义访问器（Lombok 不会覆盖已存在的同名方法） ──────────
     
     /**
      * @return 数据库类型字符串（兼容旧代码），使用枚举的 key
@@ -156,68 +152,11 @@ public class DataSource {
         return dbType;
     }
     
-    public String getHost() {
-        return host;
-    }
-    
-    public void setHost(String host) {
-        this.host = host;
-    }
-    
-    public String getPort() {
-        return port;
-    }
-    
-    public void setPort(String port) {
-        this.port = port;
-    }
-    
-    public String getDbName() {
-        return dbName;
-    }
-    
-    public void setDbName(String dbName) {
-        this.dbName = dbName;
-    }
-    
-    public String getSchema() {
-        return schema;
-    }
-    
+    /**
+     * 设置 schema，空值回落为 PostgreSQL 默认 schema（public）
+     */
     public void setSchema(String schema) {
         this.schema = (schema != null && !schema.isBlank()) ? schema : "public";
-    }
-    
-    public String getUsername() {
-        return username;
-    }
-    
-    public void setUsername(String username) {
-        this.username = username;
-    }
-    
-    public String getPassword() {
-        return password;
-    }
-    
-    public void setPassword(String password) {
-        this.password = password;
-    }
-    
-    public LocalDateTime getCreateTime() {
-        return createTime;
-    }
-    
-    public void setCreateTime(LocalDateTime createTime) {
-        this.createTime = createTime;
-    }
-    
-    public LocalDateTime getUpdateTime() {
-        return updateTime;
-    }
-    
-    public void setUpdateTime(LocalDateTime updateTime) {
-        this.updateTime = updateTime;
     }
     
     @Override

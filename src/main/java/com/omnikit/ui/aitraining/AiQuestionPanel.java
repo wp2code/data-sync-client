@@ -8,6 +8,7 @@
  */
 package com.omnikit.ui.aitraining;
 
+import com.omnikit.components.AbsJPanl;
 import com.omnikit.components.ButtonFactory;
 import com.omnikit.components.ChildLayoutPanel;
 import com.omnikit.core.AiQuestionApiClient;
@@ -46,10 +47,11 @@ import org.slf4j.LoggerFactory;
  * @author liuweiping
  * @date 2026-09-16
  **/
-public class AiQuestionPanel extends JPanel {
+public class AiQuestionPanel extends AbsJPanl {
     
     private static final Logger logger = LoggerFactory.getLogger(AiQuestionPanel.class);
     
+    public static final String NAME = "AI";
     // ── 共享常量 ──
     
     /**
@@ -168,6 +170,11 @@ public class AiQuestionPanel extends JPanel {
         refreshProjectOptions();
         refreshAiMetaConfig();
         refreshQuestionTable();
+    }
+    
+    @Override
+    public String name() {
+        return NAME;
     }
     
     private void initUI() {

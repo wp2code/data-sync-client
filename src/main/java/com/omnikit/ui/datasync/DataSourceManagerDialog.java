@@ -33,9 +33,9 @@ public class DataSourceManagerDialog extends FullscreenJDialog {
     
     private final List<OptionJPanel> itemPanelList = new ArrayList<>();
     
-    private JPanel dataSourceListPanel;
+    private final JPanel dataSourceListPanel;
     
-    private CustomTextField searchField;
+    private final CustomTextField searchField;
     
     /**
      * 当前选中的数据源配置与列表项
