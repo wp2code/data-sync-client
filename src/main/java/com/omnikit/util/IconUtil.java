@@ -39,6 +39,21 @@ public final class IconUtil {
     
     private static ImageIcon otherProgramIcon;
     
+    private static ImageIcon groupIcon;
+    
+    private static ImageIcon scriptsGroupIcon;
+    
+    private static ImageIcon groupArrowExpandedIcon;
+    
+    private static ImageIcon groupArrowCollapsedIcon;
+    
+    /**
+     * 分组折叠/展开箭头尺寸（比图标略小，不抢标题视觉重心）
+     */
+    private static final int ARROW_ICON_SIZE = 12;
+    
+    private static final Color ARROW_ICON_COLOR = new Color(0x8A93A6);
+    
     /**
      * 应用图标
      */
@@ -103,6 +118,68 @@ public final class IconUtil {
     }
     
     /**
+     * 分组标题图标（assets/group.svg），供程序列表按分组聚合展示时使用
+     */
+    public static ImageIcon getGroupIcon() {
+        if (groupIcon == null) {
+            groupIcon = loadSvgIcon("assets/group.svg");
+        }
+        return groupIcon;
+    }
+    
+    /**
+     * 脚本分组标题图标（assets/scripts_group.svg），供脚本列表按分组聚合展示时使用
+     */
+    public static ImageIcon getScriptsGroupIcon() {
+        if (scriptsGroupIcon == null) {
+            scriptsGroupIcon = loadSvgIcon("assets/scripts_group.svg");
+        }
+        return scriptsGroupIcon;
+    }
+    
+    /**
+     * 分组折叠/展开箭头：展开态（▾，点击收起）与折叠态（▸，点开展开）
+     */
+    public static ImageIcon getGroupArrowIcon(boolean expanded) {
+        if (expanded) {
+            if (groupArrowExpandedIcon == null) {
+                groupArrowExpandedIcon = createChevronIcon(true);
+            }
+            return groupArrowExpandedIcon;
+        }
+        if (groupArrowCollapsedIcon == null) {
+            groupArrowCollapsedIcon = createChevronIcon(false);
+        }
+        return groupArrowCollapsedIcon;
+    }
+    
+    /**
+     * 绘制箭头：down 为向下箭头（展开态），否则为向右箭头（折叠态）；圆头描边保证小尺寸下依然清晰
+     */
+    private static ImageIcon createChevronIcon(boolean down) {
+        BufferedImage img = new BufferedImage(ARROW_ICON_SIZE, ARROW_ICON_SIZE, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = img.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g.setColor(ARROW_ICON_COLOR);
+        g.setStroke(new BasicStroke(1.8f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        
+        Path2D.Float arrow = new Path2D.Float();
+        if (down) {
+            arrow.moveTo(2.5f, 4.5f);
+            arrow.lineTo(6f, 8f);
+            arrow.lineTo(9.5f, 4.5f);
+        } else {
+            arrow.moveTo(4.5f, 2.5f);
+            arrow.lineTo(8f, 6f);
+            arrow.lineTo(4.5f, 9.5f);
+        }
+        g.draw(arrow);
+        
+        g.dispose();
+        return new ImageIcon(img);
+    }
+    
+    /**
      * 从 classpath 加载 SVG 图标文件，转换为指定尺寸的 ImageIcon
      */
     private static ImageIcon loadSvgIcon(String resourceName) {
@@ -150,7 +227,26 @@ public final class IconUtil {
         if (resourceName.contains("generic")) {
             return createLetterIcon('▶', new Color(0x7A8290));
         }
+        if (resourceName.contains("group")) {
+            return createGroupFolderIcon();
+        }
         return createMySqlIcon();
+    }
+    
+    /**
+     * group.svg 加载失败时的后备图标：中性色文件夹（左上标签页 + 下方圆角主体）
+     */
+    private static ImageIcon createGroupFolderIcon() {
+        BufferedImage img = new BufferedImage(ICON_SIZE, ICON_SIZE, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = img.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        
+        g.setColor(new Color(0x409EFF));
+        g.fill(new RoundRectangle2D.Float(1, 4, 8, 5, 2, 2));
+        g.fill(new RoundRectangle2D.Float(1, 7, ICON_SIZE - 2, ICON_SIZE - 9, 3, 3));
+        
+        g.dispose();
+        return new ImageIcon(img);
     }
     
     /**

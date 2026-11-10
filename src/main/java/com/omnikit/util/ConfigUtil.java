@@ -79,6 +79,13 @@ public final class ConfigUtil {
     }
     
     /**
+     * 仅更新脚本所属分组（拖拽分组使用，不刷新更新时间）
+     */
+    public static boolean updateScriptGroupName(Long id, String groupName) {
+        return SQLiteConfigUtil.getInstance().updateScriptGroupName(id, groupName);
+    }
+    
+    /**
      * 删除脚本配置
      */
     public static boolean deleteScript(Long id) {
@@ -153,10 +160,14 @@ public final class ConfigUtil {
     }
     
     /**
-     * 根据名称加载程序容器配置（唯一性校验）
+     * 程序名称是否已被占用（全局唯一，不区分大小写）：新增时 excludeId 传 null， 修改时传自身 id 以排除自身；空白名称不视为占用
      */
-    public static ProgramConfig loadProgramConfigByName(String name) {
-        return SQLiteConfigUtil.getInstance().loadProgramConfigByName(name);
+    public static boolean isProgramNameTaken(String name, Long excludeId) {
+        if (name == null || name.isBlank()) {
+            return false;
+        }
+        ProgramConfig existing = SQLiteConfigUtil.getInstance().loadProgramConfigByNameIgnoreCase(name.trim());
+        return existing != null && (excludeId == null || !excludeId.equals(existing.getId()));
     }
     
     /**
@@ -164,6 +175,13 @@ public final class ConfigUtil {
      */
     public static boolean updateProgramConfig(ProgramConfig config) {
         return SQLiteConfigUtil.getInstance().updateProgramConfig(config);
+    }
+    
+    /**
+     * 仅更新程序所属分组（拖拽分组使用，不刷新更新时间）
+     */
+    public static boolean updateProgramGroupName(Long id, String groupName) {
+        return SQLiteConfigUtil.getInstance().updateProgramGroupName(id, groupName);
     }
     
     /**

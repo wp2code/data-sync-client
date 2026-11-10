@@ -85,6 +85,7 @@ public class SQLiteConfigUtil {
             CREATE TABLE IF NOT EXISTS script_config (
                 id                INTEGER PRIMARY KEY AUTOINCREMENT,
                 script_name       VARCHAR(128) NOT NULL UNIQUE,
+                group_name        VARCHAR(64)  DEFAULT NULL,
                 db_type           VARCHAR(16)  NOT NULL DEFAULT 'mysql',
                 content           TEXT         DEFAULT NULL,
                 remark            TEXT         DEFAULT NULL,
@@ -144,9 +145,12 @@ public class SQLiteConfigUtil {
             CREATE TABLE IF NOT EXISTS program_config (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
                 name         VARCHAR(64)  NOT NULL UNIQUE,
+                group_name   VARCHAR(64)  DEFAULT NULL,
                 program_path VARCHAR(512) NOT NULL,
                 program_type VARCHAR(16)  DEFAULT NULL,
                 arguments    TEXT         DEFAULT NULL,
+                jvm_args     TEXT         DEFAULT NULL,
+                env_vars     TEXT         DEFAULT NULL,
                 work_dir     VARCHAR(512) DEFAULT NULL,
                 jre_path     VARCHAR(512) DEFAULT NULL,
                 python_path  VARCHAR(512) DEFAULT NULL,
@@ -192,7 +196,9 @@ public class SQLiteConfigUtil {
                 stmt.execute(CREATE_PROGRAM_CONFIG_TABLE_SQL);
                 stmt.execute(CREATE_APP_CONFIG_TABLE_SQL);
                 ensureAiEnvConfigColumns(stmt);
+                ensureScriptConfigColumns(stmt);
                 ensureProgramConfigColumns(stmt);
+                ensureProgramNameUniqueIndex(stmt);
                 seedDefaultAiEnv(stmt);
                 seedDefaultAppConfig(stmt);
             }
@@ -360,21 +366,22 @@ public class SQLiteConfigUtil {
      * 保存脚本配置
      */
     public boolean saveScript(Script script) {
-        String sql = "INSERT INTO script_config (script_name, db_type, content, remark, git_lab_config_id, project_or_id, branch, file_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO script_config (script_name, group_name, db_type, content, remark, git_lab_config_id, project_or_id, branch, file_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (Connection conn = getConnection();
                 PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, script.getScriptName());
-            ps.setString(2, script.getDbType() != null ? script.getDbType().getKey() : null);
-            ps.setString(3, script.getContent());
-            ps.setString(4, script.getRemark());
+            ps.setString(2, script.getGroupName());
+            ps.setString(3, script.getDbType() != null ? script.getDbType().getKey() : null);
+            ps.setString(4, script.getContent());
+            ps.setString(5, script.getRemark());
             if (script.getGitLabConfigId() != null) {
-                ps.setLong(5, script.getGitLabConfigId());
+                ps.setLong(6, script.getGitLabConfigId());
             } else {
-                ps.setNull(5, java.sql.Types.BIGINT);
+                ps.setNull(6, java.sql.Types.BIGINT);
             }
-            ps.setString(6, script.getProjectOrId());
-            ps.setString(7, script.getBranch());
-            ps.setString(8, script.getFilePath());
+            ps.setString(7, script.getProjectOrId());
+            ps.setString(8, script.getBranch());
+            ps.setString(9, script.getFilePath());
             return ps.executeUpdate() > 0;
         } catch (SQLException e) {
             logger.error("[SQLite] 保存脚本失败", e);
@@ -423,25 +430,42 @@ public class SQLiteConfigUtil {
      * 更新脚本配置（以 id 为条件）
      */
     public boolean updateScript(Script script) {
-        String sql = "UPDATE script_config SET script_name = ?, db_type = ?, content = ?, remark = ?, git_lab_config_id = ?, project_or_id = ?, branch = ?, file_path = ?, update_time = CURRENT_TIMESTAMP WHERE id = ?";
+        String sql = "UPDATE script_config SET script_name = ?, group_name = ?, db_type = ?, content = ?, remark = ?, git_lab_config_id = ?, project_or_id = ?, branch = ?, file_path = ?, update_time = CURRENT_TIMESTAMP WHERE id = ?";
         try (Connection conn = getConnection();
                 PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, script.getScriptName());
-            ps.setString(2, script.getDbType() != null ? script.getDbType().getKey() : null);
-            ps.setString(3, script.getContent());
-            ps.setString(4, script.getRemark());
+            ps.setString(2, script.getGroupName());
+            ps.setString(3, script.getDbType() != null ? script.getDbType().getKey() : null);
+            ps.setString(4, script.getContent());
+            ps.setString(5, script.getRemark());
             if (script.getGitLabConfigId() != null) {
-                ps.setLong(5, script.getGitLabConfigId());
+                ps.setLong(6, script.getGitLabConfigId());
             } else {
-                ps.setNull(5, java.sql.Types.BIGINT);
+                ps.setNull(6, java.sql.Types.BIGINT);
             }
-            ps.setString(6, script.getProjectOrId());
-            ps.setString(7, script.getBranch());
-            ps.setString(8, script.getFilePath());
-            ps.setLong(9, script.getId());
+            ps.setString(7, script.getProjectOrId());
+            ps.setString(8, script.getBranch());
+            ps.setString(9, script.getFilePath());
+            ps.setLong(10, script.getId());
             return ps.executeUpdate() > 0;
         } catch (SQLException e) {
             logger.error("[SQLite] 更新脚本失败", e);
+            return false;
+        }
+    }
+    
+    /**
+     * 仅更新脚本所属分组（拖拽分组使用）：不刷新 update_time，避免列表按更新时间重排
+     */
+    public boolean updateScriptGroupName(Long id, String groupName) {
+        String sql = "UPDATE script_config SET group_name = ? WHERE id = ?";
+        try (Connection conn = getConnection();
+                PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, groupName);
+            ps.setLong(2, id);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            logger.error("[SQLite] 更新脚本分组失败", e);
             return false;
         }
     }
@@ -461,28 +485,47 @@ public class SQLiteConfigUtil {
         }
     }
     
+    /**
+     * 仅更新程序所属分组（拖拽分组使用）：不刷新 update_time，避免列表按更新时间重排
+     */
+    public boolean updateProgramGroupName(Long id, String groupName) {
+        String sql = "UPDATE program_config SET group_name = ? WHERE id = ?";
+        try (Connection conn = getConnection();
+                PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, groupName);
+            ps.setLong(2, id);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            logger.error("[SQLite] 更新程序分组失败", e);
+            return false;
+        }
+    }
+    
     // ────────── 程序容器配置 CRUD ──────────
     
     /**
      * 保存新的程序容器配置，成功后回填自增主键到 config.id
      */
     public boolean saveProgramConfig(ProgramConfig config) {
-        String sql = "INSERT INTO program_config (name, program_path, program_type, arguments, work_dir, jre_path, python_path, last_pid, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO program_config (name, group_name, program_path, program_type, arguments, jvm_args, env_vars, work_dir, jre_path, python_path, last_pid, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (Connection conn = getConnection();
                 PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setString(1, config.getName());
-            ps.setString(2, config.getProgramPath());
-            ps.setString(3, config.getProgramType());
-            ps.setString(4, config.getArguments());
-            ps.setString(5, config.getWorkDir());
-            ps.setString(6, config.getJrePath());
-            ps.setString(7, config.getPythonPath());
+            ps.setString(2, config.getGroupName());
+            ps.setString(3, config.getProgramPath());
+            ps.setString(4, config.getProgramType());
+            ps.setString(5, config.getArguments());
+            ps.setString(6, config.getJvmArgs());
+            ps.setString(7, config.getEnvVars());
+            ps.setString(8, config.getWorkDir());
+            ps.setString(9, config.getJrePath());
+            ps.setString(10, config.getPythonPath());
             if (config.getLastPid() == null) {
-                ps.setNull(8, java.sql.Types.INTEGER);
+                ps.setNull(11, java.sql.Types.INTEGER);
             } else {
-                ps.setLong(8, config.getLastPid());
+                ps.setLong(11, config.getLastPid());
             }
-            ps.setString(9, config.getRemark());
+            ps.setString(12, config.getRemark());
             boolean saved = ps.executeUpdate() > 0;
             if (saved) {
                 try (ResultSet rs = ps.getGeneratedKeys()) {
@@ -517,10 +560,10 @@ public class SQLiteConfigUtil {
     }
     
     /**
-     * 根据名称加载程序容器配置（唯一性校验）
+     * 按名称查找程序配置（忽略大小写）：名称全局唯一校验的唯一入口，修改场景需自行排除自身
      */
-    public ProgramConfig loadProgramConfigByName(String name) {
-        String sql = "SELECT * FROM program_config WHERE name = ?";
+    public ProgramConfig loadProgramConfigByNameIgnoreCase(String name) {
+        String sql = "SELECT * FROM program_config WHERE name = ? COLLATE NOCASE";
         try (Connection conn = getConnection();
                 PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, name);
@@ -539,18 +582,21 @@ public class SQLiteConfigUtil {
      * 更新已有的程序容器配置（以 id 为条件）
      */
     public boolean updateProgramConfig(ProgramConfig config) {
-        String sql = "UPDATE program_config SET name = ?, program_path = ?, program_type = ?, arguments = ?, work_dir = ?, jre_path = ?, python_path = ?, remark = ?, update_time = CURRENT_TIMESTAMP WHERE id = ?";
+        String sql = "UPDATE program_config SET name = ?, group_name = ?, program_path = ?, program_type = ?, arguments = ?, jvm_args = ?, env_vars = ?, work_dir = ?, jre_path = ?, python_path = ?, remark = ?, update_time = CURRENT_TIMESTAMP WHERE id = ?";
         try (Connection conn = getConnection();
                 PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, config.getName());
-            ps.setString(2, config.getProgramPath());
-            ps.setString(3, config.getProgramType());
-            ps.setString(4, config.getArguments());
-            ps.setString(5, config.getWorkDir());
-            ps.setString(6, config.getJrePath());
-            ps.setString(7, config.getPythonPath());
-            ps.setString(8, config.getRemark());
-            ps.setLong(9, config.getId());
+            ps.setString(2, config.getGroupName());
+            ps.setString(3, config.getProgramPath());
+            ps.setString(4, config.getProgramType());
+            ps.setString(5, config.getArguments());
+            ps.setString(6, config.getJvmArgs());
+            ps.setString(7, config.getEnvVars());
+            ps.setString(8, config.getWorkDir());
+            ps.setString(9, config.getJrePath());
+            ps.setString(10, config.getPythonPath());
+            ps.setString(11, config.getRemark());
+            ps.setLong(12, config.getId());
             return ps.executeUpdate() > 0;
         } catch (SQLException e) {
             logger.error("[SQLite] 更新程序配置失败", e);
@@ -869,14 +915,36 @@ public class SQLiteConfigUtil {
     }
     
     /**
-     * 兼容旧库：program_config 缺少 jre_path / python_path / last_pid 列时自动补齐（SQLite ALTER TABLE ADD COLUMN）。
+     * 兼容旧库：script_config 缺少 group_name 列时自动补齐（SQLite ALTER TABLE ADD COLUMN）
+     */
+    private void ensureScriptConfigColumns(Statement stmt) throws SQLException {
+        addColumnIfAbsent(stmt, "script_config", "group_name", "VARCHAR(64) DEFAULT NULL");
+    }
+    
+    /**
+     * 兼容旧库：program_config 缺少 group_name / jre_path / python_path / last_pid / jvm_args / env_vars 列时自动补齐（SQLite ALTER TABLE ADD COLUMN）。
      * output_charset 列已废弃（输出编码改为始终自动探测），老库残留列无害，不再读写
      */
     private void ensureProgramConfigColumns(Statement stmt) throws SQLException {
+        addColumnIfAbsent(stmt, "program_config", "group_name", "VARCHAR(64) DEFAULT NULL");
         addColumnIfAbsent(stmt, "program_config", "program_type", "VARCHAR(16) DEFAULT NULL");
         addColumnIfAbsent(stmt, "program_config", "jre_path", "VARCHAR(512) DEFAULT NULL");
         addColumnIfAbsent(stmt, "program_config", "python_path", "VARCHAR(512) DEFAULT NULL");
         addColumnIfAbsent(stmt, "program_config", "last_pid", "INTEGER DEFAULT NULL");
+        addColumnIfAbsent(stmt, "program_config", "jvm_args", "TEXT DEFAULT NULL");
+        addColumnIfAbsent(stmt, "program_config", "env_vars", "TEXT DEFAULT NULL");
+    }
+    
+    /**
+     * 程序名称全局唯一（忽略大小写）：库级唯一索引兜底，避免绕过界面校验写入仅大小写不同的名称。
+     * 历史数据已存在仅大小写不同的重复名称时创建失败，仅记录告警，仍由界面层校验
+     */
+    private void ensureProgramNameUniqueIndex(Statement stmt) {
+        try {
+            stmt.executeUpdate("CREATE UNIQUE INDEX IF NOT EXISTS uk_program_config_name_nocase ON program_config (name COLLATE NOCASE)");
+        } catch (SQLException e) {
+            logger.warn("[SQLite] 程序名称忽略大小写唯一索引创建失败（可能存在历史重复名称），改为仅界面校验", e);
+        }
     }
     
     /**
@@ -976,6 +1044,7 @@ public class SQLiteConfigUtil {
         Script script = new Script();
         script.setId(rs.getLong("id"));
         script.setScriptName(rs.getString("script_name"));
+        script.setGroupName(rs.getString("group_name"));
         script.setDbType(DbType.fromString(rs.getString("db_type")));
         script.setContent(rs.getString("content"));
         script.setRemark(rs.getString("remark"));
@@ -1007,9 +1076,12 @@ public class SQLiteConfigUtil {
         ProgramConfig config = new ProgramConfig();
         config.setId(rs.getLong("id"));
         config.setName(rs.getString("name"));
+        config.setGroupName(rs.getString("group_name"));
         config.setProgramPath(rs.getString("program_path"));
         config.setProgramType(rs.getString("program_type"));
         config.setArguments(rs.getString("arguments"));
+        config.setJvmArgs(rs.getString("jvm_args"));
+        config.setEnvVars(rs.getString("env_vars"));
         config.setWorkDir(rs.getString("work_dir"));
         config.setJrePath(rs.getString("jre_path"));
         config.setPythonPath(rs.getString("python_path"));

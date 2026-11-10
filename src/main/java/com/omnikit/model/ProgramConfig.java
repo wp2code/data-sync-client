@@ -48,6 +48,11 @@ public class ProgramConfig {
     private String name;
     
     /**
+     * 分组名称（可选）：程序列表按分组聚合展示，留空则不分组（直接平铺展示）
+     */
+    private String groupName;
+    
+    /**
      * 程序/命令：两种写法——单个可执行文件/脚本的路径（可含空格，或 PATH 中命令名如 java），
      * 或完整命令行（如 java -jar app.jar，首词为程序其余为参数）
      */
@@ -57,6 +62,16 @@ public class ProgramConfig {
      * 附加参数（如 -jar D:\app.jar --port=8080），按空白分词
      */
     private String arguments;
+    
+    /**
+     * JVM 参数（可选，仅 Java 程序生效）：按空白分词，启动时插在 java 可执行文件之后、 -jar/主类之前，如 -Xms512m -Dserver.port=8080
+     */
+    private String jvmArgs;
+    
+    /**
+     * 环境变量（可选）：KEY=VALUE 形式，多个用分号或换行分隔，启动时注入子进程环境，如 SERVER_PORT=8080;LOGGING_LEVEL_ROOT=info
+     */
+    private String envVars;
     
     /**
      * 工作目录（可选，空则继承应用目录）
@@ -116,6 +131,13 @@ public class ProgramConfig {
             return TYPE_PYTHON;
         }
         return TYPE_OTHER;
+    }
+    
+    /**
+     * 解析生效的分组名称：去除首尾空白，返回空串表示未分组
+     */
+    public String resolveGroupName() {
+        return groupName == null ? "" : groupName.trim();
     }
 
 }

@@ -18,6 +18,7 @@ import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -190,9 +191,19 @@ public class ProcessContainerService {
         if (interpreterError != null) {
             return interpreterError;
         }
+        String envError = validateEnvVars(config.getEnvVars());
+        if (envError != null) {
+            return "环境变量格式有误：" + envError;
+        }
 
         List<String> command = buildCommand(config);
         ProcessBuilder pb = new ProcessBuilder(command);
+        // 自定义环境变量：保留继承的系统环境，只覆盖同名项；
+        // 放在 Python 无缓冲设置之前，保证 PYTHONUNBUFFERED 始终生效
+        Map<String, String> envVars = parseEnvVars(config.getEnvVars());
+        if (!envVars.isEmpty()) {
+            pb.environment().putAll(envVars);
+        }
         // Python 输出重定向到文件时为块缓冲（默认 4KB/8KB 才落盘），日志会明显滞后；
         // 对 Python 程序强制无缓冲，保证容器控制台实时刷新
         if (isPythonCommand(command)) {
@@ -246,6 +257,10 @@ public class ProcessContainerService {
         watcher.start();
 
         appendSystemLog(session, "[容器] 已启动 PID=" + process.pid() + ": " + String.join(" ", command));
+        if (!envVars.isEmpty()) {
+            // 只记录变量名，避免密码类取值写入日志文件
+            appendSystemLog(session, "[容器] 已注入环境变量: " + String.join(", ", envVars.keySet()));
+        }
         logger.info("[ProgramContainer] 程序已启动: {} (PID={})", config.getName(), process.pid());
         // 持久化进程号：应用重启后用于检测程序是否仍在后台运行（写入失败不影响启动）
         try {
@@ -556,6 +571,32 @@ public class ProcessContainerService {
         }
     }
 
+    /**
+     * 读取日志文件末尾 MAX_LOG_LINES 行（只读）：不建会话、不改回调，
+     * 供全屏日志窗口补齐尚无内存会话的程序（如应用重启后接管运行）的页签内容
+     */
+    public List<String> readLogFileTail(long id) {
+        File logFile = programLogFile(id);
+        if (!logFile.isFile()) {
+            return List.of();
+        }
+        ArrayDeque<String> lines = new ArrayDeque<>();
+        try (FileInputStream fin = new FileInputStream(logFile);
+                BufferedReader reader = new BufferedReader(new EncodingDetectReader(fin, OUTPUT_CHARSET))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                lines.addLast(line);
+                if (lines.size() > MAX_LOG_LINES) {
+                    lines.removeFirst();
+                }
+            }
+        } catch (IOException e) {
+            logger.debug("[ProgramContainer] 读取日志文件失败: {}", logFile.getName(), e);
+            return List.of();
+        }
+        return new ArrayList<>(lines);
+    }
+
     // ────────── 回调与日志缓冲管理 ──────────
 
     /**
@@ -696,6 +737,10 @@ public class ProcessContainerService {
             command.add("/c");
         }
         command.add(program);
+        // JVM 参数：插在 java 可执行文件之后、-jar/主类之前（非 java 命令忽略，避免破坏命令行）
+        if (isJavaExecutable(program)) {
+            command.addAll(tokenize(trimToEmpty(config.getJvmArgs())));
+        }
         command.addAll(leadingArgs);
         String arguments = config.getArguments();
         if (arguments != null && !arguments.isBlank()) {
@@ -917,6 +962,81 @@ public class ProcessContainerService {
             tokens.add(current.toString());
         }
         return tokens;
+    }
+    
+    /**
+     * 空值兜底：null 返回空串，否则去首尾空白
+     */
+    private static String trimToEmpty(String value) {
+        return value == null ? "" : value.trim();
+    }
+    
+    /**
+     * 判断可执行文件是否为 java/javaw（含带路径写法，如 D:\\jdk17\\bin\\java.exe）：
+     * JVM 参数只插在 java 命令之后，其他程序完全忽略
+     */
+    static boolean isJavaExecutable(String executable) {
+        if (executable == null || executable.isBlank()) {
+            return false;
+        }
+        String name = new File(stripOuterQuotes(executable.trim())).getName().toLowerCase(Locale.ROOT);
+        return switch (name) {
+            case "java", "java.exe", "javaw", "javaw.exe" -> true;
+            default -> false;
+        };
+    }
+    
+    /**
+     * 解析环境变量文本：每项为 {@code KEY=VALUE}，用分号或换行分隔（值允许为空）；
+     * 忽略空白项与格式非法项，同名键后者覆盖前者
+     */
+    static Map<String, String> parseEnvVars(String text) {
+        Map<String, String> envVars = new LinkedHashMap<>();
+        for (String entry : splitEnvEntries(text)) {
+            int index = entry.indexOf('=');
+            if (index <= 0) {
+                continue;
+            }
+            String key = entry.substring(0, index).trim();
+            if (!key.isEmpty()) {
+                envVars.put(key, entry.substring(index + 1).trim());
+            }
+        }
+        return envVars;
+    }
+    
+    /**
+     * 校验环境变量文本：返回第一处格式错误说明（缺少 '=' 或变量名为空），全部合法返回 null。
+     * 供启动前与表单保存前检查，避免静默丢配置
+     */
+    public static String validateEnvVars(String text) {
+        for (String entry : splitEnvEntries(text)) {
+            int index = entry.indexOf('=');
+            if (index < 0) {
+                return "「" + entry + "」缺少 '='，应写成 KEY=VALUE";
+            }
+            if (entry.substring(0, index).trim().isEmpty()) {
+                return "「" + entry + "」缺少变量名，应写成 KEY=VALUE";
+            }
+        }
+        return null;
+    }
+    
+    /**
+     * 拆分环境变量条目：按分号或换行分隔，跳过空白项
+     */
+    private static List<String> splitEnvEntries(String text) {
+        if (text == null || text.isBlank()) {
+            return List.of();
+        }
+        List<String> entries = new ArrayList<>();
+        for (String entry : text.split("[;\\r\\n]+")) {
+            String trimmed = entry.trim();
+            if (!trimmed.isEmpty()) {
+                entries.add(trimmed);
+            }
+        }
+        return entries;
     }
 
     /**

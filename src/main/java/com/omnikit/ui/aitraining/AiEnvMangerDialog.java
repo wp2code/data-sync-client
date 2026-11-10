@@ -633,7 +633,7 @@ public class AiEnvMangerDialog extends FullscreenJDialog {
     private OptionJPanel createEnvPanel(AiEnvConfig config) {
         OptionJPanel panel = new OptionJPanel(envPanelText(config), config.getHost(), null);
         panel.setData(config);
-        panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
+        panel.fitPreferredHeight();
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
         panel.setOnClick(() -> selectEnv(config, panel));
         attachEnvPopupMenu(panel, config, panel);

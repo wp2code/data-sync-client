@@ -5,6 +5,7 @@ import com.omnikit.components.AbsJPanl;
 import com.omnikit.components.ButtonFactory;
 import com.omnikit.components.CustomTextField;
 import com.omnikit.components.FilterComboBox;
+import com.omnikit.components.GroupDragSupport;
 import com.omnikit.components.OptionJPanel;
 import com.omnikit.components.combobox.IconItem;
 import com.omnikit.components.combobox.IconJComboBox;
@@ -32,9 +33,17 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.text.Collator;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.TreeSet;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.event.DocumentListener;
@@ -56,11 +65,53 @@ public class ScriptPanel extends AbsJPanl {
     
     public static final String NAME = "script";
     
+    /**
+     * 搜索区卡片名：搜索框
+     */
+    private static final String CARD_SEARCH = "search";
+    
+    /**
+     * 搜索区卡片名：「移出分组」投放提示条（拖拽期间替换搜索框显示）
+     */
+    private static final String CARD_UNGROUP_HINT = "ungroupHint";
+    
     private final List<OptionJPanel> scriptPanelList = new ArrayList<>();
+    
+    /**
+     * 脚本列表分组（按分组名聚合，组内保持配置加载顺序）
+     */
+    private final List<ScriptGroup> scriptGroups = new ArrayList<>();
+    
+    /**
+     * 已折叠的分组名：仅浏览态生效，搜索时分组自动展开（不修改记忆状态）
+     */
+    private final Set<String> collapsedGroups = new LinkedHashSet<>();
     
     private JPanel scriptListPanel;
     
+    /**
+     * 列表滚动面板：分组增减后需连同它一起重算滚动范围，否则内容变高时滚动范围偏小，最后一项会被裁掉
+     */
+    private JScrollPane listScrollPane;
+    
     private CustomTextField searchField;
+    
+    /**
+     * 搜索区卡片容器：搜索框与「移出分组」提示条同区域切换，拖拽时不会改变列表可用高度
+     */
+    private JPanel searchCard;
+    
+    private CardLayout searchCardLayout;
+    
+    /**
+     * 「移出分组」投放提示条：拖拽期间在同一区域替换搜索框显示，拖到此处即取消分组
+     */
+    private JLabel ungroupHint;
+    
+    /**
+     * 当前列表中是否存在已分组脚本：全部未分组时移出分组无意义，拖拽期间不展示提示条
+     */
+    private boolean hasGroupedScripts;
     
     private JTextArea consoleArea;
     
@@ -135,19 +186,31 @@ public class ScriptPanel extends AbsJPanl {
                 filterScriptList();
             }
         });
-        leftTopPanel.add(searchField, BorderLayout.CENTER);
+        // 拖拽期间在同一区域把搜索框切换为「移出分组」提示条：不占额外高度，不会把列表最后一项挤出可视区
+        searchCardLayout = new CardLayout();
+        searchCard = new JPanel(searchCardLayout);
+        searchCard.setOpaque(false);
+        searchCard.add(searchField, CARD_SEARCH);
+        ungroupHint = createUngroupHint();
+        searchCard.add(ungroupHint, CARD_UNGROUP_HINT);
+        leftTopPanel.add(searchCard, BorderLayout.CENTER);
         leftPanel.add(leftTopPanel, BorderLayout.NORTH);
         
-        scriptListPanel = new JPanel();
+        // 宽度始终跟随滚动容器（不允许横向滚动），避免横向滚动条占掉视口高度而压住列表最后一项
+        scriptListPanel = new ScrollablePanel();
         scriptListPanel.setLayout(new BoxLayout(scriptListPanel, BoxLayout.Y_AXIS));
         scriptListPanel.setBorder(BorderFactory.createEmptyBorder(5, 10, 10, 10));
         scriptListPanel.setBackground(UIManager.getColor("Panel.background"));
         scriptListPanel.setFocusable(true);
         
-        JScrollPane listScrollPane = new JScrollPane(scriptListPanel);
+        listScrollPane = new JScrollPane(scriptListPanel);
         listScrollPane.setBorder(BorderFactory.createEmptyBorder());
         listScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+        listScrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         leftPanel.add(listScrollPane, BorderLayout.CENTER);
+        // 列表空白处作为「移出分组」投放区：拖到分组标题与组内项以外的空白区域即取消分组
+        GroupDragSupport.enableGroupTarget(scriptListPanel, "", null, listScrollPane);
+        GroupDragSupport.enableGroupTarget(listScrollPane.getViewport(), "", null, listScrollPane);
         
         JButton addBtn = ButtonFactory.createPrimary("新建脚本");
         addBtn.addActionListener(e -> createNewScript());
@@ -294,8 +357,18 @@ public class ScriptPanel extends AbsJPanl {
     private void refreshScriptList() {
         scriptListPanel.removeAll();
         scriptPanelList.clear();
+        scriptGroups.clear();
         
         List<Script> scripts = ConfigUtil.loadAllScripts();
+        hasGroupedScripts = false;
+        for (Script script : scripts) {
+            if (!script.resolveGroupName().isEmpty()) {
+                hasGroupedScripts = true;
+                break;
+            }
+        }
+        // 列表刷新说明数据已变更（拖拽已结束），统一恢复搜索框，避免提示条残留
+        showSearchCard();
         if (scripts.isEmpty()) {
             JLabel emptyLabel = new JLabel("（暂无脚本）", SwingConstants.CENTER);
             emptyLabel.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
@@ -303,33 +376,54 @@ public class ScriptPanel extends AbsJPanl {
             emptyLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
             scriptListPanel.add(emptyLabel);
         } else {
-            for (Script script : scripts) {
-                OptionJPanel panel = createScriptPanel(script);
-                scriptPanelList.add(panel);
-                scriptListPanel.add(panel);
-                scriptListPanel.add(Box.createRigidArea(new Dimension(0, 8)));
+            Map<String, List<Script>> grouped = groupScripts(scripts);
+            for (Map.Entry<String, List<Script>> entry : grouped.entrySet()) {
+                // 未分组（键为空串）不显示分组标题，直接展开在列表末尾
+                addScriptGroup(entry.getKey(), entry.getValue(), entry.getKey().isEmpty());
             }
         }
         
         filterScriptList();
+        revalidateList();
+    }
+    
+    /**
+     * 刷新列表尺寸与滚动范围：分组标题/条目的增减会改变内容高度， 需连同滚动视口一起重算，否则滚动条范围偏小会让最后一项显示不全
+     */
+    private void revalidateList() {
         scriptListPanel.revalidate();
+        if (listScrollPane != null) {
+            listScrollPane.revalidate();
+        }
         scriptListPanel.repaint();
     }
     
     private void filterScriptList() {
-        String keyword = searchField.getText().trim().toLowerCase();
+        String keyword = searchField.getText().trim().toLowerCase(Locale.ROOT);
         boolean anyVisible = false;
-        for (int i = 0; i < scriptPanelList.size(); i++) {
-            OptionJPanel panel = scriptPanelList.get(i);
-            Script script = (Script) panel.getData();
-            boolean visible = keyword.isEmpty() || script.getScriptName().toLowerCase().contains(keyword);
-            panel.setVisible(visible);
-            // 同时控制分隔间距的可见性
-            int spacerIndex = i * 2 + 1;
-            if (spacerIndex < scriptListPanel.getComponentCount()) {
-                scriptListPanel.getComponent(spacerIndex).setVisible(visible);
+        for (ScriptGroup group : scriptGroups) {
+            int total = group.items.size();
+            int visibleCount = 0;
+            for (int i = 0; i < total; i++) {
+                OptionJPanel panel = group.items.get(i);
+                Script script = (Script) panel.getData();
+                boolean visible = keyword.isEmpty() || matchesKeyword(script, group.name, keyword);
+                panel.setVisible(visible);
+                // 同时控制分隔间距的可见性
+                group.spacers.get(i).setVisible(visible);
+                if (visible) {
+                    visibleCount++;
+                }
             }
-            if (visible) {
+            boolean groupVisible = visibleCount > 0;
+            // 搜索时自动展开命中的分组，折叠状态仅在无关键字浏览时生效
+            boolean collapsed = keyword.isEmpty() && collapsedGroups.contains(group.name);
+            group.header.setVisible(groupVisible && !group.flat);
+            group.body.setVisible(groupVisible && !collapsed);
+            group.arrowLabel.setIcon(IconUtil.getGroupArrowIcon(!collapsed));
+            // 有关键字时展示命中数/总数，便于判断分组内是否还有隐藏项
+            group.countLabel.setText(visibleCount == total ? String.valueOf(total) : visibleCount + "/" + total);
+            if (groupVisible) {
                 anyVisible = true;
             }
         }
@@ -340,18 +434,209 @@ public class ScriptPanel extends AbsJPanl {
                 comp.setVisible(!anyVisible && keyword.isEmpty());
             }
         }
-        scriptListPanel.revalidate();
-        scriptListPanel.repaint();
+        revalidateList();
+    }
+    
+    /**
+     * 按分组名称聚合脚本：组间按名称排序（中文按拼音），未分组的脚本用空串作键固定追加到最后；
+     * 组内保持配置加载顺序
+     */
+    private Map<String, List<Script>> groupScripts(List<Script> scripts) {
+        Map<String, List<Script>> sorted = new TreeMap<>(Collator.getInstance(Locale.CHINA));
+        List<Script> ungrouped = new ArrayList<>();
+        for (Script script : scripts) {
+            String groupName = script.resolveGroupName();
+            if (groupName.isEmpty()) {
+                ungrouped.add(script);
+            } else {
+                sorted.computeIfAbsent(groupName, key -> new ArrayList<>()).add(script);
+            }
+        }
+        Map<String, List<Script>> grouped = new LinkedHashMap<>(sorted);
+        if (!ungrouped.isEmpty()) {
+            grouped.put("", ungrouped);
+        }
+        return grouped;
+    }
+    
+    /**
+     * 构建一个分组（可折叠标题 + 组内脚本项）：flat 表示未分组，不加标题、不缩进，脚本项直接平铺展开
+     */
+    private void addScriptGroup(String groupName, List<Script> scripts, boolean flat) {
+        // 箭头图标 + 分组图标 + 分组名
+        JLabel arrowLabel = new JLabel(IconUtil.getGroupArrowIcon(true));
+        JLabel titleLabel = new JLabel(groupName, IconUtil.getScriptsGroupIcon(), SwingConstants.LEFT);
+        titleLabel.setFont(UiConstants.FONT_SANS_12.deriveFont(Font.BOLD));
+        titleLabel.setIconTextGap(6);
+        JLabel countLabel = new JLabel(String.valueOf(scripts.size()));
+        countLabel.setFont(UiConstants.FONT_SANS_11);
+        countLabel.setForeground(Color.GRAY);
+        
+        JPanel titlePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        titlePanel.setOpaque(false);
+        titlePanel.add(arrowLabel);
+        titlePanel.add(titleLabel);
+        JPanel header = new JPanel(new BorderLayout(4, 0));
+        header.setOpaque(false);
+        header.setBorder(new EmptyBorder(4, 2, 4, 6));
+        header.setAlignmentX(Component.LEFT_ALIGNMENT);
+        header.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
+        header.add(titlePanel, BorderLayout.WEST);
+        header.add(countLabel, BorderLayout.EAST);
+        
+        JPanel body = new JPanel();
+        body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
+        body.setOpaque(false);
+        body.setAlignmentX(Component.LEFT_ALIGNMENT);
+        // 组内脚本项右缩进，与分组标题形成层级
+        body.setBorder(new EmptyBorder(0, flat ? 0 : 10, 0, 0));
+        
+        ScriptGroup group = new ScriptGroup(groupName, flat, header, arrowLabel, countLabel, body);
+        for (Script script : scripts) {
+            OptionJPanel panel = createScriptPanel(script);
+            Component spacer = Box.createRigidArea(new Dimension(0, 8));
+            body.add(panel);
+            body.add(spacer);
+            scriptPanelList.add(panel);
+            group.items.add(panel);
+            group.spacers.add(spacer);
+        }
+        scriptGroups.add(group);
+        
+        if (flat) {
+            // 未分组区：拖到此处即移出分组（大面积铺色反而干扰视线，不高亮，依靠顶部提示条引导）
+            GroupDragSupport.enableGroupTarget(body, "", null, listScrollPane);
+            scriptListPanel.add(body);
+        } else {
+            // 拖到分组标题或组内任意位置都加入该分组，统一高亮标题行
+            GroupDragSupport.enableGroupTarget(header, groupName, header, listScrollPane);
+            GroupDragSupport.enableGroupTarget(body, groupName, header, listScrollPane);
+            attachGroupToggle(header, group);
+            scriptListPanel.add(header);
+            scriptListPanel.add(body);
+        }
+    }
+    
+    /**
+     * 为分组标题及其子组件绑定折叠/展开点击：子组件命中点击时不冒泡到父组件，需逐个绑定
+     */
+    private void attachGroupToggle(Component comp, ScriptGroup group) {
+        comp.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        comp.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                toggleGroup(group);
+            }
+        });
+        if (comp instanceof Container container) {
+            for (Component child : container.getComponents()) {
+                attachGroupToggle(child, group);
+            }
+        }
+    }
+    
+    /**
+     * 折叠 / 展开分组：折叠状态按分组名记忆，搜索框有内容时分组始终展开且不改变记忆状态
+     */
+    private void toggleGroup(ScriptGroup group) {
+        if (!collapsedGroups.remove(group.name)) {
+            collapsedGroups.add(group.name);
+        }
+        filterScriptList();
+    }
+    
+    /**
+     * 关键字匹配：脚本名称或所属分组名称包含关键字（忽略大小写）
+     */
+    private boolean matchesKeyword(Script script, String groupName, String keyword) {
+        return script.getScriptName().toLowerCase(Locale.ROOT).contains(keyword)
+                || groupName.toLowerCase(Locale.ROOT).contains(keyword);
     }
     
     private OptionJPanel createScriptPanel(Script script) {
         OptionJPanel panel = new OptionJPanel(script.getScriptName(), script.getRemark(), IconUtil.getDbTypeIcon(script.getDbType()));
         panel.setData(script);
-        panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
+        panel.fitPreferredHeight();
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
         panel.setOnClick(() -> selectScript(script, panel));
         attachScriptPopupMenu(panel, script, panel);
+        // 可拖到分组标题/组内容区加入分组，拖到列表空白区移出分组
+        GroupDragSupport.enableDragSource(panel, groupName -> moveScriptToGroup(script, groupName),
+                !script.resolveGroupName().isEmpty(), this::onScriptDragStateChanged);
         return panel;
+    }
+    
+    /**
+     * 创建「移出分组」投放提示条：虚线框 + 居中提示文字，仅拖拽期间显示
+     */
+    private JLabel createUngroupHint() {
+        JLabel hint = new JLabel("拖到此处移出分组", SwingConstants.CENTER);
+        hint.setFont(UiConstants.FONT_SANS_11);
+        hint.setForeground(UiConstants.COLOR_NEUTRAL_LIGHT);
+        hint.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createDashedBorder(UiConstants.COLOR_NEUTRAL_LIGHT, 1f, 4f, 3f, true),
+                new EmptyBorder(3, 0, 3, 0)));
+        hint.setToolTipText("拖到此处取消分组，恢复为未分组");
+        GroupDragSupport.enableGroupTarget(hint, "", hint);
+        return hint;
+    }
+    
+    /**
+     * 拖拽状态回调：拖动已分组脚本时把搜索框切换为「移出分组」提示条，拖拽结束或拖动未分组脚本时恢复搜索框
+     */
+    private void onScriptDragStateChanged(boolean dragging, boolean grouped) {
+        if (searchCardLayout == null) {
+            return;
+        }
+        if (dragging && grouped && hasGroupedScripts) {
+            searchCardLayout.show(searchCard, CARD_UNGROUP_HINT);
+        } else {
+            showSearchCard();
+        }
+    }
+    
+    /**
+     * 恢复搜索框卡片（拖拽结束或无可移出分组时）
+     */
+    private void showSearchCard() {
+        if (searchCardLayout != null) {
+            searchCardLayout.show(searchCard, CARD_SEARCH);
+        }
+    }
+    
+    /**
+     * 拖拽移动到分组：仅更新分组字段（不刷新更新时间，避免列表重排），成功后刷新列表并保持选中；
+     * 拖动当前脚本时保留控制台未保存的编辑内容
+     */
+    private void moveScriptToGroup(Script script, String groupName) {
+        String target = groupName == null ? "" : groupName.trim();
+        if (target.equals(script.resolveGroupName())) {
+            return;
+        }
+        String editingContent = script == selectedScript ? consoleArea.getText() : null;
+        if (!ConfigUtil.updateScriptGroupName(script.getId(), target)) {
+            JOptionPane.showMessageDialog(this, "移动到分组失败", "错误", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        // 拖入的组若处于折叠状态，自动展开，避免刚拖入的脚本被隐藏
+        collapsedGroups.remove(target);
+        refreshScriptList();
+        for (OptionJPanel panel : scriptPanelList) {
+            Script reloaded = (Script) panel.getData();
+            if (reloaded.getId().equals(script.getId())) {
+                selectScript(reloaded, panel);
+                // 列表刚重建、布局尚未完成，延后布局后滚动，保证拖入分组的脚本一定落在可视区内
+                SwingUtilities.invokeLater(() -> {
+                    listScrollPane.validate();
+                    scriptListPanel.scrollRectToVisible(panel.getBounds());
+                });
+                break;
+            }
+        }
+        if (editingContent != null) {
+            consoleArea.setText(editingContent);
+        }
+        logResult(LogUtil.success("脚本 [" + script.getScriptName() + "] 移动到分组 [" + (target.isEmpty() ? "未分组" : target) + "]"));
     }
     
     private void attachResultAreaPopupMenu(Component comp, String title, boolean copy) {
@@ -682,6 +967,8 @@ public class ScriptPanel extends AbsJPanl {
         projectCombo.setEditable(false);
         branchCombo.setEnabled(false);
         JTextField filePathField = new JTextField(script.getFilePath() != null ? script.getFilePath() : "", 30);
+        // 分组：可编辑下拉框，候选项为已有分组，也可直接输入新分组名
+        JComboBox<String> groupInput = createGroupComboBox(script.getGroupName());
         JTextArea remarkArea = new JTextArea(script.getRemark() != null ? script.getRemark() : "", 4, 30);
         remarkArea.setLineWrap(true);
         remarkArea.setWrapStyleWord(true);
@@ -710,19 +997,21 @@ public class ScriptPanel extends AbsJPanl {
         JLabel projectLabel = formLabel("项目:");
         JLabel branchLabel = formLabel("分支:");
         JLabel filePathLabel = formLabel("文件路径:");
+        JLabel groupLabel = formLabel("分组:");
         JLabel remarkLabel = formLabel("备注:");
         remarkLabel.setVerticalAlignment(SwingConstants.TOP);
-        alignLabelWidth(List.of(nameLabel, dbTypeLabel, projectLabel, branchLabel, filePathLabel, remarkLabel));
+        alignLabelWidth(List.of(nameLabel, dbTypeLabel, projectLabel, branchLabel, filePathLabel, groupLabel, remarkLabel));
         
         addFormRow(panel, gbc, 0, nameLabel, nameField);
         addFormRow(panel, gbc, 1, dbTypeLabel, dbTypeInput);
         addFormRow(panel, gbc, 2, projectLabel, projectCombo);
         addFormRow(panel, gbc, 3, branchLabel, branchCombo);
         addFormRow(panel, gbc, 4, filePathLabel, filePathField);
+        addFormRow(panel, gbc, 5, groupLabel, groupInput);
         
         // 备注：允许垂直方向压缩/伸展
         gbc.gridx = 0;
-        gbc.gridy = 5;
+        gbc.gridy = 6;
         gbc.weightx = 0;
         gbc.weighty = 1;
         gbc.fill = GridBagConstraints.NONE;
@@ -760,8 +1049,39 @@ public class ScriptPanel extends AbsJPanl {
             return true;
         }
         script.setFilePath(filePathField.getText().trim());
+        script.setGroupName(groupComboText(groupInput));
         script.setRemark(remarkArea.getText().trim());
         return false;
+    }
+    
+    /**
+     * 创建分组下拉框：可编辑，候选项为已有脚本分组（去重后按拼音排序），也可直接输入新分组名
+     */
+    private JComboBox<String> createGroupComboBox(String currentGroup) {
+        Set<String> names = new TreeSet<>(Collator.getInstance(Locale.CHINA));
+        for (Script script : ConfigUtil.loadAllScripts()) {
+            String groupName = script.resolveGroupName();
+            if (!groupName.isEmpty()) {
+                names.add(groupName);
+            }
+        }
+        JComboBox<String> comboBox = new JComboBox<>();
+        comboBox.setEditable(true);
+        comboBox.setToolTipText("可选：下拉选择已有分组，也可直接输入新分组名；列表支持拖拽加入或移除分组");
+        for (String name : names) {
+            comboBox.addItem(name);
+        }
+        // 可编辑下拉框的取值来自编辑器，初始化时直接写入编辑器
+        comboBox.getEditor().setItem(currentGroup == null ? "" : currentGroup);
+        return comboBox;
+    }
+    
+    /**
+     * 读取分组下拉框当前文本（取编辑器内容而非选中项，支持输入新分组名），去首尾空白
+     */
+    private String groupComboText(JComboBox<String> comboBox) {
+        Object item = comboBox.getEditor().getItem();
+        return item == null ? "" : item.toString().trim();
     }
     
     private void loadProjectsForConfig(FilterComboBox<ProjectItem> projectCombo, FilterComboBox<String> branchCombo, String preselectProjectOrId) {
@@ -1256,5 +1576,70 @@ public class ScriptPanel extends AbsJPanl {
                 saveSelectedScript();
             }
         });
+    }
+    
+    /**
+     * 脚本列表分组：可折叠标题 + 组内脚本项容器；items 与 spacers 一一对应，供搜索过滤与折叠控制可见性
+     */
+    private static class ScriptGroup {
+        
+        private final String name;
+        
+        /**
+         * 平铺模式（未分组）：不显示标题、不缩进
+         */
+        private final boolean flat;
+        
+        private final JPanel header;
+        
+        private final JLabel arrowLabel;
+        
+        private final JLabel countLabel;
+        
+        private final JPanel body;
+        
+        private final List<OptionJPanel> items = new ArrayList<>();
+        
+        private final List<Component> spacers = new ArrayList<>();
+        
+        ScriptGroup(String name, boolean flat, JPanel header, JLabel arrowLabel, JLabel countLabel, JPanel body) {
+            this.name = name;
+            this.flat = flat;
+            this.header = header;
+            this.arrowLabel = arrowLabel;
+            this.countLabel = countLabel;
+            this.body = body;
+        }
+    }
+    
+    /**
+     * 宽度跟随滚动容器的列表面板：禁止横向滚动， 保证列表项内的长文本按实际可用宽度截断显示，且不会因横向滚动条占位而压住最后一项
+     */
+    private static class ScrollablePanel extends JPanel implements Scrollable {
+        
+        @Override
+        public Dimension getPreferredScrollableViewportSize() {
+            return getPreferredSize();
+        }
+        
+        @Override
+        public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) {
+            return 20;
+        }
+        
+        @Override
+        public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction) {
+            return orientation == SwingConstants.VERTICAL ? visibleRect.height : visibleRect.width;
+        }
+        
+        @Override
+        public boolean getScrollableTracksViewportWidth() {
+            return true;
+        }
+        
+        @Override
+        public boolean getScrollableTracksViewportHeight() {
+            return false;
+        }
     }
 }

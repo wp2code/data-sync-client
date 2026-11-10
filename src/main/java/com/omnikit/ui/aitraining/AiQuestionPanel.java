@@ -195,7 +195,7 @@ public class AiQuestionPanel extends AbsJPanl {
         });
         envCombo.setPreferredSize(new Dimension(260, 28));
         envCombo.addActionListener(e -> onEnvSelectionChanged());
-        JButton manageEnvBtn = ButtonFactory.createToolbar("管理环境");
+        JButton manageEnvBtn = ButtonFactory.createToolbar("环境管理");
         manageEnvBtn.addActionListener(e -> openEnvManageDialog());
         ChildLayoutPanel envPanel = new ChildLayoutPanel(new Insets(0, 4, 0, 4), ChildLayoutPanel.LayoutType.RIGHT);
         envPanel.add(new JLabel("环境："));

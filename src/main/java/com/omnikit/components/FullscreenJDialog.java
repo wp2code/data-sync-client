@@ -40,6 +40,16 @@ public class FullscreenJDialog extends AbsDialog {
         });
     }
     
+    /**
+     * 以全屏状态首次显示：未全屏时先切到全屏（构造时的尺寸被记为退出全屏的还原尺寸），再显示窗口
+     */
+    public void showFullscreen() {
+        if (!fullscreen) {
+            toggleFullscreen();
+        }
+        setVisible(true);
+    }
+    
     protected void toggleFullscreen() {
         if (!fullscreen) {
             normalBounds = getBounds();

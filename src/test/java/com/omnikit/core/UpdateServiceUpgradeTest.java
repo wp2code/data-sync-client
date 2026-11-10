@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
@@ -20,9 +21,13 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -568,6 +573,201 @@ class UpdateServiceUpgradeTest {
         void returnsNullWhenNoExeAnywhere() {
             System.setProperty("user.dir", tempDir.toString());
             assertNull(UpdateService.create().currentExePath());
+        }
+    }
+
+    // ─────────── 依赖库（lib）升级通道 ───────────
+
+    @Nested
+    @DisplayName("依赖库升级（OmniKit-lib）")
+    class LibUpgrade {
+
+        private Path libDir() {
+            return tempDir.resolve(UpdateService.LIB_DIR_NAME);
+        }
+
+        private Path libStagingDir() {
+            return tempDir.resolve(UpdateService.LIB_DIR_NAME + ".new");
+        }
+
+        /** 构造扁平 zip（key 为压缩包内路径） */
+        private byte[] zipOf(Map<String, byte[]> entries) throws IOException {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            try (ZipOutputStream zip = new ZipOutputStream(out)) {
+                for (Map.Entry<String, byte[]> entry : entries.entrySet()) {
+                    zip.putNextEntry(new ZipEntry(entry.getKey()));
+                    zip.write(entry.getValue());
+                    zip.closeEntry();
+                }
+            }
+            return out.toByteArray();
+        }
+
+        private List<UpdateService.LibEntry> entriesOf(Map<String, byte[]> jars) {
+            List<UpdateService.LibEntry> entries = new ArrayList<>();
+            jars.forEach((name, data) -> entries.add(new UpdateService.LibEntry(name, data.length, sha256Of(data))));
+            return entries;
+        }
+
+        @Test
+        @DisplayName("parseLibManifest：解析合法行，忽略非 jar、带目录与损坏行")
+        void parseManifest() {
+            String text = "a.jar\t10\t" + "A".repeat(64) + "\n"
+                    + "b.jar\t20\t" + "B".repeat(64) + "\n"
+                    + "readme.txt\t1\t" + "C".repeat(64) + "\n"
+                    + "sub/dir.jar\t2\t" + "D".repeat(64) + "\n"
+                    + "bad.jar\tNaN\t" + "E".repeat(64) + "\n"
+                    + "\n";
+            List<UpdateService.LibEntry> entries = UpdateService.parseLibManifest(text);
+            assertEquals(2, entries.size(), "仅保留 lib 根级 jar 的合法行");
+            assertEquals("a.jar", entries.get(0).name());
+            assertEquals(10L, entries.get(0).size());
+            assertEquals("a".repeat(64), entries.get(0).sha256());
+            assertTrue(UpdateService.parseLibManifest(null).isEmpty());
+        }
+
+        @Test
+        @DisplayName("parseSha256Asset：兼容 sha256sum 格式与纯 hex")
+        void parseShaAsset() {
+            assertEquals("abc123", UpdateService.parseSha256Asset("ABC123  OmniKit-lib.zip\n"));
+            assertEquals("def456", UpdateService.parseSha256Asset("def456"));
+            assertEquals("", UpdateService.parseSha256Asset("  "));
+        }
+
+        @Test
+        @DisplayName("UpdateInfo.hasLibAsset：地址或清单缺失时为 false")
+        void hasLibAsset() {
+            assertFalse(new UpdateService.UpdateInfo("v1", "u", "", "").hasLibAsset(), "旧调用方无依赖库信息");
+            assertFalse(new UpdateService.UpdateInfo("v1", "u", "", "", "lib-url", "", List.of()).hasLibAsset(),
+                    "清单为空时不应走依赖库升级");
+            assertTrue(new UpdateService.UpdateInfo("v1", "u", "", "", "lib-url", "",
+                    List.of(new UpdateService.LibEntry("a.jar", 1, "x"))).hasLibAsset());
+        }
+
+        @Test
+        @DisplayName("needsLibUpdate：缺失 / 多余 jar 判定需要升级，内容一致时无需升级")
+        void needsUpdateDetection() throws Exception {
+            byte[] content = "dep".getBytes(StandardCharsets.UTF_8);
+            List<UpdateService.LibEntry> remote = List.of(new UpdateService.LibEntry("dep.jar", content.length, sha256Of(content)));
+
+            assertTrue(UpdateService.needsLibUpdate(libDir(), remote), "lib 目录不存在时应需要升级");
+
+            Files.createDirectories(libDir());
+            Files.write(libDir().resolve("dep.jar"), content);
+            assertFalse(UpdateService.needsLibUpdate(libDir(), remote), "内容与清单一致时无需升级");
+
+            Files.write(libDir().resolve("stale.jar"), "stale".getBytes(StandardCharsets.UTF_8));
+            assertTrue(UpdateService.needsLibUpdate(libDir(), remote), "存在远端已移除的 jar 时需要升级");
+        }
+
+        @Test
+        @DisplayName("syncLibInPlace：覆盖同名 jar、新增 jar、删除多余 jar 并清理暂存目录")
+        void syncInPlace() throws Exception {
+            Files.createDirectories(libDir());
+            Files.write(libDir().resolve("dep-a.jar"), "old-a".getBytes(StandardCharsets.UTF_8));
+            Files.write(libDir().resolve("stale.jar"), "stale".getBytes(StandardCharsets.UTF_8));
+            byte[] newA = "new-a".getBytes(StandardCharsets.UTF_8);
+            byte[] newB = "new-b".getBytes(StandardCharsets.UTF_8);
+            Files.createDirectories(libStagingDir());
+            Files.write(libStagingDir().resolve("dep-a.jar"), newA);
+            Files.write(libStagingDir().resolve("dep-b.jar"), newB);
+
+            assertTrue(UpdateService.syncLibInPlace(libDir(), libStagingDir()), "同步应成功");
+
+            assertArrayEquals(newA, Files.readAllBytes(libDir().resolve("dep-a.jar")));
+            assertArrayEquals(newB, Files.readAllBytes(libDir().resolve("dep-b.jar")));
+            assertFalse(Files.exists(libDir().resolve("stale.jar")), "远端已移除的 jar 应被删除");
+            assertFalse(Files.exists(libStagingDir()), "暂存目录应被清理");
+        }
+
+        @Test
+        @DisplayName("extractJars：仅解压根级 jar，忽略其他文件")
+        void extractOnlyJars() throws Exception {
+            byte[] zip = zipOf(Map.of(
+                    "a.jar", "a".getBytes(StandardCharsets.UTF_8),
+                    "readme.txt", "x".getBytes(StandardCharsets.UTF_8)));
+            Path target = tempDir.resolve("extracted");
+            Files.createDirectories(target);
+
+            assertEquals(1, UpdateService.extractJars(zip, target), "非 jar 文件应被忽略");
+            assertTrue(Files.isRegularFile(target.resolve("a.jar")));
+            assertFalse(Files.exists(target.resolve("readme.txt")));
+        }
+
+        @Test
+        @DisplayName("performDownloadAndReplace：exe 与依赖库一并升级，进度为 90→95→100")
+        void upgradesExeAndLib() throws Exception {
+            Path exe = createFakeExe("OLD_EXE".getBytes(StandardCharsets.UTF_8));
+            Files.createDirectories(libDir());
+            Files.write(libDir().resolve("dep-a.jar"), "old-a".getBytes(StandardCharsets.UTF_8));
+            Files.write(libDir().resolve("stale.jar"), "stale".getBytes(StandardCharsets.UTF_8));
+
+            byte[] newExe = "NEW_EXE".getBytes(StandardCharsets.UTF_8);
+            Map<String, byte[]> jars = new LinkedHashMap<>();
+            jars.put("dep-a.jar", "new-a".getBytes(StandardCharsets.UTF_8));
+            jars.put("dep-b.jar", "new-b".getBytes(StandardCharsets.UTF_8));
+            byte[] libZip = zipOf(jars);
+
+            List<Integer> progress = new ArrayList<>();
+            try (MockServer server = new MockServer()) {
+                server.enqueueOk(newExe);
+                server.enqueueOk(libZip);
+
+                UpdateService.UpdateInfo info = new UpdateService.UpdateInfo("v2.2.0", mockDownloadUrl(server), "", "notes",
+                        server.baseUrl() + "/" + UpdateService.LIB_ZIP_NAME, sha256Of(libZip), entriesOf(jars));
+                assertTrue(UpdateService.create().performDownloadAndReplace(exe, info, progress::add),
+                        "exe 与 lib 均未占用时应就地完成");
+            }
+
+            assertEquals(List.of(90, 95, 100), progress, "依赖库就绪时应额外触发 95");
+            assertArrayEquals(newExe, Files.readAllBytes(exe));
+            assertArrayEquals("new-a".getBytes(StandardCharsets.UTF_8), Files.readAllBytes(libDir().resolve("dep-a.jar")));
+            assertArrayEquals("new-b".getBytes(StandardCharsets.UTF_8), Files.readAllBytes(libDir().resolve("dep-b.jar")));
+            assertFalse(Files.exists(libDir().resolve("stale.jar")), "远端已移除的 jar 应被删除");
+            assertFalse(Files.exists(libStagingDir()), "暂存目录应被清理");
+        }
+
+        @Test
+        @DisplayName("performDownloadAndReplace：依赖库与清单一致时不下载升级包")
+        void skipsLibWhenUpToDate() throws Exception {
+            Path exe = createFakeExe("OLD_EXE".getBytes(StandardCharsets.UTF_8));
+            Files.createDirectories(libDir());
+            byte[] dep = "same".getBytes(StandardCharsets.UTF_8);
+            Files.write(libDir().resolve("dep-a.jar"), dep);
+            List<UpdateService.LibEntry> entries = List.of(new UpdateService.LibEntry("dep-a.jar", dep.length, sha256Of(dep)));
+
+            try (MockServer server = new MockServer()) {
+                server.enqueueOk("NEW_EXE".getBytes(StandardCharsets.UTF_8));
+                UpdateService.UpdateInfo info = new UpdateService.UpdateInfo("v2.2.0", mockDownloadUrl(server), "", "",
+                        server.baseUrl() + "/" + UpdateService.LIB_ZIP_NAME, "", entries);
+                assertTrue(UpdateService.create().performDownloadAndReplace(exe, info, null));
+                assertEquals(1, server.exchanges.size(), "依赖库无需升级时不应发起第二次下载");
+            }
+            assertArrayEquals(dep, Files.readAllBytes(libDir().resolve("dep-a.jar")));
+        }
+
+        @Test
+        @DisplayName("performDownloadAndReplace：依赖库包 SHA-256 不符时失败，exe 与 lib 均不改变")
+        void libShaMismatchAborts() throws Exception {
+            Path exe = createFakeExe("OLD_EXE".getBytes(StandardCharsets.UTF_8));
+            Map<String, byte[]> jars = new LinkedHashMap<>();
+            jars.put("dep-a.jar", "new-a".getBytes(StandardCharsets.UTF_8));
+            byte[] libZip = zipOf(jars);
+
+            try (MockServer server = new MockServer()) {
+                server.enqueueOk("NEW_EXE".getBytes(StandardCharsets.UTF_8));
+                server.enqueueOk(libZip);
+                UpdateService.UpdateInfo info = new UpdateService.UpdateInfo("v2.2.0", mockDownloadUrl(server), "", "",
+                        server.baseUrl() + "/" + UpdateService.LIB_ZIP_NAME,
+                        "0000000000000000000000000000000000000000000000000000000000000000", entriesOf(jars));
+                IllegalStateException failure = assertThrows(IllegalStateException.class,
+                        () -> UpdateService.create().performDownloadAndReplace(exe, info, null));
+                assertTrue(failure.getMessage().contains("依赖库 SHA-256 校验失败"), failure.getMessage());
+            }
+
+            assertArrayEquals("OLD_EXE".getBytes(StandardCharsets.UTF_8), Files.readAllBytes(exe), "exe 不应被替换");
+            assertFalse(Files.exists(libDir().resolve("dep-a.jar")), "校验失败时不应写入 lib");
+            assertFalse(Files.exists(libStagingDir()), "校验失败时应清理暂存目录");
         }
     }
 }

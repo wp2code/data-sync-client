@@ -14,6 +14,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -589,6 +590,126 @@ class ProcessContainerServiceTest {
         assertNotNull(error, "无效 Python 路径应返回错误信息");
         assertTrue(error.contains("Python"), "错误信息应提示 Python 路径无效");
         assertFalse(service.isRunning(config.getId()), "校验失败不应启动进程");
+    }
+
+    // ────────── JVM 参数与环境变量 ──────────
+
+    @Test
+    @DisplayName("buildCommand：JVM 参数插在 java 之后、-jar/主类之前，参数追加在末尾")
+    void testBuildCommandInsertsJvmArgs() {
+        ProgramConfig config = newConfig(9031L, "java -jar app.jar", "--server.port=8080");
+        config.setJvmArgs("-Xms512m -Xmx1024m -Dserver.port=8080");
+        assertEquals(List.of("java", "-Xms512m", "-Xmx1024m", "-Dserver.port=8080", "-jar", "app.jar",
+                        "--server.port=8080"), service.buildCommand(config),
+                "JVM 参数应插在 java 之后、-jar 之前，参数追加在末尾");
+
+        // 主类写法：JVM 参数同样位于主类之前，带引号的参数去引号后整体传递
+        ProgramConfig mainClass = newConfig(9032L, "java -cp lib/* Main", "");
+        mainClass.setJvmArgs("\"-Dapp.name=my app\"");
+        assertEquals(List.of("java", "-Dapp.name=my app", "-cp", "lib/*", "Main"),
+                service.buildCommand(mainClass), "带引号的 JVM 参数应去引号后作为整体传递");
+
+        // 未配置 JVM 参数时命令保持原样，不插入空项
+        ProgramConfig blank = newConfig(9033L, "java -jar app.jar", "-version");
+        assertEquals(List.of("java", "-jar", "app.jar", "-version"), service.buildCommand(blank),
+                "未配置 JVM 参数时命令不应改变");
+    }
+
+    @Test
+    @DisplayName("buildCommand：非 java 程序忽略 JVM 参数，替换为指定 JRE 后照常插入")
+    void testBuildCommandIgnoresJvmArgsForNonJava() {
+        ProgramConfig ping = newConfig(9034L, "ping", "-n 2 127.0.0.1");
+        ping.setJvmArgs("-Xmx256m");
+        assertEquals(List.of("ping", "-n", "2", "127.0.0.1"), service.buildCommand(ping),
+                "非 java 程序不应插入 JVM 参数");
+
+        ProgramConfig bat = newConfig(9035L, "D:\\server\\startup.bat", "");
+        bat.setJvmArgs("-Xmx256m");
+        assertEquals(List.of("cmd.exe", "/c", "D:\\server\\startup.bat"), service.buildCommand(bat),
+                "bat 脚本经 cmd.exe 执行时不应插入 JVM 参数");
+
+        ProgramConfig withJre = newConfig(9036L, "java", "-version");
+        withJre.setJrePath(System.getProperty("java.home"));
+        withJre.setJvmArgs("-Xmx256m");
+        assertEquals(List.of(currentJavaExecutable(), "-Xmx256m", "-version"), service.buildCommand(withJre),
+                "替换为指定 JRE 的 java 可执行文件后仍应插入 JVM 参数");
+    }
+
+    @Test
+    @DisplayName("isJavaExecutable：识别 java/javaw（含路径与引号），其他程序返回 false")
+    void testIsJavaExecutable() {
+        assertTrue(ProcessContainerService.isJavaExecutable("java"), "裸 java 命令应识别");
+        assertTrue(ProcessContainerService.isJavaExecutable("JAVA.EXE"), "大小写不敏感");
+        assertTrue(ProcessContainerService.isJavaExecutable("javaw"), "javaw 应识别");
+        assertTrue(ProcessContainerService.isJavaExecutable("\"C:\\jdk17\\bin\\java.exe\""),
+                "带引号路径应去引号后识别");
+        assertTrue(ProcessContainerService.isJavaExecutable(currentJavaExecutable()),
+                "当前 JRE 下的 java 应识别");
+        assertFalse(ProcessContainerService.isJavaExecutable("javascript"), "非整词不匹配");
+        assertFalse(ProcessContainerService.isJavaExecutable("python"), "非 java 程序不匹配");
+        assertFalse(ProcessContainerService.isJavaExecutable(""), "空串不匹配");
+        assertFalse(ProcessContainerService.isJavaExecutable(null), "null 不匹配");
+    }
+
+    @Test
+    @DisplayName("parseEnvVars：分号/换行分隔、允许空值、同名覆盖、跳过非法项")
+    void testParseEnvVars() {
+        assertEquals(Map.of("SERVER_PORT", "8080", "LOGGING_LEVEL_ROOT", "info"),
+                ProcessContainerService.parseEnvVars("SERVER_PORT=8080;LOGGING_LEVEL_ROOT=info"),
+                "分号分隔的变量应解析为键值对");
+        assertEquals(Map.of("A", "1", "B", "2"), ProcessContainerService.parseEnvVars("A=1\nB=2\r\n"),
+                "换行分隔同样生效，空行忽略");
+        assertEquals(Map.of("EMPTY", ""), ProcessContainerService.parseEnvVars(" EMPTY = "),
+                "值允许为空且两侧空白去除");
+        assertEquals(Map.of("K", "2"), ProcessContainerService.parseEnvVars("K=1;K=2"),
+                "同名变量后者覆盖前者");
+        assertEquals(Map.of("K", "v=1"), ProcessContainerService.parseEnvVars("K=v=1"),
+                "只按第一个等号拆分键值");
+        assertTrue(ProcessContainerService.parseEnvVars("no-equals").isEmpty(), "缺少等号的项应跳过");
+        assertTrue(ProcessContainerService.parseEnvVars(null).isEmpty(), "null 应返回空表");
+    }
+
+    @Test
+    @DisplayName("validateEnvVars：合法返回 null，缺等号或变量名为空返回中文提示")
+    void testValidateEnvVars() {
+        assertNull(ProcessContainerService.validateEnvVars(null), "null 视为合法");
+        assertNull(ProcessContainerService.validateEnvVars("   "), "空白视为合法");
+        assertNull(ProcessContainerService.validateEnvVars("SERVER_PORT=8080;LEVEL=info"), "标准写法应通过");
+        assertNull(ProcessContainerService.validateEnvVars("EMPTY="), "值允许为空");
+
+        String missingEquals = ProcessContainerService.validateEnvVars("SERVER_PORT=8080;BAD");
+        assertNotNull(missingEquals, "缺少等号应报错");
+        assertTrue(missingEquals.contains("缺少 '='"), "错误信息应说明缺少等号: " + missingEquals);
+
+        String missingKey = ProcessContainerService.validateEnvVars("=8080");
+        assertNotNull(missingKey, "变量名为空应报错");
+        assertTrue(missingKey.contains("缺少变量名"), "错误信息应说明缺少变量名: " + missingKey);
+    }
+
+    @Test
+    @DisplayName("start：环境变量注入子进程并记录变量名，格式非法时拒绝启动")
+    void testStartWithEnvVars() {
+        ProgramConfig config = isWindows()
+                ? newConfig(9037L, "cmd.exe", "/c echo %OMNIKIT_TEST_ENV%")
+                : newConfig(9037L, "sh", "-c \"echo $OMNIKIT_TEST_ENV\"");
+        config.setEnvVars("OMNIKIT_TEST_ENV=omnikit-env-value;ANOTHER_KEY=1");
+        List<String> outputLines = new CopyOnWriteArrayList<>();
+
+        String error = service.start(config, outputLines::add, null);
+        assertNull(error, "合法环境变量应能正常启动");
+        assertTrue(await(() -> service.getExitCode(config.getId()) != null), "应等待到进程退出");
+        assertTrue(outputLines.stream().anyMatch(line -> line.contains("omnikit-env-value")),
+                "子进程应读到注入的环境变量: " + outputLines);
+        assertTrue(service.getLogBuffer(config.getId()).stream()
+                        .anyMatch(line -> line.contains("已注入环境变量") && line.contains("OMNIKIT_TEST_ENV")),
+                "启动日志应记录注入的变量名");
+
+        ProgramConfig invalid = newConfig(9038L, "ping", "-n 1 127.0.0.1");
+        invalid.setEnvVars("BAD_ENTRY");
+        String invalidError = service.start(invalid, null, null);
+        assertNotNull(invalidError, "环境变量格式非法应拒绝启动");
+        assertTrue(invalidError.contains("环境变量"), "错误信息应提示环境变量: " + invalidError);
+        assertFalse(service.isRunning(invalid.getId()), "校验失败不应启动进程");
     }
 
     // ────────── 应用退出清理 ──────────

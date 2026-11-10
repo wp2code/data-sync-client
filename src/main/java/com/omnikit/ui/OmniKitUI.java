@@ -302,6 +302,7 @@ public class OmniKitUI extends JFrame {
                         return;
                     }
                     String message = "发现新版本 " + info.version() + "\n\n" + (info.notes().isBlank() ? "" : info.notes() + "\n\n")
+                            + (info.hasLibAsset() ? "本次更新包含依赖库（lib）变更，升级时将同时更新 exe 与 lib。\n\n" : "")
                             + "是否立即下载并更新？（更新完成后将自动重启）";
                     if (JOptionPane.showConfirmDialog(OmniKitUI.this, message, "在线更新", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
                         downloadAndApplyUpdate(info);

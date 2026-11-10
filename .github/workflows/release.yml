@@ -17,7 +17,10 @@ name: Release
 #   · UiConstants.VERSION 必须从 version.properties 动态加载
 #   · CHANGELOG.md 必须包含 "## [vX.Y.Z]" 对应段落
 #
-# 产物：OmniKit.exe（含 SHA-256）+ Windows x64 分发 ZIP → GitHub Release
+# 产物：OmniKit.exe（含 SHA-256）+ 依赖库升级包 OmniKit-lib.zip（含 SHA-256 与清单）
+#       + Windows x64 分发 ZIP → GitHub Release
+# 依赖库升级通道：客户端按固定资产名 OmniKit-lib.zip / OmniKit-lib.manifest 查找，
+# 用清单逐文件比对本地 lib/，仅在依赖发生变化时才下载升级包
 # 迁移期说明：同时以旧名 DataSync.exe 发布同一构建，保证旧版本客户端在线更新可用
 # ═══════════════════════════════════════════════════════════════
 on:
@@ -178,10 +181,10 @@ jobs:
 
           echo "::notice::Version consistency check PASSED: $tag == v$gradle_version"
 
-      # ── 6. 构建：生成 EXE 并打包分发 ZIP ─────────────────────
+      # ── 6. 构建：生成 EXE、分发 ZIP、依赖库升级包与清单 ────────
       - name: Build exe & package zip
         shell: cmd
-        run: gradlew.bat createExe packageZip --no-daemon --console=plain
+        run: gradlew.bat createExe packageZip packageLib --no-daemon --console=plain
 
       # ── 7. 上传构建产物到 Artifact ───────────────────────────
       # if: always() —— 失败也保留产物，便于排查；保留 14 天，可用于二次发布
@@ -195,12 +198,14 @@ jobs:
             build/launch4j/OmniKit.exe.sha256
             build/launch4j/DataSync.exe
             build/launch4j/DataSync.exe.sha256
+            build/distributions/OmniKit-lib.zip
+            build/distributions/OmniKit-lib.manifest
             build/distributions/OmniKit-*-win-x64.zip
             release_notes.md
           if-no-files-found: warn
           retention-days: 14
 
-      # ── 8. 生成 EXE 的 SHA-256 校验文件（随 Release 一并上传，供下载方校验） ──
+      # ── 8. 生成 SHA-256 校验文件（随 Release 一并上传，供下载方校验） ──
       - name: Generate SHA-256 checksum
         shell: pwsh
         run: |
@@ -214,9 +219,23 @@ jobs:
           # 迁移期内同时以旧名发布同一构建（内容由 sha256 保证一致）
           Copy-Item $exe build/launch4j/DataSync.exe
           "$hash  DataSync.exe" | Out-File -Encoding ascii build/launch4j/DataSync.exe.sha256
-          Write-Host "::notice::SHA-256 = $hash"
+          Write-Host "::notice::EXE SHA-256 = $hash"
           Get-Content build/launch4j/OmniKit.exe.sha256
           Get-Content build/launch4j/DataSync.exe.sha256
+
+          # 依赖库升级包校验文件：客户端用它校验 OmniKit-lib.zip
+          $libZip = "build/distributions/OmniKit-lib.zip"
+          $libManifest = "build/distributions/OmniKit-lib.manifest"
+          if (-not (Test-Path $libZip)) {
+            throw "Lib package not found: $libZip (build may have failed)"
+          }
+          if (-not (Test-Path $libManifest)) {
+            throw "Lib manifest not found: $libManifest (build may have failed)"
+          }
+          $libHash = (Get-FileHash -Algorithm SHA256 $libZip).Hash.ToLower()
+          "$libHash  OmniKit-lib.zip" | Out-File -Encoding ascii build/distributions/OmniKit-lib.zip.sha256
+          Write-Host "::notice::LIB SHA-256 = $libHash ($((Get-Content $libManifest).Count) jars)"
+          Get-Content build/distributions/OmniKit-lib.zip.sha256
 
       # ── 9. 提取 CHANGELOG.md 中本版本的段落作为 Release 描述 ──
       # 从 "## [vX.Y.Z]" 截取到下一个 "## " 或文件末尾；
@@ -262,6 +281,9 @@ jobs:
             build/launch4j/OmniKit.exe.sha256
             build/launch4j/DataSync.exe
             build/launch4j/DataSync.exe.sha256
+            build/distributions/OmniKit-lib.zip
+            build/distributions/OmniKit-lib.zip.sha256
+            build/distributions/OmniKit-lib.manifest
             build/distributions/OmniKit-*-win-x64.zip
           fail_on_unmatched_files: true
           generate_release_notes: false

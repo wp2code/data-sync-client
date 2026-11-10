@@ -203,6 +203,19 @@ java -jar build/libs/omnikit-client-2.0.0.jar
 
 将 `OmniKit.exe`、`jre/` 与 `lib/` 打包为 `build/distributions/OmniKit-<version>-win-x64.zip`，解压即可运行。`./gradlew build` 会依次完成瘦 JAR、`.exe` 与 ZIP 分发包的全部构建。
 
+### 生成依赖库升级包
+
+```bash
+./gradlew packageLib
+```
+
+生成两个固定命名的产物（不带版本号，供客户端在线更新按名查找）：
+
+- `build/distributions/OmniKit-lib.zip`：`lib/` 下全部第三方依赖 JAR
+- `build/distributions/OmniKit-lib.manifest`：依赖清单，每行为 `<jarName>\t<size>\t<sha256>`
+
+客户端用清单与本地 `lib/` 逐文件比对，仅当依赖发生变化（新增依赖、依赖版本变化、依赖被移除）时才下载升级包，避免每次升级都重复下载几十MB 依赖。
+
 ## 版本发布
 
 发布流程已完全自动化：推送 `vX.Y.Z` 格式的 Git Tag 即触发 GitHub Actions（[release.yml](.github/workflows/release.yml)）自动完成构建、校验与发布。
@@ -217,14 +230,17 @@ java -jar build/libs/omnikit-client-2.0.0.jar
 
 - Tag 必须位于 `main` 分支历史中，且与 `build.gradle` 版本号一致；
 - 从 CHANGELOG.md 提取对应版本小节作为 Release 描述；
-- 构建 `.exe` 与 ZIP 分发包，生成 `OmniKit.exe.sha256` 校验文件，并作为 Release 资产发布。
+- 构建 `.exe`、ZIP 分发包与依赖库升级包，生成 `OmniKit.exe.sha256`、`OmniKit-lib.zip.sha256` 校验文件，并作为 Release 资产发布。
 
 **Release 资产清单（客户端在线更新依赖）：**
 
 | 资产 | 用途 |
 | --- | --- |
 | `OmniKit.exe` | 在线更新的升级目标（必需） |
-| `OmniKit.exe.sha256` | 下载完整性校验（可选，缺失时跳过校验） |
+| `OmniKit.exe.sha256` | exe 下载完整性校验（可选，缺失时跳过校验） |
+| `OmniKit-lib.zip` | 依赖库升级包（可选，缺失时仅升级 exe；新增/变更依赖时必需） |
+| `OmniKit-lib.zip.sha256` | 依赖库升级包完整性校验（可选，缺失时跳过校验） |
+| `OmniKit-lib.manifest` | 依赖库清单（与 zip 同时提供时才会启用依赖库升级） |
 | `OmniKit-<version>-win-x64.zip` | 新用户完整分发包（解压即用） |
 | `DataSync.exe` / `DataSync.exe.sha256` | 旧名兼容资产：与 `OmniKit.exe` 内容相同的副本，供改名前安装的旧版本在线更新（迁移期保留，可择期移除） |
 

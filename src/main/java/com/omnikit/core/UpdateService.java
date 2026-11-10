@@ -3,6 +3,7 @@ package com.omnikit.core;
 import com.omnikit.ui.UiConstants;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -13,22 +14,39 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.HexFormat;
+import java.util.List;
+import java.util.Set;
 import java.util.function.IntConsumer;
+import java.util.stream.Stream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 /**
- * 在线升级服务：基于 GitHub Releases 的版本检查、下载新 exe 并完成替换 + 重启。
+ * 在线升级服务：基于 GitHub Releases 的版本检查、下载新 exe / 依赖库并完成替换 + 重启。
  *
  * <p>升级通道约定：</p>
  * <ul>
  *   <li>版本号使用 Git Tag（如 v1.1.0），与 GitHub Release 一一对应</li>
- *   <li>Release 附带资产：{@code OmniKit.exe}（升级目标）、可选的 {@code OmniKit.exe.sha256}（校验文件）</li>
+ *   <li>Release 必需资产：{@code OmniKit.exe}（升级目标）、可选的 {@code OmniKit.exe.sha256}（校验文件）</li>
+ *   <li>Release 可选资产（依赖库升级通道）：{@code OmniKit-lib.zip}（lib/ 下全部第三方 jar）、
+ *       可选的 {@code OmniKit-lib.zip.sha256}（校验文件）与 {@code OmniKit-lib.manifest}（依赖库清单）</li>
  *   <li>Release 的描述正文（body）即版本日志，展示在升级确认框中</li>
  * </ul>
  *
- * <p>更新原理：JAR 嵌入 exe（launch4j dontWrapJar=false），故更新即替换整个 exe；
- * JRE 目录保持不变、无需升级。Windows 允许重命名正在运行的 exe，因此将旧 exe 改名为 .old、
- * 新 exe 就位后拉起新进程并退出旧进程。</p>
+ * <p>更新原理：JAR 嵌入 exe（launch4j dontWrapJar=false），第三方依赖以 {@code lib/} 目录随 exe 发布。
+ * 因此一次完整升级包含两部分：</p>
+ * <ol>
+ *   <li>exe：Windows 允许重命名正在运行的 exe，故将旧 exe 改名为 .old、新 exe 就位；</li>
+ *   <li>lib：用清单（jar 名称 + 大小 + SHA-256）与本地 {@code lib/} 逐文件比对，仅当依赖发生变化
+ *       （新增依赖、依赖版本变化、依赖被移除）时才下载 {@code OmniKit-lib.zip}，解压后就地同步
+ *       （覆盖/新增远端 jar、删除远端已移除的 jar）。JRE 目录保持不变、无需升级。</li>
+ * </ol>
+ *
+ * <p>exe 与 jar 都可能被杀毒/安全软件或运行中的 JVM 占用：此时降级为延迟替换——启动分离的
+ * PowerShell 辅助进程，等本进程退出后完成全部替换并拉起新 exe。</p>
  */
 public final class UpdateService {
     
@@ -64,6 +82,26 @@ public final class UpdateService {
     
     public static final String EXE_NAME = "OmniKit.exe";
     
+    /**
+     * 第三方依赖目录名（与 exe 同级）
+     */
+    public static final String LIB_DIR_NAME = "lib";
+    
+    /**
+     * 依赖库升级包资产名：固定命名（不带版本号），客户端按名查找
+     */
+    public static final String LIB_ZIP_NAME = "OmniKit-lib.zip";
+    
+    /**
+     * 依赖库清单资产名：每行 {@code <jarName>\t<size>\t<sha256>}
+     */
+    public static final String LIB_MANIFEST_NAME = "OmniKit-lib.manifest";
+    
+    /**
+     * 依赖库暂存目录后缀：先解压到 lib.new，校验通过后再同步进 lib
+     */
+    private static final String LIB_STAGING_SUFFIX = ".new";
+    
     private static final ObjectMapper MAPPER = new ObjectMapper();
     
     /**
@@ -87,10 +125,45 @@ public final class UpdateService {
     private static final long RETRY_BACKOFF_MS = 1_000;
     
     /**
-     * 新版本信息
+     * 依赖库清单条目：jar 名称、字节大小、SHA-256
      */
-    public record UpdateInfo(String version, String url, String sha256, String notes) {
+    public record LibEntry(String name, long size, String sha256) {
     
+    }
+    
+    /**
+     * 新版本信息
+     *
+     * @param version   远端版本号（Tag）
+     * @param url       exe 下载地址
+     * @param sha256    exe 的 SHA-256（空串表示不校验）
+     * @param notes     版本日志
+     * @param libUrl    依赖库包下载地址（空串表示本次无依赖库升级）
+     * @param libSha256 依赖库包的 SHA-256（空串表示不校验）
+     * @param libEntries 依赖库清单（空表示无法判断依赖库是否需要升级）
+     */
+    public record UpdateInfo(String version, String url, String sha256, String notes, String libUrl, String libSha256,
+            List<LibEntry> libEntries) {
+        
+        public UpdateInfo {
+            libUrl = libUrl == null ? "" : libUrl;
+            libSha256 = libSha256 == null ? "" : libSha256;
+            libEntries = libEntries == null ? List.of() : List.copyOf(libEntries);
+        }
+        
+        /**
+         * 仅 exe 的升级信息（旧调用方兼容）
+         */
+        public UpdateInfo(String version, String url, String sha256, String notes) {
+            this(version, url, sha256, notes, "", "", List.of());
+        }
+        
+        /**
+         * 本次升级是否携带可用的依赖库升级包
+         */
+        public boolean hasLibAsset() {
+            return !libUrl.isBlank() && !libEntries.isEmpty();
+        }
     }
     
     private final HttpClient http = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).connectTimeout(Duration.ofSeconds(20))
@@ -230,37 +303,99 @@ public final class UpdateService {
             throw new IllegalStateException("Release 缺少 tag_name");
         }
         
-        // 定位 OmniKit.exe 资产下载地址
+        // 定位 exe / 依赖库相关资产下载地址
         String exeUrl = null;
         String sha256AssetUrl = null;
+        String libUrl = null;
+        String libSha256AssetUrl = null;
+        String libManifestUrl = null;
         for (JsonNode asset : release.path("assets")) {
             String name = asset.path("name").asText();
+            String url = asset.path("browser_download_url").asText();
             if (EXE_NAME.equals(name)) {
-                exeUrl = asset.path("browser_download_url").asText();
+                exeUrl = url;
             } else if ((EXE_NAME + ".sha256").equals(name)) {
-                sha256AssetUrl = asset.path("browser_download_url").asText();
+                sha256AssetUrl = url;
+            } else if (LIB_ZIP_NAME.equals(name)) {
+                libUrl = url;
+            } else if ((LIB_ZIP_NAME + ".sha256").equals(name)) {
+                libSha256AssetUrl = url;
+            } else if (LIB_MANIFEST_NAME.equals(name)) {
+                libManifestUrl = url;
             }
         }
         if (exeUrl == null) {
             throw new IllegalStateException("Release " + version + " 未附带 " + EXE_NAME + " 资产");
         }
         
-        // 读取校验文件内容（若提供）
-        String sha256 = "";
-        if (sha256AssetUrl != null) {
+        // 读取 exe 校验文件内容（若提供）
+        String sha256 = sha256AssetUrl == null ? "" : parseSha256Asset(readTextAsset(sha256AssetUrl, "SHA-256 校验文件"));
+        
+        // 依赖库升级通道：需同时提供清单与升级包，缺任一则本次仅升级 exe（兼容旧 Release）
+        String libSha256 = libSha256AssetUrl == null ? "" : parseSha256Asset(readTextAsset(libSha256AssetUrl, "依赖库校验文件"));
+        List<LibEntry> libEntries = libManifestUrl == null ? List.of() : parseLibManifest(readTextAsset(libManifestUrl, "依赖库清单"));
+        if (libUrl == null || libEntries.isEmpty()) {
+            if (libUrl != null || libManifestUrl != null) {
+                logUpdate("依赖库清单或升级包不完整（清单 " + libEntries.size() + " 项），本次仅升级 exe");
+            }
+            libUrl = null;
+            libSha256 = "";
+            libEntries = List.of();
+        }
+        return new UpdateInfo(version, exeUrl, sha256, release.path("body").asText(""), libUrl == null ? "" : libUrl, libSha256, libEntries);
+    }
+    
+    /**
+     * 读取 Release 中的文本资产（校验文件 / 依赖库清单）。失败不阻断升级，仅记录日志并返回空串。
+     */
+    private String readTextAsset(String url, String what) {
+        try {
+            HttpResponse<String> response = sendWithRetry(HttpRequest.newBuilder(URI.create(url)), HttpResponse.BodyHandlers.ofString(),
+                    REQUEST_TIMEOUT, "读取 " + what);
+            return response.statusCode() == 200 ? response.body() : "";
+        } catch (Exception e) {
+            logUpdate(what + "获取失败，本次更新将跳过对应步骤: " + e);
+            return "";
+        }
+    }
+    
+    /**
+     * 解析校验文件：兼容 "<hex>  OmniKit.exe" 与纯 hex 两种格式
+     */
+    static String parseSha256Asset(String body) {
+        if (body == null || body.isBlank()) {
+            return "";
+        }
+        return body.trim().split("\\s+")[0].toLowerCase();
+    }
+    
+    /**
+     * 解析依赖库清单：每行 {@code <jarName>\t<size>\t<sha256>}，非法行与不安全文件名忽略。
+     */
+    static List<LibEntry> parseLibManifest(String text) {
+        List<LibEntry> entries = new ArrayList<>();
+        if (text == null || text.isBlank()) {
+            return entries;
+        }
+        for (String line : text.split("\\R")) {
+            String[] parts = line.trim().split("\\s+");
+            if (parts.length < 3 || !isSafeJarName(parts[0])) {
+                continue;
+            }
             try {
-                HttpResponse<String> shaResponse = sendWithRetry(HttpRequest.newBuilder(URI.create(sha256AssetUrl)),
-                        HttpResponse.BodyHandlers.ofString(), REQUEST_TIMEOUT, "读取 SHA-256 校验文件");
-                if (shaResponse.statusCode() == 200) {
-                    // 格式："<hex>  OmniKit.exe" 或纯 hex
-                    sha256 = shaResponse.body().trim().split("\\s+")[0].toLowerCase();
-                }
-            } catch (Exception e) {
-                // 校验文件拉取失败不阻断更新，仅跳过校验并记录
-                logUpdate("SHA-256 校验文件获取失败，本次更新将跳过校验: " + e);
+                entries.add(new LibEntry(parts[0], Long.parseLong(parts[1]), parts[2].toLowerCase()));
+            } catch (NumberFormatException ignored) {
+                // 大小非法视为损坏行，跳过
             }
         }
-        return new UpdateInfo(version, exeUrl, sha256, release.path("body").asText(""));
+        return entries;
+    }
+    
+    /**
+     * 仅接受 lib 根目录下的 .jar 文件名，防止清单/压缩包内的路径穿越写入任意位置
+     */
+    private static boolean isSafeJarName(String name) {
+        return name != null && name.endsWith(".jar") && name.indexOf('/') < 0 && name.indexOf('\\') < 0 && !name.contains("..");
     }
     
     /**
@@ -321,7 +456,7 @@ public final class UpdateService {
     }
     
     /**
-     * 下载新版本 exe，校验后替换当前 exe 并重启。 成功时本方法不会返回（进程退出）。
+     * 下载新版本 exe（及依赖库），校验后替换并重启。 成功时本方法不会返回（进程退出）。
      *
      * @param progress 下载进度回调（0-100，可为 null）
      */
@@ -332,12 +467,15 @@ public final class UpdateService {
         }
         logUpdate("开始更新 " + UiConstants.VERSION + " -> " + info.version() + "，当前 exe: " + exe);
         logUpdate("下载地址 " + info.url());
+        if (info.hasLibAsset()) {
+            logUpdate("本次 Release 提供依赖库升级包（清单 " + info.libEntries().size() + " 个 jar）: " + info.libUrl());
+        }
         // 仅执行下载 + 校验 + 替换（不含重启），便于单元测试覆盖
         boolean inPlace = performDownloadAndReplace(exe, info, progress);
 
         if (!inPlace) {
-            // 延迟替换模式：当前 exe 被占用，辅助脚本会在本进程退出后完成替换并拉起新 exe
-            logUpdate("当前 exe 被占用，已安排延迟替换：本进程退出后由辅助脚本完成更新与重启");
+            // 延迟替换模式：exe / 依赖库被占用，辅助脚本会在本进程退出后完成替换并拉起新 exe
+            logUpdate("exe 或依赖库被占用，已安排延迟替换：本进程退出后由辅助脚本完成更新与重启");
             System.exit(0);
             return;
         }
@@ -359,40 +497,27 @@ public final class UpdateService {
     }
 
     /**
-     * 下载 + SHA-256 校验 + 原子替换。包级可见，便于 {@code UpdateServiceUpgradeTest} 直接驱动测试
+     * 下载 + SHA-256 校验 + 原子替换（exe 与可选的依赖库）。包级可见，便于 {@code UpdateServiceUpgradeTest} 直接驱动测试
      * 而不触发 {@link #restartApplication(Path)} / {@link System#exit(int)}。
      *
      * @param exe      当前 exe 路径（待替换目标）
      * @param info     远端版本信息
      * @param progress 下载进度回调（0-100，可为 null）
-     * @return {@code true} 表示新 exe 已就地替换完成（调用方可直接重启）；
-     *         {@code false} 表示当前 exe 被安全软件等占用、已转为延迟替换模式
+     * @return {@code true} 表示新 exe（及依赖库）已就地替换完成（调用方可直接重启）；
+     *         {@code false} 表示 exe / jar 被安全软件等占用、已转为延迟替换模式
      *         （辅助脚本会在本进程退出后完成替换并拉起新 exe，调用方直接退出即可）
      */
     boolean performDownloadAndReplace(Path exe, UpdateInfo info, IntConsumer progress) throws Exception {
         Path dir = exe.getParent();
         Path newFile = dir.resolve(EXE_NAME + ".new");
         Path oldFile = dir.resolve(EXE_NAME + ".old");
+        Path libDir = dir.resolve(LIB_DIR_NAME);
+        Path libStaging = dir.resolve(LIB_DIR_NAME + LIB_STAGING_SUFFIX);
 
         // 1. 下载到内存字节数组：使用 BodyHandlers.ofByteArray 而非 ofInputStream，
         //    可规避 publishing stream 在 HTTP/2 流中断 / 302 重定向场景下抛出
         //    "java.io.IOException: closed" 的问题（GitHub 资产下载会触发跨域重定向）。
-        HttpRequest.Builder downloadBuilder = HttpRequest.newBuilder(URI.create(info.url())).header("Accept", "application/octet-stream")
-                .header("User-Agent", "OmniKit-Updater");
-        HttpResponse<byte[]> response = sendWithRetry(downloadBuilder, HttpResponse.BodyHandlers.ofByteArray(), DOWNLOAD_TIMEOUT, "下载新版本 exe");
-        if (response.statusCode() != 200) {
-            throw new IllegalStateException("下载失败，HTTP " + response.statusCode());
-        }
-        byte[] data = response.body();
-        if (data == null || data.length == 0) {
-            // ofByteArray 收到空响应体通常是 GitHub 防爬或网络中间设备拦截，直接抛出由 sendWithRetry 重试
-            throw new java.io.IOException("下载失败，响应体为空（可能被网络拦截）");
-        }
-        long expected = response.headers().firstValueAsLong("Content-Length").orElse(0L);
-        if (expected > 0 && data.length != expected) {
-            // 防止下载不完整时把损坏 .new 留给后续步骤
-            throw new java.io.IOException("下载不完整，期望 " + expected + " 字节，实际收到 " + data.length + " 字节");
-        }
+        byte[] data = downloadBytes(info.url(), "下载新版本 exe");
         if (progress != null) {
             progress.accept(90); // 90%：已成功接收全部字节，提示用户已开始落盘
         }
@@ -403,11 +528,8 @@ public final class UpdateService {
             logUpdate("写入新版本失败: " + e);
             throw e;
         }
-        if (progress != null) {
-            progress.accept(100);
-        }
 
-        // 2. SHA-256 校验（Release 提供 .sha256 资产时）
+        // 2. exe SHA-256 校验（Release 提供 .sha256 资产时）
         if (!info.sha256().isBlank()) {
             String actual = sha256Hex(newFile);
             if (!actual.equalsIgnoreCase(info.sha256())) {
@@ -416,7 +538,38 @@ public final class UpdateService {
             }
         }
 
-        // 3. 替换：正在运行的 exe 允许重命名，但不允许覆盖/删除；
+        // 3. 依赖库：清单与本地 lib 逐文件比对，仅在依赖发生变化（新增/版本变化/移除）时才下载升级包，
+        //    先解压到 lib.new 暂存目录，全部校验通过后再同步，避免半成品污染 lib
+        Path stagedLib = null;
+        if (info.hasLibAsset()) {
+            if (needsLibUpdate(libDir, info.libEntries())) {
+                try {
+                    stagedLib = downloadAndStageLib(dir, info, progress);
+                } catch (Exception e) {
+                    // 依赖库阶段失败则不再进入替换流程，清理已下载的 exe.new 与暂存目录，旧版本保持可用
+                    Files.deleteIfExists(newFile);
+                    deleteRecursively(libStaging);
+                    throw e;
+                }
+            } else {
+                logUpdate("依赖库与远端清单一致，本次跳过依赖库升级");
+            }
+        } else {
+            logUpdate("本次 Release 未提供依赖库清单/升级包，仅升级 exe");
+        }
+        if (progress != null) {
+            progress.accept(100);
+        }
+
+        // 4. 依赖库就地同步：先于 exe 替换，保证新 exe 启动时看到的已是新依赖；
+        //    jar 被运行中的 JVM 或安全软件占用则降级为：辅助进程在进程退出后完成 lib 同步 + exe 替换 + 重启
+        if (stagedLib != null && !syncLibInPlace(libDir, stagedLib)) {
+            logUpdate("依赖库文件被占用，转为延迟升级：本进程退出后由辅助进程完成依赖库同步与重启");
+            scheduleDeferredSwap(dir, exe, newFile, oldFile, libStaging, info.libEntries().stream().map(LibEntry::name).toList());
+            return false;
+        }
+
+        // 5. 替换 exe：正在运行的 exe 允许重命名，但不允许覆盖/删除；
         //    杀毒/安全软件以独占句柄打开 exe 时连重命名也会被拒（共享冲突），
         //    先多次重试规避瞬时锁定，仍失败则降级为延迟替换
         try {
@@ -427,7 +580,7 @@ public final class UpdateService {
         }
         if (!renameExeToOldWithRetry(exe, oldFile)) {
             logUpdate("当前 exe 被占用无法改名，转为延迟替换模式");
-            scheduleDeferredSwap(exe, newFile, oldFile);
+            scheduleDeferredSwap(dir, exe, newFile, oldFile, null, List.of());
             return false;
         }
         try {
@@ -438,6 +591,187 @@ public final class UpdateService {
             throw e;
         }
         return true;
+    }
+
+    /**
+     * 下载二进制资产到内存（含重试、空响应与长度校验）。
+     *
+     * @param what 日志中的动作描述
+     */
+    private byte[] downloadBytes(String url, String what) throws Exception {
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url)).header("Accept", "application/octet-stream")
+                .header("User-Agent", "OmniKit-Updater");
+        HttpResponse<byte[]> response = sendWithRetry(builder, HttpResponse.BodyHandlers.ofByteArray(), DOWNLOAD_TIMEOUT, what);
+        if (response.statusCode() != 200) {
+            throw new IllegalStateException("下载失败，HTTP " + response.statusCode());
+        }
+        byte[] data = response.body();
+        if (data == null || data.length == 0) {
+            // ofByteArray 收到空响应体通常是 GitHub 防爬或网络中间设备拦截，直接抛出由 sendWithRetry 重试
+            throw new java.io.IOException("下载失败，响应体为空（可能被网络拦截）");
+        }
+        long expected = response.headers().firstValueAsLong("Content-Length").orElse(0L);
+        if (expected > 0 && data.length != expected) {
+            // 防止下载不完整时把损坏文件留给后续步骤
+            throw new java.io.IOException("下载不完整，期望 " + expected + " 字节，实际收到 " + data.length + " 字节");
+        }
+        return data;
+    }
+
+    /**
+     * 判断本地 lib 是否需要升级：远端清单中的 jar 缺失、大小或 SHA-256 不符，
+     * 或本地存在远端已移除的多余 jar。
+     *
+     * @param libDir 本地 lib 目录（可能不存在）
+     * @param remote 远端依赖库清单
+     */
+    static boolean needsLibUpdate(Path libDir, List<LibEntry> remote) {
+        if (remote == null || remote.isEmpty()) {
+            return false;
+        }
+        Set<String> remoteNames = new HashSet<>();
+        for (LibEntry entry : remote) {
+            remoteNames.add(entry.name());
+            Path local = libDir.resolve(entry.name());
+            if (!Files.isRegularFile(local)) {
+                return true;
+            }
+            try {
+                if (Files.size(local) != entry.size()) {
+                    return true;
+                }
+                if (!entry.sha256().isBlank() && !sha256Hex(local).equalsIgnoreCase(entry.sha256())) {
+                    return true;
+                }
+            } catch (Exception e) {
+                // 无法读取（被占用/权限）时按需要升级处理
+                return true;
+            }
+        }
+        if (!Files.isDirectory(libDir)) {
+            return false;
+        }
+        try (Stream<Path> stream = Files.list(libDir)) {
+            return stream.map(path -> path.getFileName().toString()).anyMatch(name -> isSafeJarName(name) && !remoteNames.contains(name));
+        } catch (java.io.IOException e) {
+            return false;
+        }
+    }
+
+    /**
+     * 下载依赖库升级包、校验 SHA-256 并解压到暂存目录 {@code lib.new}。
+     *
+     * @return 暂存目录（已包含全部待同步 jar）
+     */
+    Path downloadAndStageLib(Path dir, UpdateInfo info, IntConsumer progress) throws Exception {
+        Path staging = dir.resolve(LIB_DIR_NAME + LIB_STAGING_SUFFIX);
+        deleteRecursively(staging);
+        byte[] data = downloadBytes(info.libUrl(), "下载依赖库升级包");
+        if (!info.libSha256().isBlank()) {
+            String actual = sha256Hex(data);
+            if (!actual.equalsIgnoreCase(info.libSha256())) {
+                throw new IllegalStateException("依赖库 SHA-256 校验失败：期望 " + info.libSha256() + "，实际 " + actual);
+            }
+        }
+        Files.createDirectories(staging);
+        int count = extractJars(data, staging);
+        if (count == 0) {
+            deleteRecursively(staging);
+            throw new IllegalStateException("依赖库升级包内容为空（未包含任何 jar）");
+        }
+        if (progress != null) {
+            progress.accept(95); // 95%：依赖库已就绪，即将开始同步
+        }
+        logUpdate("依赖库升级包已解压 " + count + " 个 jar 到 " + staging);
+        return staging;
+    }
+
+    /**
+     * 将升级包中的 jar 解压到目标目录：仅接受根级 {@code *.jar}，忽略目录与其他文件，防止路径穿越。
+     * 包级可见，便于 {@code UpdateServiceUpgradeTest} 直接验证。
+     */
+    static int extractJars(byte[] zipData, Path targetDir) throws java.io.IOException {
+        int count = 0;
+        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(zipData))) {
+            ZipEntry entry;
+            while ((entry = zip.getNextEntry()) != null) {
+                if (entry.isDirectory()) {
+                    continue;
+                }
+                String name = Path.of(entry.getName()).getFileName().toString();
+                if (!isSafeJarName(name)) {
+                    continue;
+                }
+                Files.copy(zip, targetDir.resolve(name), StandardCopyOption.REPLACE_EXISTING);
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /**
+     * 将暂存目录中的 jar 就地同步到 lib：覆盖/新增远端 jar、删除远端已移除的 jar。
+     * jar 被占用时会重试，仍失败返回 false（调用方转延迟同步）。
+     */
+    static boolean syncLibInPlace(Path libDir, Path staging) {
+        final int maxAttempts = 5;
+        List<String> names;
+        try (Stream<Path> stream = Files.list(staging)) {
+            names = stream.map(path -> path.getFileName().toString()).filter(UpdateService::isSafeJarName).toList();
+        } catch (java.io.IOException e) {
+            logUpdate("读取依赖库暂存目录失败: " + e);
+            return false;
+        }
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                Files.createDirectories(libDir);
+                for (String name : names) {
+                    Path source = staging.resolve(name);
+                    if (Files.isRegularFile(source)) {
+                        Files.move(source, libDir.resolve(name), StandardCopyOption.REPLACE_EXISTING);
+                    }
+                }
+                try (Stream<Path> stream = Files.list(libDir)) {
+                    List<Path> stale = stream.filter(path -> {
+                        String name = path.getFileName().toString();
+                        return isSafeJarName(name) && !names.contains(name);
+                    }).toList();
+                    for (Path path : stale) {
+                        Files.deleteIfExists(path);
+                    }
+                }
+                deleteRecursively(staging);
+                logUpdate("依赖库同步完成，共 " + names.size() + " 个 jar");
+                return true;
+            } catch (java.io.IOException e) {
+                logUpdate("依赖库同步失败（第 " + attempt + "/" + maxAttempts + " 次）: " + e);
+                try {
+                    Thread.sleep(400);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    return false;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** 递归删除目录（失败忽略，仅用于清理暂存数据） */
+    private static void deleteRecursively(Path dir) {
+        if (dir == null || !Files.exists(dir)) {
+            return;
+        }
+        try (Stream<Path> walk = Files.walk(dir)) {
+            for (Path path : walk.sorted(java.util.Comparator.reverseOrder()).toList()) {
+                try {
+                    Files.deleteIfExists(path);
+                } catch (java.io.IOException ignored) {
+                    // 被占用则保留，下次启动再清理
+                }
+            }
+        } catch (java.io.IOException ignored) {
+            // 无删除权限时忽略
+        }
     }
 
     /**
@@ -467,25 +801,58 @@ public final class UpdateService {
     }
 
     /**
-     * 延迟替换兜底：当前 exe 被占用导致无法立即改名时，启动一个完全分离的 PowerShell 辅助进程，
-     * 等待本进程退出（文件锁必然释放）后再完成 exe → .old、.new → exe 的替换并拉起新 exe。
+     * 延迟替换兜底：exe / jar 被占用导致无法立即就位时，启动一个完全分离的 PowerShell 辅助进程，
+     * 等待本进程退出（文件锁必然释放）后再完成可选的替换动作并拉起新 exe：
+     * <ul>
+     *   <li>{@code newFile} 非空：exe → .old、.new → exe</li>
+     *   <li>{@code stagingLib} 非空：将暂存目录中的 jar 同步进 lib，并按清单删除远端已移除的 jar</li>
+     * </ul>
      * Windows 环境可用；辅助进程启动失败则抛出异常，由上层提示用户手动更新。
+     *
+     * @param keepNames 远端清单中的 jar 名称（决定 lib 内哪些 jar 需要保留）
      */
-    private static void scheduleDeferredSwap(Path exe, Path newFile, Path oldFile) throws java.io.IOException {
+    private static void scheduleDeferredSwap(Path dir, Path exe, Path newFile, Path oldFile, Path stagingLib, List<String> keepNames)
+            throws java.io.IOException {
         long pid = ProcessHandle.current().pid();
-        Path dir = exe.getParent();
-        // 路径内嵌单引号转义为两个单引号
-        String script = "Wait-Process -Id " + pid + " -ErrorAction SilentlyContinue;"
-                + "for($i=0;$i -lt 20;$i++){ try{ Move-Item -LiteralPath '" + psQuote(exe) + "' -Destination '"
-                + psQuote(oldFile) + "' -Force -ErrorAction Stop; break } catch { Start-Sleep -Milliseconds 500 } };"
-                + "Move-Item -LiteralPath '" + psQuote(newFile) + "' -Destination '" + psQuote(exe) + "' -Force;"
-                + "Start-Process -FilePath '" + psQuote(exe) + "' -WorkingDirectory '" + psQuote(dir) + "'";
-        Process helper = new ProcessBuilder("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script)
+        Path targetExe = exe != null ? exe : dir.resolve(EXE_NAME);
+        StringBuilder script = new StringBuilder("$ErrorActionPreference='Continue';")
+                .append("Wait-Process -Id ").append(pid).append(" -ErrorAction SilentlyContinue;")
+                .append("Start-Sleep -Milliseconds 300;");
+        if (newFile != null) {
+            script.append("$exe='").append(psQuote(targetExe)).append("';$new='").append(psQuote(newFile)).append("';$old='")
+                    .append(psQuote(oldFile)).append("';")
+                    .append("for($i=0;$i -lt 20;$i++){ try{ Move-Item -LiteralPath $exe -Destination $old -Force -ErrorAction Stop; break")
+                    .append(" } catch { Start-Sleep -Milliseconds 500 } };")
+                    .append("Move-Item -LiteralPath $new -Destination $exe -Force;");
+        }
+        if (stagingLib != null) {
+            Path libDir = dir.resolve(LIB_DIR_NAME);
+            script.append("$lib='").append(psQuote(libDir)).append("';$stage='").append(psQuote(stagingLib)).append("';")
+                    .append("$keep=@(").append(psQuotedList(keepNames)).append(");")
+                    .append("New-Item -ItemType Directory -Path $lib -Force | Out-Null;")
+                    .append("for($i=0;$i -lt 20;$i++){ try{")
+                    .append(" foreach($n in $keep){ $src=Join-Path $stage $n; if(Test-Path -LiteralPath $src){")
+                    .append(" Move-Item -LiteralPath $src -Destination (Join-Path $lib $n) -Force -ErrorAction Stop } };")
+                    .append(" Get-ChildItem -LiteralPath $lib -Filter *.jar -File | Where-Object { $keep -notcontains $_.Name }")
+                    .append(" | ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop }; break")
+                    .append(" } catch { Start-Sleep -Milliseconds 500 } };")
+                    .append("Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue;");
+        }
+        script.append("Start-Process -FilePath '").append(psQuote(targetExe)).append("' -WorkingDirectory '").append(psQuote(dir)).append("'");
+        Process helper = new ProcessBuilder("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script.toString())
                 .directory(dir.toFile())
                 .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                 .redirectError(ProcessBuilder.Redirect.DISCARD)
                 .start();
         logUpdate("延迟替换辅助进程已启动 pid=" + helper.pid() + "，等待本进程(" + pid + ")退出后执行替换");
+    }
+
+    /** PowerShell 数组字面量：'a.jar','b.jar' */
+    private static String psQuotedList(List<String> names) {
+        if (names == null || names.isEmpty()) {
+            return "";
+        }
+        return names.stream().map(name -> "'" + name.replace("'", "''") + "'").collect(java.util.stream.Collectors.joining(","));
     }
 
     /** PowerShell 单引号字符串字面量转义：' → '' */
@@ -545,7 +912,7 @@ public final class UpdateService {
     }
     
     /**
-     * 清理上次升级遗留的 .old / .new 文件（应用启动时调用）。
+     * 清理上次升级遗留的 .old / .new / lib.new 文件（应用启动时调用）。
      */
     public static void cleanupObsoleteFiles() {
         try {
@@ -555,9 +922,14 @@ public final class UpdateService {
             }
             Files.deleteIfExists(exe.getParent().resolve(EXE_NAME + ".old"));
             Files.deleteIfExists(exe.getParent().resolve(EXE_NAME + ".new"));
+            deleteRecursively(exe.getParent().resolve(LIB_DIR_NAME + LIB_STAGING_SUFFIX));
         } catch (Exception ignored) {
             // 清理失败不影响启动
         }
+    }
+    
+    private static String sha256Hex(byte[] data) throws Exception {
+        return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(data));
     }
     
     private static String sha256Hex(Path file) throws Exception {

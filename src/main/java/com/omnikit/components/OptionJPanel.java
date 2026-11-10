@@ -28,6 +28,9 @@ public class OptionJPanel extends JPanel {
     
     private boolean selected = false;
     
+    // 高度是否锁定为首选高度：BoxLayout 按最大尺寸分配高度，写死的最大高度若小于首选高度（如带备注的项），最后一项会被压扁
+    private boolean fitHeightToPreferred = false;
+    
     @Getter
     @Setter
     private Object data;
@@ -117,6 +120,22 @@ public class OptionJPanel extends JPanel {
         if (remarkLabel != null) {
             remarkLabel.addMouseListener(adapter);
         }
+    }
+    
+    /**
+     * 高度改为锁定首选高度：用于 BoxLayout 列表，避免写死最大高度小于首选高度时列表末项被压扁遮挡
+     */
+    public void fitPreferredHeight() {
+        fitHeightToPreferred = true;
+        revalidate();
+    }
+    
+    @Override
+    public Dimension getMaximumSize() {
+        if (fitHeightToPreferred) {
+            return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
+        }
+        return super.getMaximumSize();
     }
     
     public void setSelected(boolean selected) {

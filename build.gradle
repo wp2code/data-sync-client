@@ -5,7 +5,7 @@ plugins {
 }
 
 group = 'com.omnikit'
-version = '2.1.1'
+version = '2.1.2'
 ext {
     // 内置 JRE 版本（Eclipse Temurin）
     jreVersion = '17.0.12+7'
@@ -293,7 +293,62 @@ tasks.register('packageZip', Zip) {
     outputs.upToDateWhen { false }
 }
 
+// ── 依赖库升级通道：为在线升级提供 lib/ 的固定命名升级包与清单 ──
+// 客户端按固定资产名查找（不带版本号），并用清单逐文件比对本地 lib/，
+// 仅在依赖发生变化（新增依赖/版本变化/依赖移除）时才下载 zip。
+def libSourceDir = layout.buildDirectory.dir('libs/lib')
+
+// 生成依赖库清单：每行 "<jarName>\t<size>\t<sha256>"
+tasks.register('libManifest') {
+    description = '生成依赖库清单 build/distributions/OmniKit-lib.manifest'
+    group = 'build'
+    dependsOn 'copyLibs'
+
+    def outputFileProvider = layout.buildDirectory.file('distributions/OmniKit-lib.manifest')
+    outputs.file(outputFileProvider)
+    outputs.upToDateWhen { false }
+
+    doLast {
+        def libDir = libSourceDir.get().asFile
+        File[] found = libDir.listFiles({ File f -> f.isFile() && f.name.endsWith('.jar') } as java.io.FileFilter)
+        def jars = (found == null ? [] : found.toList()).sort { it.name }
+        def lines = jars.collect { f ->
+            def md = java.security.MessageDigest.getInstance('SHA-256')
+            f.withInputStream { input ->
+                byte[] buffer = new byte[8192]
+                int n
+                while ((n = input.read(buffer)) > 0) {
+                    md.update(buffer, 0, n)
+                }
+            }
+            "${f.name}\t${f.length()}\t${md.digest().encodeHex().toString()}"
+        }
+        def outputFile = outputFileProvider.get().asFile
+        outputFile.parentFile.mkdirs()
+        outputFile.text = lines.isEmpty() ? '' : lines.join(System.lineSeparator()) + System.lineSeparator()
+    }
+}
+
+// 将 lib/ 下全部依赖 JAR 打包为 OmniKit-lib.zip（固定资产名）
+tasks.register('packageLib', Zip) {
+    description = '打包依赖库升级包 build/distributions/OmniKit-lib.zip'
+    group = 'build'
+    dependsOn 'libManifest'
+
+    archiveBaseName = 'OmniKit-lib'
+    // 固定资产名（无版本号），客户端按名查找
+    archiveVersion = ''
+    destinationDirectory = layout.buildDirectory.dir('distributions')
+
+    from(libSourceDir) {
+        include '*.jar'
+    }
+
+    outputs.upToDateWhen { false }
+}
+
 tasks.named('build') {
     dependsOn 'createExe'
     dependsOn 'packageZip'
+    dependsOn 'packageLib'
 }
