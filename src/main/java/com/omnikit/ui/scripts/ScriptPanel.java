@@ -75,6 +75,16 @@ public class ScriptPanel extends AbsJPanl {
      */
     private static final String CARD_UNGROUP_HINT = "ungroupHint";
     
+    /**
+     * 脚本类型下拉文案：SQL 脚本（可绑定数据库类型并在目标库执行）
+     */
+    private static final String TYPE_LABEL_SQL = "SQL 脚本";
+    
+    /**
+     * 脚本类型下拉文案：普通文件（仅编辑保存与 GitLab 同步，不连接数据库运行）
+     */
+    private static final String TYPE_LABEL_FILE = "普通文件";
+    
     private final List<OptionJPanel> scriptPanelList = new ArrayList<>();
     
     /**
@@ -119,7 +129,37 @@ public class ScriptPanel extends AbsJPanl {
     
     private JTabbedPane resultTabs;
     
+    /**
+     * 编辑区（SQL 脚本为控制台，普通文件为文件内容）：普通文件不展示下方的运行结果与运行日志
+     */
+    private JPanel consolePanel;
+    
+    /**
+     * 右侧上下分割面板：普通文件时把下方结果区整体移出，编辑区占满
+     */
+    private JSplitPane rightSplitPane;
+    
+    /**
+     * 运行结果 + 运行日志分割面板：仅 SQL 脚本展示
+     */
+    private JSplitPane resultPanelSplitPane;
+    
     private IconJComboBox dataSourceCombo;
+    
+    /**
+     * 数据源选择区：普通文件脚本无需连接数据库，整块隐藏
+     */
+    private JPanel dataSourcePanel;
+    
+    /**
+     * 编辑区工具栏：SQL 脚本放数据源/数据库/Schema 与运行、更多按钮；普通文件只保留更多按钮靠最右
+     */
+    private JPanel consoleToolbar;
+    
+    /**
+     * 工具栏右侧按钮区（运行 + 更多操作）
+     */
+    private JPanel consoleBtnPanel;
     
     private JPanel dbPanel;
     
@@ -157,6 +197,45 @@ public class ScriptPanel extends AbsJPanl {
     @Override
     public String name() {
         return NAME;
+    }
+    
+    /**
+     * 切换回本卡片时刷新：其他页面（如数据同步保存表 DDL 脚本）可能新增了脚本， 重新加载列表并保持当前选中项与未保存的编辑内容
+     */
+    @Override
+    public void refresh() {
+        if (consoleArea == null) {
+            return;
+        }
+        Script current = selectedScript;
+        String editingContent = current != null ? consoleArea.getText() : null;
+        int caretPosition = current != null ? consoleArea.getCaretPosition() : 0;
+        refreshScriptList();
+        if (current == null) {
+            return;
+        }
+        for (OptionJPanel panel : scriptPanelList) {
+            Script reloaded = (Script) panel.getData();
+            if (reloaded.getId() != null && reloaded.getId().equals(current.getId())) {
+                selectScript(reloaded, panel);
+                // 还原未保存的编辑内容与光标位置，避免刷新列表时丢失正在编辑的文本
+                if (editingContent != null) {
+                    consoleArea.setText(editingContent);
+                    consoleArea.setCaretPosition(Math.min(caretPosition, editingContent.length()));
+                }
+                final OptionJPanel matched = panel;
+                SwingUtilities.invokeLater(() -> {
+                    listScrollPane.validate();
+                    scriptListPanel.scrollRectToVisible(matched.getBounds());
+                });
+                return;
+            }
+        }
+        // 原选中脚本已不在库中（被删除）：清空右侧编辑区
+        selectedPanel = null;
+        selectedScript = null;
+        consoleArea.setText("");
+        updateEditState();
     }
     
     private void initUI() {
@@ -222,18 +301,14 @@ public class ScriptPanel extends AbsJPanl {
         JPanel rightPanel = new JPanel(new BorderLayout(5, 5));
         
         // 控制台
-        JPanel consolePanel = new JPanel(new BorderLayout(5, 5));
+        consolePanel = new JPanel(new BorderLayout(5, 5));
         consolePanel.setBorder(BorderFactory.createTitledBorder("控制台"));
         
-        JPanel consoleToolbar = new JPanel(new GridBagLayout());
+        consoleToolbar = new JPanel(new GridBagLayout());
         consoleToolbar.setBorder(new EmptyBorder(5, 5, 5, 5));
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(2, 3, 2, 3);
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.anchor = GridBagConstraints.WEST;
         
         // 运行数据源选择
-        JPanel dataSourcePanel = new JPanel(new BorderLayout(5, 0));
+        dataSourcePanel = new JPanel(new BorderLayout(5, 0));
         dataSourceCombo = new IconJComboBox();
         dataSourceCombo.addItem(new IconItem(null, "（请选择数据源）"));
         dataSourceCombo.addItemListener(e -> {
@@ -266,10 +341,10 @@ public class ScriptPanel extends AbsJPanl {
         schemaPanel.add(schemaCombo, BorderLayout.CENTER);
         
         // 按钮
-        JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
+        consoleBtnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
         runBtn = ButtonFactory.createPrimary("运行");
         runBtn.addActionListener(e -> runSelectedScript());
-        btnPanel.add(runBtn);
+        consoleBtnPanel.add(runBtn);
         
         // 更多操作下拉
         JButton moreBtn = ButtonFactory.createToolbar("更多操作 ▼");
@@ -305,18 +380,9 @@ public class ScriptPanel extends AbsJPanl {
         moreMenu.add(clearResultItem);
         moreMenu.addSeparator();
         moreBtn.addActionListener(e -> moreMenu.show(moreBtn, 0, moreBtn.getHeight()));
-        btnPanel.add(moreBtn);
+        consoleBtnPanel.add(moreBtn);
         
-        gbc.gridx = 0;
-        gbc.weightx = 1.0;
-        consoleToolbar.add(dataSourcePanel, gbc);
-        gbc.gridx = 1;
-        consoleToolbar.add(dbPanel, gbc);
-        gbc.gridx = 2;
-        consoleToolbar.add(schemaPanel, gbc);
-        gbc.gridx = 3;
-        gbc.weightx = 0.0;
-        consoleToolbar.add(btnPanel, gbc);
+        layoutConsoleToolbar();
         
         consoleArea = new JTextArea();
         consoleArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 13));
@@ -338,12 +404,12 @@ public class ScriptPanel extends AbsJPanl {
         resultScroll.setBorder(BorderFactory.createTitledBorder("运行日志"));
         resultScroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
         resultScroll.setPreferredSize(new Dimension(0, 80));
-        JSplitPane resultPanelSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, resultTabs, resultScroll);
+        resultPanelSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, resultTabs, resultScroll);
         resultPanelSplitPane.setResizeWeight(1);
         attachResultAreaPopupMenu(consoleArea, "清空控制台", true);
         attachResultAreaPopupMenu(resultTabs, "清空结果", false);
         attachResultAreaPopupMenu(LogUtil.SCRIPT_LOG_AREA, "清空日志", false);
-        JSplitPane rightSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, consolePanel, resultPanelSplitPane);
+        rightSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, consolePanel, resultPanelSplitPane);
         rightSplitPane.setResizeWeight(0.6);
         rightPanel.add(rightSplitPane, BorderLayout.CENTER);
         JSplitPane rootSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, leftPanel, rightPanel);
@@ -554,7 +620,10 @@ public class ScriptPanel extends AbsJPanl {
     }
     
     private OptionJPanel createScriptPanel(Script script) {
-        OptionJPanel panel = new OptionJPanel(script.getScriptName(), script.getRemark(), IconUtil.getDbTypeIcon(script.getDbType()));
+        // 图标：SQL 脚本按数据库类型，普通文件使用普通脚本图标
+        javax.swing.Icon icon = script.isSqlScript() ? IconUtil.getDbTypeIcon(script.getDbType())
+                : IconUtil.getScriptTypeIcon(Script.TYPE_FILE);
+        OptionJPanel panel = new OptionJPanel(script.getScriptName(), script.getRemark(), icon);
         panel.setData(script);
         panel.fitPreferredHeight();
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -658,14 +727,28 @@ public class ScriptPanel extends AbsJPanl {
                     if (comp instanceof JTextArea textArea) {
                         editItem.addActionListener(ev -> textArea.setText(""));
                         if (copy) {
+                            // 复制选中：只复制当前选区，未选中时置灰（全选已包含在下方「一键复制」中）
+                            JMenuItem copySelectionItem = new JMenuItem("复制选中");
+                            String selectedText = textArea.getSelectedText();
+                            copySelectionItem.setEnabled(selectedText != null && !selectedText.isEmpty());
+                            copySelectionItem.addActionListener(ee -> textArea.copy());
+                            popup.add(copySelectionItem);
+                            // 运行选中内容：仅 SQL 脚本且有选中时提供
+                            if (selectedScript != null && selectedScript.isSqlScript() && selectedText != null && !selectedText.isBlank()) {
+                                JMenuItem runSelectionItem = new JMenuItem("运行选中内容");
+                                runSelectionItem.addActionListener(ee -> runSelectedScript());
+                                popup.add(runSelectionItem);
+                            }
+                            popup.addSeparator();
                             JMenuItem copyItem = new JMenuItem("一键复制");
                             copyItem.addActionListener(ee -> {
                                 textArea.selectAll();
                                 textArea.copy();
                                 textArea.setCaretPosition(0);
-                                JOptionPane.showMessageDialog(comp.getParent(), "脚本已复制到剪贴板", "提示", JOptionPane.INFORMATION_MESSAGE);
+                                JOptionPane.showMessageDialog(comp.getParent(), "内容已复制到剪贴板", "提示", JOptionPane.INFORMATION_MESSAGE);
                             });
                             popup.add(copyItem);
+                            popup.addSeparator();
                         }
                     }
                     if (comp instanceof JEditorPane editorPane) {
@@ -721,10 +804,6 @@ public class ScriptPanel extends AbsJPanl {
             JOptionPane.showMessageDialog(this, "已存在同名脚本，请重新命名", "错误", JOptionPane.WARNING_MESSAGE);
             return;
         }
-        if (!StringUtils.isNullOrEmpty(script.getFilePath()) && !script.getFilePath().endsWith(".sql")) {
-            JOptionPane.showMessageDialog(this, "文件必须是.sql格式", "错误", JOptionPane.ERROR_MESSAGE);
-            return;
-        }
         if (ConfigUtil.updateScript(script)) {
             refreshScriptList();
             for (OptionJPanel p : scriptPanelList) {
@@ -747,7 +826,12 @@ public class ScriptPanel extends AbsJPanl {
         selectedPanel = panel;
         selectedPanel.setSelected(true);
         selectedScript = script;
-        refreshDataSourceCombo();
+        if (script != null && script.isSqlScript()) {
+            refreshDataSourceCombo();
+        } else {
+            // 普通文件不连接数据库，清理数据源选择状态
+            resetTargetSelectionState();
+        }
         if (script != null) {
             uploadMenuItem.setEnabled(!StringUtils.isNullOrEmpty(script.getProjectOrId()) && !StringUtils.isNullOrEmpty(script.getBranch())
                     && !StringUtils.isNullOrEmpty(script.getFilePath()));
@@ -954,6 +1038,15 @@ public class ScriptPanel extends AbsJPanl {
      */
     private boolean showScriptMetaDialog(Script script, String title) {
         JTextField nameField = new JTextField(script.getScriptName() != null ? script.getScriptName() : "", 30);
+        // 脚本类型：SQL 脚本可绑数据库类型并运行，普通文件仅编辑/保存/同步（带图标下拉）
+        IconItem sqlTypeItem = new IconItem(IconUtil.getScriptTypeIcon(Script.TYPE_SQL), TYPE_LABEL_SQL, Script.TYPE_SQL);
+        IconItem fileTypeItem = new IconItem(IconUtil.getScriptTypeIcon(Script.TYPE_FILE), TYPE_LABEL_FILE, Script.TYPE_FILE);
+        IconJComboBox scriptTypeInput = new IconJComboBox();
+        scriptTypeInput.addItem(sqlTypeItem);
+        scriptTypeInput.addItem(fileTypeItem);
+        // 直接用带图标的候选项作为初始选中项，否则选中项无图标（仅列表项有）
+        scriptTypeInput.setSelectedItem(script.isSqlScript() ? sqlTypeItem : fileTypeItem);
+        scriptTypeInput.setToolTipText("普通文件仅用于编辑、保存与 GitLab 同步，不连接数据库运行");
         IconJComboBox dbTypeInput = new IconJComboBox();
         dbTypeInput.addItem(DbType.POSTGRESQL_ITEM);
         dbTypeInput.addItem(DbType.MYSQL_ITEM);
@@ -967,6 +1060,7 @@ public class ScriptPanel extends AbsJPanl {
         projectCombo.setEditable(false);
         branchCombo.setEnabled(false);
         JTextField filePathField = new JTextField(script.getFilePath() != null ? script.getFilePath() : "", 30);
+        filePathField.setToolTipText("仓库内文件路径，如 docs/ddl/user.sql；末段带扩展名视为完整文件路径，否则视为目录");
         // 分组：可编辑下拉框，候选项为已有分组，也可直接输入新分组名
         JComboBox<String> groupInput = createGroupComboBox(script.getGroupName());
         JTextArea remarkArea = new JTextArea(script.getRemark() != null ? script.getRemark() : "", 4, 30);
@@ -986,13 +1080,14 @@ public class ScriptPanel extends AbsJPanl {
             }
         });
         
-        JPanel panel = new JPanel(new GridBagLayout());
-        panel.setBorder(new EmptyBorder(10, 12, 5, 12));
+        JPanel formPanel = new JPanel(new GridBagLayout());
+        formPanel.setBorder(new EmptyBorder(10, 12, 5, 12));
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(6, 6, 6, 6);
         gbc.anchor = GridBagConstraints.WEST;
         
         JLabel nameLabel = formLabel("脚本名称:");
+        JLabel scriptTypeLabel = formLabel("脚本类型:");
         JLabel dbTypeLabel = formLabel("数据库类型:");
         JLabel projectLabel = formLabel("项目:");
         JLabel branchLabel = formLabel("分支:");
@@ -1000,31 +1095,53 @@ public class ScriptPanel extends AbsJPanl {
         JLabel groupLabel = formLabel("分组:");
         JLabel remarkLabel = formLabel("备注:");
         remarkLabel.setVerticalAlignment(SwingConstants.TOP);
-        alignLabelWidth(List.of(nameLabel, dbTypeLabel, projectLabel, branchLabel, filePathLabel, groupLabel, remarkLabel));
+        alignLabelWidth(List.of(nameLabel, scriptTypeLabel, dbTypeLabel, projectLabel, branchLabel, filePathLabel, groupLabel, remarkLabel));
         
-        addFormRow(panel, gbc, 0, nameLabel, nameField);
-        addFormRow(panel, gbc, 1, dbTypeLabel, dbTypeInput);
-        addFormRow(panel, gbc, 2, projectLabel, projectCombo);
-        addFormRow(panel, gbc, 3, branchLabel, branchCombo);
-        addFormRow(panel, gbc, 4, filePathLabel, filePathField);
-        addFormRow(panel, gbc, 5, groupLabel, groupInput);
+        // 表单行按脚本类型重建：数据库类型行仅 SQL 脚本生成（GridBagLayout 不支持隐藏行，只能重建）
+        Runnable rebuildFormRows = new Runnable() {
+            @Override
+            public void run() {
+                boolean sqlScript = Script.TYPE_SQL.equals(selectedScriptType(scriptTypeInput));
+                formPanel.removeAll();
+                int gridy = 0;
+                addFormRow(formPanel, gbc, gridy++, nameLabel, nameField);
+                addFormRow(formPanel, gbc, gridy++, scriptTypeLabel, scriptTypeInput);
+                if (sqlScript) {
+                    addFormRow(formPanel, gbc, gridy++, dbTypeLabel, dbTypeInput);
+                }
+                addFormRow(formPanel, gbc, gridy++, projectLabel, projectCombo);
+                addFormRow(formPanel, gbc, gridy++, branchLabel, branchCombo);
+                addFormRow(formPanel, gbc, gridy++, filePathLabel, filePathField);
+                addFormRow(formPanel, gbc, gridy++, groupLabel, groupInput);
+                
+                // 备注：允许垂直方向压缩/伸展
+                gbc.gridx = 0;
+                gbc.gridy = gridy;
+                gbc.weightx = 0;
+                gbc.weighty = 1;
+                gbc.fill = GridBagConstraints.NONE;
+                gbc.anchor = GridBagConstraints.NORTHEAST;
+                formPanel.add(remarkLabel, gbc);
+                
+                gbc.gridx = 1;
+                gbc.weightx = 1;
+                gbc.fill = GridBagConstraints.BOTH;
+                gbc.anchor = GridBagConstraints.WEST;
+                formPanel.add(remarkScroll, gbc);
+                
+                formPanel.revalidate();
+                formPanel.repaint();
+                Window window = SwingUtilities.getWindowAncestor(formPanel);
+                if (window != null) {
+                    // 行数变化后按新的首选尺寸重新适配对话框
+                    window.pack();
+                }
+            }
+        };
+        rebuildFormRows.run();
+        scriptTypeInput.addActionListener(e -> rebuildFormRows.run());
         
-        // 备注：允许垂直方向压缩/伸展
-        gbc.gridx = 0;
-        gbc.gridy = 6;
-        gbc.weightx = 0;
-        gbc.weighty = 1;
-        gbc.fill = GridBagConstraints.NONE;
-        gbc.anchor = GridBagConstraints.NORTHEAST;
-        panel.add(remarkLabel, gbc);
-        
-        gbc.gridx = 1;
-        gbc.weightx = 1;
-        gbc.fill = GridBagConstraints.BOTH;
-        gbc.anchor = GridBagConstraints.WEST;
-        panel.add(remarkScroll, gbc);
-        
-        int option = JOptionPane.showConfirmDialog(this, panel, title, JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        int option = JOptionPane.showConfirmDialog(this, formPanel, title, JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
         if (option != JOptionPane.OK_OPTION) {
             return true;
         }
@@ -1038,20 +1155,30 @@ public class ScriptPanel extends AbsJPanl {
         IconItem selectedDbType = dbTypeInput.getSelectedItem();
         ProjectItem selectedProject = (ProjectItem) projectCombo.getSelectedItem();
         String selectedBranch = (String) branchCombo.getSelectedItem();
+        boolean sqlScript = Script.TYPE_SQL.equals(selectedScriptType(scriptTypeInput));
         script.setScriptName(newName);
+        script.setScriptType(sqlScript ? Script.TYPE_SQL : Script.TYPE_FILE);
         script.setGitLabConfigId(selectedProject != null ? selectedProject.getConfigId() : null);
         script.setDbType(selectedDbType != null ? DbType.fromString(selectedDbType.text()) : DbType.MYSQL);
         script.setProjectOrId(selectedProject != null && selectedProject.getId() != null ? selectedProject.getProjectOrId() : null);
         script.setBranch(selectedBranch != null && !selectedBranch.startsWith("（") ? selectedBranch : null);
         final String filePath = filePathField.getText().trim();
-        if (!StringUtils.isNullOrEmpty(filePath) && !filePath.endsWith(".sql")) {
-            JOptionPane.showMessageDialog(this, "文件必须是.sql格式", "错误", JOptionPane.ERROR_MESSAGE);
+        if (sqlScript && !StringUtils.isNullOrEmpty(filePath) && !filePath.toLowerCase(Locale.ROOT).endsWith(".sql")) {
+            JOptionPane.showMessageDialog(this, "SQL 脚本的文件必须是.sql格式", "错误", JOptionPane.ERROR_MESSAGE);
             return true;
         }
         script.setFilePath(filePathField.getText().trim());
         script.setGroupName(groupComboText(groupInput));
         script.setRemark(remarkArea.getText().trim());
         return false;
+    }
+    
+    /**
+     * 读取脚本类型下拉当前选中值（候选项的 IconItem.userData 存 {@link Script#TYPE_SQL} / {@link Script#TYPE_FILE}）， 未选中时按 SQL 脚本处理
+     */
+    private String selectedScriptType(IconJComboBox comboBox) {
+        IconItem item = comboBox.getSelectedItem();
+        return item == null || item.userData() == null ? Script.TYPE_SQL : item.userData().toString();
     }
     
     /**
@@ -1194,10 +1321,6 @@ public class ScriptPanel extends AbsJPanl {
             JOptionPane.showMessageDialog(this, "新建脚本失败", "错误", JOptionPane.ERROR_MESSAGE);
             return;
         }
-        if (!StringUtils.isNullOrEmpty(script.getFilePath()) && !script.getFilePath().endsWith(".sql")) {
-            JOptionPane.showMessageDialog(this, "文件必须是.sql格式", "错误", JOptionPane.ERROR_MESSAGE);
-            return;
-        }
         // 重新加载以获取数据库生成的 id
         Script saved = ConfigUtil.loadScriptByName(name);
         refreshScriptList();
@@ -1240,7 +1363,7 @@ public class ScriptPanel extends AbsJPanl {
         new Thread(() -> {
             try {
                 RepositoryFile file = GitLabService.getInstance().getFile(selectedScript.getProjectOrId(),
-                        GlobalUtil.getFullFilePath(selectedScript.getFilePath(), selectedScript.getScriptName() + ".sql"),
+                        GlobalUtil.getFullFilePath(selectedScript.getFilePath(), selectedScript.resolveFileName()),
                         selectedScript.getBranch());
                 String content = new String(Base64.getDecoder().decode(file.getContent()), StandardCharsets.UTF_8);
                 SwingUtilities.invokeLater(() -> {
@@ -1295,7 +1418,7 @@ public class ScriptPanel extends AbsJPanl {
                 fileParams.setProjectOrId(selectedScript.getProjectOrId());
                 fileParams.setBranch(selectedScript.getBranch());
                 fileParams.setFilePath(selectedScript.getFilePath());
-                fileParams.setFileName(selectedScript.getScriptName() + ".sql");
+                fileParams.setFileName(selectedScript.resolveFileName());
                 fileParams.setCommitMessage(selectedScript.getFilePath());
                 fileParams.setContent(Base64.getEncoder().encodeToString(content.getBytes(StandardCharsets.UTF_8)));
                 fileParams.setEncoding("base64");
@@ -1375,10 +1498,13 @@ public class ScriptPanel extends AbsJPanl {
         }
         
         JFileChooser chooser = new JFileChooser();
-        chooser.setDialogTitle("导出脚本为 SQL 文件");
+        boolean sqlScript = selectedScript.isSqlScript();
+        chooser.setDialogTitle(sqlScript ? "导出脚本为 SQL 文件" : "导出文件");
         chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
-        chooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("SQL 文件 (*.sql)", "sql"));
-        chooser.setSelectedFile(new File(selectedScript.getScriptName() + ".sql"));
+        if (sqlScript) {
+            chooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("SQL 文件 (*.sql)", "sql"));
+        }
+        chooser.setSelectedFile(new File(selectedScript.resolveFileName()));
         
         int result = chooser.showSaveDialog(this);
         if (result != JFileChooser.APPROVE_OPTION) {
@@ -1386,9 +1512,9 @@ public class ScriptPanel extends AbsJPanl {
         }
         
         File file = chooser.getSelectedFile();
-        String fileName = file.getName();
-        if (!fileName.toLowerCase().endsWith(".sql")) {
-            file = new File(file.getParentFile(), fileName + ".sql");
+        // SQL 脚本统一以 .sql 结尾；普通文件保留输入的文件名，不强制扩展名
+        if (sqlScript && !file.getName().toLowerCase(Locale.ROOT).endsWith(".sql")) {
+            file = new File(file.getParentFile(), file.getName() + ".sql");
         }
         
         try (java.io.FileWriter writer = new java.io.FileWriter(file, java.nio.charset.StandardCharsets.UTF_8)) {
@@ -1407,9 +1533,17 @@ public class ScriptPanel extends AbsJPanl {
             return;
         }
         
-        String content = consoleArea.getText().trim();
+        if (!selectedScript.isSqlScript()) {
+            JOptionPane.showMessageDialog(this, "普通文件脚本不支持运行，仅可编辑保存", "提示", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        
+        // 有选中文本时只运行选中部分，否则运行全部内容
+        String selectedText = consoleArea.getSelectedText();
+        boolean runSelection = selectedText != null && !selectedText.isBlank();
+        String content = (runSelection ? selectedText : consoleArea.getText()).trim();
         if (content.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "脚本内容为空", "提示", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(this, runSelection ? "选中的内容为空" : "脚本内容为空", "提示", JOptionPane.WARNING_MESSAGE);
             return;
         }
         
@@ -1448,7 +1582,7 @@ public class ScriptPanel extends AbsJPanl {
         if (dataSource.isPostgresql() && schemaItem != null && !schemaItem.toString().startsWith("（")) {
             runInfo += " Schema [" + schemaItem + "]";
         }
-        logResult("开始执行脚本 [" + selectedScript.getScriptName() + "] " + runInfo + "...");
+        logResult("开始执行脚本 [" + selectedScript.getScriptName() + "] " + runInfo + (runSelection ? "（仅执行选中内容）" : "") + "...");
         
         new Thread(() -> {
             Connection conn = null;
@@ -1542,11 +1676,74 @@ public class ScriptPanel extends AbsJPanl {
         saveMenuItem.setEnabled(hasSelection);
         deleteMenuItem.setEnabled(hasSelection);
         exportMenuItem.setEnabled(hasSelection);
+        updateScriptTypeState();
         updateRunButtonState();
     }
     
+    /**
+     * 按脚本类型切换右侧区域：SQL 脚本展示数据源选择与运行结果/运行日志； 普通文件只在编辑区编辑内容，不需要运行、结果与日志
+     */
+    private void updateScriptTypeState() {
+        boolean sqlScript = selectedScript == null || selectedScript.isSqlScript();
+        dataSourcePanel.setVisible(sqlScript);
+        runBtn.setVisible(sqlScript);
+        if (!sqlScript) {
+            dbPanel.setVisible(false);
+            schemaPanel.setVisible(false);
+        }
+        consolePanel.setBorder(BorderFactory.createTitledBorder(sqlScript ? "控制台" : "文件内容"));
+        layoutConsoleToolbar();
+        if (rightSplitPane == null) {
+            return;
+        }
+        // 结果区整体移出分割面板（仅 setVisible 仍会占位），再切回时重新挂上并恢复默认分割位
+        if (sqlScript) {
+            if (rightSplitPane.getBottomComponent() == null) {
+                rightSplitPane.setBottomComponent(resultPanelSplitPane);
+                SwingUtilities.invokeLater(() -> rightSplitPane.setDividerLocation(0.6));
+            }
+        } else {
+            rightSplitPane.setBottomComponent(null);
+        }
+    }
+    
+    /**
+     * 按脚本类型重建编辑区工具栏：SQL 脚本为「数据源 + 数据库 + Schema + 按钮」；普通文件只剩操作按钮，独占整行并靠最右
+     */
+    private void layoutConsoleToolbar() {
+        if (consoleToolbar == null || consoleBtnPanel == null) {
+            return;
+        }
+        boolean sqlScript = selectedScript == null || selectedScript.isSqlScript();
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(2, 3, 2, 3);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.anchor = GridBagConstraints.WEST;
+        consoleToolbar.removeAll();
+        if (sqlScript) {
+            gbc.gridx = 0;
+            gbc.weightx = 1.0;
+            consoleToolbar.add(dataSourcePanel, gbc);
+            gbc.gridx = 1;
+            consoleToolbar.add(dbPanel, gbc);
+            gbc.gridx = 2;
+            consoleToolbar.add(schemaPanel, gbc);
+            gbc.gridx = 3;
+            gbc.weightx = 0.0;
+            consoleToolbar.add(consoleBtnPanel, gbc);
+        } else {
+            // 普通文件：按钮区占满整行，FlowLayout.RIGHT 使「更多操作」贴最右
+            gbc.gridx = 0;
+            gbc.weightx = 1.0;
+            gbc.anchor = GridBagConstraints.EAST;
+            consoleToolbar.add(consoleBtnPanel, gbc);
+        }
+        consoleToolbar.revalidate();
+        consoleToolbar.repaint();
+    }
+    
     private void updateRunButtonState() {
-        boolean hasScript = selectedScript != null;
+        boolean hasScript = selectedScript != null && selectedScript.isSqlScript();
         IconItem dsItem = dataSourceCombo.getSelectedItem();
         boolean hasDataSource = dsItem != null && !dsItem.text().startsWith("（");
         if (!hasDataSource) {

@@ -118,15 +118,39 @@ public class GlobalUtil {
     }
     
     /**
-     * @param filePath
-     * @param fileName
-     * @return
+     * 拼接仓库内完整文件路径：filePath 末段已带扩展名时视为完整文件路径直接返回， 否则视为目录并拼上文件名；路径统一使用 '/' 分隔
+     *
+     * @param filePath 仓库内文件路径或目录路径（可带扩展名）
+     * @param fileName 视为目录时拼接的文件名
+     * @return 仓库内完整文件路径
      */
     public static String getFullFilePath(String filePath, String fileName) {
-        if (filePath.endsWith(".sql")) {
-            return filePath;
+        String path = filePath == null ? "" : filePath.trim().replace('\\', '/');
+        if (path.isEmpty()) {
+            return fileName;
         }
-        return filePath.replaceAll("\\\\", "/") + "/" + fileName;
+        if (isFullFilePath(path)) {
+            return path;
+        }
+        return path.endsWith("/") ? path + fileName : path + "/" + fileName;
+    }
+    
+    /**
+     * 路径末段是否形如文件名（带扩展名，如 user.sql、readme.md），用于区分「完整文件路径」与「目录路径」； 纯数字扩展名（如目录 v1.0）不视为扩展名
+     */
+    public static boolean isFullFilePath(String path) {
+        if (path == null || path.isEmpty()) {
+            return false;
+        }
+        String normalized = path.replace('\\', '/');
+        String lastSegment = normalized.substring(normalized.lastIndexOf('/') + 1);
+        int dot = lastSegment.lastIndexOf('.');
+        if (dot <= 0 || dot == lastSegment.length() - 1) {
+            return false;
+        }
+        String extension = lastSegment.substring(dot + 1);
+        return extension.length() <= 10 && extension.chars().anyMatch(Character::isLetter)
+                && extension.chars().allMatch(Character::isLetterOrDigit);
     }
     
     /**

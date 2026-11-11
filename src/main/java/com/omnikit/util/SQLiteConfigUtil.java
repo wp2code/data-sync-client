@@ -86,6 +86,7 @@ public class SQLiteConfigUtil {
                 id                INTEGER PRIMARY KEY AUTOINCREMENT,
                 script_name       VARCHAR(128) NOT NULL UNIQUE,
                 group_name        VARCHAR(64)  DEFAULT NULL,
+                script_type       VARCHAR(16)  NOT NULL DEFAULT 'sql',
                 db_type           VARCHAR(16)  NOT NULL DEFAULT 'mysql',
                 content           TEXT         DEFAULT NULL,
                 remark            TEXT         DEFAULT NULL,
@@ -366,22 +367,23 @@ public class SQLiteConfigUtil {
      * 保存脚本配置
      */
     public boolean saveScript(Script script) {
-        String sql = "INSERT INTO script_config (script_name, group_name, db_type, content, remark, git_lab_config_id, project_or_id, branch, file_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO script_config (script_name, group_name, script_type, db_type, content, remark, git_lab_config_id, project_or_id, branch, file_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (Connection conn = getConnection();
                 PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, script.getScriptName());
             ps.setString(2, script.getGroupName());
-            ps.setString(3, script.getDbType() != null ? script.getDbType().getKey() : null);
-            ps.setString(4, script.getContent());
-            ps.setString(5, script.getRemark());
+            ps.setString(3, script.resolveScriptType());
+            ps.setString(4, script.getDbType() != null ? script.getDbType().getKey() : null);
+            ps.setString(5, script.getContent());
+            ps.setString(6, script.getRemark());
             if (script.getGitLabConfigId() != null) {
-                ps.setLong(6, script.getGitLabConfigId());
+                ps.setLong(7, script.getGitLabConfigId());
             } else {
-                ps.setNull(6, java.sql.Types.BIGINT);
+                ps.setNull(7, java.sql.Types.BIGINT);
             }
-            ps.setString(7, script.getProjectOrId());
-            ps.setString(8, script.getBranch());
-            ps.setString(9, script.getFilePath());
+            ps.setString(8, script.getProjectOrId());
+            ps.setString(9, script.getBranch());
+            ps.setString(10, script.getFilePath());
             return ps.executeUpdate() > 0;
         } catch (SQLException e) {
             logger.error("[SQLite] 保存脚本失败", e);
@@ -430,23 +432,24 @@ public class SQLiteConfigUtil {
      * 更新脚本配置（以 id 为条件）
      */
     public boolean updateScript(Script script) {
-        String sql = "UPDATE script_config SET script_name = ?, group_name = ?, db_type = ?, content = ?, remark = ?, git_lab_config_id = ?, project_or_id = ?, branch = ?, file_path = ?, update_time = CURRENT_TIMESTAMP WHERE id = ?";
+        String sql = "UPDATE script_config SET script_name = ?, group_name = ?, script_type = ?, db_type = ?, content = ?, remark = ?, git_lab_config_id = ?, project_or_id = ?, branch = ?, file_path = ?, update_time = CURRENT_TIMESTAMP WHERE id = ?";
         try (Connection conn = getConnection();
                 PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, script.getScriptName());
             ps.setString(2, script.getGroupName());
-            ps.setString(3, script.getDbType() != null ? script.getDbType().getKey() : null);
-            ps.setString(4, script.getContent());
-            ps.setString(5, script.getRemark());
+            ps.setString(3, script.resolveScriptType());
+            ps.setString(4, script.getDbType() != null ? script.getDbType().getKey() : null);
+            ps.setString(5, script.getContent());
+            ps.setString(6, script.getRemark());
             if (script.getGitLabConfigId() != null) {
-                ps.setLong(6, script.getGitLabConfigId());
+                ps.setLong(7, script.getGitLabConfigId());
             } else {
-                ps.setNull(6, java.sql.Types.BIGINT);
+                ps.setNull(7, java.sql.Types.BIGINT);
             }
-            ps.setString(7, script.getProjectOrId());
-            ps.setString(8, script.getBranch());
-            ps.setString(9, script.getFilePath());
-            ps.setLong(10, script.getId());
+            ps.setString(8, script.getProjectOrId());
+            ps.setString(9, script.getBranch());
+            ps.setString(10, script.getFilePath());
+            ps.setLong(11, script.getId());
             return ps.executeUpdate() > 0;
         } catch (SQLException e) {
             logger.error("[SQLite] 更新脚本失败", e);
@@ -915,10 +918,11 @@ public class SQLiteConfigUtil {
     }
     
     /**
-     * 兼容旧库：script_config 缺少 group_name 列时自动补齐（SQLite ALTER TABLE ADD COLUMN）
+     * 兼容旧库：script_config 缺少 group_name / script_type 列时自动补齐（SQLite ALTER TABLE ADD COLUMN）
      */
     private void ensureScriptConfigColumns(Statement stmt) throws SQLException {
         addColumnIfAbsent(stmt, "script_config", "group_name", "VARCHAR(64) DEFAULT NULL");
+        addColumnIfAbsent(stmt, "script_config", "script_type", "VARCHAR(16) NOT NULL DEFAULT 'sql'");
     }
     
     /**
@@ -1045,6 +1049,7 @@ public class SQLiteConfigUtil {
         script.setId(rs.getLong("id"));
         script.setScriptName(rs.getString("script_name"));
         script.setGroupName(rs.getString("group_name"));
+        script.setScriptType(valueOrDefault(rs.getString("script_type"), Script.TYPE_SQL));
         script.setDbType(DbType.fromString(rs.getString("db_type")));
         script.setContent(rs.getString("content"));
         script.setRemark(rs.getString("remark"));

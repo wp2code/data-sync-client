@@ -110,6 +110,47 @@ class UpdateServiceTest {
                 "仓库地址变更时应同步检查推导逻辑");
     }
 
+    @Test
+    @DisplayName("REPO_API_CANDIDATES：旧仓库优先，omnikit-client 作为回退")
+    void testRepoApiCandidates() {
+        assertEquals(2, UpdateService.REPO_API_CANDIDATES.size(), "应包含主仓库与备选仓库两个升级源");
+        assertEquals("https://api.github.com/repos/wp2code/data-sync-client", UpdateService.REPO_API_CANDIDATES.get(0),
+                "历史仓库 data-sync-client 应优先尝试");
+        assertEquals("https://api.github.com/repos/wp2code/omnikit-client", UpdateService.REPO_API_CANDIDATES.get(1),
+                "主仓库不可用时应回退到 omnikit-client");
+    }
+
+    // ────────── 资产地址回退 ──────────
+
+    @Test
+    @DisplayName("repoUrlCandidates：data-sync-client 资产地址附带 omnikit-client 备选地址")
+    void testRepoUrlCandidatesFallback() {
+        String url = "https://github.com/wp2code/data-sync-client/releases/download/v2.1.0/OmniKit.exe";
+        java.util.List<String> candidates = UpdateService.repoUrlCandidates(url);
+        assertEquals(2, candidates.size(), "应返回原地址与备选地址: " + candidates);
+        assertEquals(url, candidates.get(0), "原地址应优先尝试");
+        assertEquals("https://github.com/wp2code/omnikit-client/releases/download/v2.1.0/OmniKit.exe", candidates.get(1),
+                "备选地址仅替换仓库段，保留版本与资产名");
+    }
+
+    @Test
+    @DisplayName("repoUrlCandidates：非仓库路径仅返回原地址")
+    void testRepoUrlCandidatesUnrelatedUrl() {
+        String url = "http://127.0.0.1:8080/OmniKit.exe";
+        assertEquals(java.util.List.of(url), UpdateService.repoUrlCandidates(url), "非 GitHub 仓库路径不应改写");
+        assertTrue(UpdateService.repoUrlCandidates("").isEmpty(), "空地址无候选");
+    }
+
+    @Test
+    @DisplayName("repoUrlCandidates：备选仓库地址不会重复追加")
+    void testRepoUrlCandidatesDeduplicate() {
+        String url = "https://github.com/wp2code/omnikit-client/releases/download/v2.1.0/OmniKit-lib.zip";
+        java.util.List<String> candidates = UpdateService.repoUrlCandidates(url);
+        assertEquals(2, candidates.size(), "应仅追加一次另一仓库地址: " + candidates);
+        assertEquals(url, candidates.get(0));
+        assertTrue(candidates.get(1).contains("/wp2code/data-sync-client/"), "备选地址应为 data-sync-client: " + candidates.get(1));
+    }
+
     // ────────── 节流配置 ──────────
 
     @Test

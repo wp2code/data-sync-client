@@ -2,6 +2,7 @@ package com.omnikit.util;
 
 import com.omnikit.model.DbType;
 import com.omnikit.model.ProgramConfig;
+import com.omnikit.model.Script;
 import java.awt.*;
 import java.awt.geom.*;
 import java.awt.image.*;
@@ -38,6 +39,10 @@ public final class IconUtil {
     private static ImageIcon httpServerIcon;
     
     private static ImageIcon otherProgramIcon;
+    
+    private static ImageIcon sqlScriptIcon;
+    
+    private static ImageIcon otherScriptIcon;
     
     private static ImageIcon groupIcon;
     
@@ -111,6 +116,13 @@ public final class IconUtil {
             }
             return httpServerIcon;
         }
+        return getGenericIcon();
+    }
+    
+    /**
+     * 通用图标（assets/generic.svg）：无具体类型归属的条目（如其他程序、普通文件脚本）使用
+     */
+    public static ImageIcon getGenericIcon() {
         if (otherProgramIcon == null) {
             otherProgramIcon = loadSvgIcon("assets/generic.svg");
         }
@@ -125,6 +137,22 @@ public final class IconUtil {
             groupIcon = loadSvgIcon("assets/group.svg");
         }
         return groupIcon;
+    }
+    
+    /**
+     * 脚本类型图标：SQL 脚本（assets/sql_script.svg）与普通文件脚本（assets/other_script.svg）， 供脚本类型下拉框与列表使用；未知类型按普通文件处理
+     */
+    public static ImageIcon getScriptTypeIcon(String scriptType) {
+        if (Script.TYPE_SQL.equalsIgnoreCase(scriptType)) {
+            if (sqlScriptIcon == null) {
+                sqlScriptIcon = loadSvgIcon("assets/sql_script.svg");
+            }
+            return sqlScriptIcon;
+        }
+        if (otherScriptIcon == null) {
+            otherScriptIcon = loadSvgIcon("assets/other_script.svg");
+        }
+        return otherScriptIcon;
     }
     
     /**
@@ -226,6 +254,12 @@ public final class IconUtil {
         }
         if (resourceName.contains("generic")) {
             return createLetterIcon('▶', new Color(0x7A8290));
+        }
+        if (resourceName.contains("sql_script")) {
+            return createLetterIcon('S', new Color(0x1296DB));
+        }
+        if (resourceName.contains("script")) {
+            return createLetterIcon('T', new Color(0x7A8290));
         }
         if (resourceName.contains("group")) {
             return createGroupFolderIcon();

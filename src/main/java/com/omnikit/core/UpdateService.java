@@ -53,12 +53,18 @@ public final class UpdateService {
     /**
      * GitHub 仓库 API 前缀（由 UiConstants.GITHUB_ADDR 推导）
      */
-    public static final String REPO_API = UiConstants.GITHUB_ADDR.replace("https://github.com/", "https://api.github.com/repos/");
+    public static final String REPO_API = toRepoApi(UiConstants.GITHUB_ADDR);
     
     /**
      * 最新 Release API
      */
     public static final String LATEST_RELEASE_API = REPO_API + "/releases/latest";
+    
+    /**
+     * 升级源仓库 API 候选（按优先级）：data-sync-client 为历史仓库，omnikit-client 为当前仓库；
+     * 前者发布页/Release 不可用时自动回退到后者
+     */
+    public static final List<String> REPO_API_CANDIDATES = UiConstants.GITHUB_ADDR_CANDIDATES.stream().map(UpdateService::toRepoApi).toList();
     
     /**
      * 自动检查间隔配置键（小时，存于 app_config 表）
@@ -280,10 +286,78 @@ public final class UpdateService {
     }
     
     /**
-     * 查询 GitHub 最新 Release。 注意：GitHub API 匿名限额为每 IP 60 次/小时，足够手动+启动检查使用。
+     * GitHub 仓库页面地址转 API 前缀（https://github.com/a/b → https://api.github.com/repos/a/b）
+     */
+    static String toRepoApi(String githubAddr) {
+        return githubAddr.replace("https://github.com/", "https://api.github.com/repos/");
+    }
+    
+    /**
+     * 仓库地址转 owner/repo（https://github.com/a/b → a/b）
+     */
+    private static String repoSlug(String githubAddr) {
+        return githubAddr.replace("https://github.com/", "").replaceAll("/+$", "");
+    }
+    
+    /**
+     * 资产地址候选：原地址优先，其余包含其他升级源仓库段的地址依次追加。
+     * 用于主仓库（data-sync-client）资产下载不了时自动改用备选仓库（omnikit-client）的同名资产；
+     * 非 GitHub 仓库路径（如本地测试服务、其他镜像）只返回原地址。
+     */
+    static List<String> repoUrlCandidates(String url) {
+        List<String> candidates = new ArrayList<>();
+        if (url == null || url.isBlank()) {
+            return candidates;
+        }
+        candidates.add(url);
+        for (String addr : UiConstants.GITHUB_ADDR_CANDIDATES) {
+            String slug = "/" + repoSlug(addr) + "/";
+            if (!url.contains(slug)) {
+                continue;
+            }
+            for (String other : UiConstants.GITHUB_ADDR_CANDIDATES) {
+                String alt = url.replace(slug, "/" + repoSlug(other) + "/");
+                if (!alt.equals(url) && !candidates.contains(alt)) {
+                    candidates.add(alt);
+                }
+            }
+        }
+        return candidates;
+    }
+    
+    /**
+     * 查询 GitHub 最新 Release。
+     * <p>升级源按 {@link #REPO_API_CANDIDATES} 顺序尝试：历史仓库 data-sync-client 尚未发布 Release、
+     * 仓库被删除/改名或网络不可达时，自动回退到当前仓库 omnikit-client。</p>
+     * 注意：GitHub API 匿名限额为每 IP 60 次/小时，足够手动+启动检查使用。
      */
     public UpdateInfo checkForUpdate() throws Exception {
-        HttpRequest.Builder requestBuilder = HttpRequest.newBuilder(URI.create(LATEST_RELEASE_API)).header("Accept", "application/vnd.github+json")
+        List<String> failures = new ArrayList<>();
+        for (int i = 0; i < REPO_API_CANDIDATES.size(); i++) {
+            String repoApi = REPO_API_CANDIDATES.get(i);
+            try {
+                UpdateInfo info = checkForUpdate(repoApi);
+                if (i > 0) {
+                    logUpdate("升级源已回退到 " + repoApi);
+                }
+                return info;
+            } catch (Exception e) {
+                String name = repoApi.substring(repoApi.lastIndexOf('/') + 1);
+                failures.add(name + "（" + e.getMessage() + "）");
+                logUpdate("升级源 " + repoApi + " 不可用: " + e);
+            }
+        }
+        throw new IllegalStateException("所有升级源均查询失败：" + String.join("；", failures));
+    }
+    
+    /**
+     * 查询指定仓库 API 前缀的最新 Release。
+     *
+     * @param repoApi 仓库 API 前缀（如 {@code https://api.github.com/repos/wp2code/omnikit-client}）
+     */
+    UpdateInfo checkForUpdate(String repoApi) throws Exception {
+        String latestReleaseApi = repoApi + "/releases/latest";
+        HttpRequest.Builder requestBuilder = HttpRequest.newBuilder(URI.create(latestReleaseApi)).header("Accept", "application/vnd.github+json")
                 .header("User-Agent", "OmniKit-Updater");
         // 添加 Authorization 头（如果配置了 token）
         String token = getGitHubToken();
@@ -347,16 +421,23 @@ public final class UpdateService {
     
     /**
      * 读取 Release 中的文本资产（校验文件 / 依赖库清单）。失败不阻断升级，仅记录日志并返回空串。
+     * 主仓库资产不可用时自动重试备选仓库路径。
      */
     private String readTextAsset(String url, String what) {
-        try {
-            HttpResponse<String> response = sendWithRetry(HttpRequest.newBuilder(URI.create(url)), HttpResponse.BodyHandlers.ofString(),
-                    REQUEST_TIMEOUT, "读取 " + what);
-            return response.statusCode() == 200 ? response.body() : "";
-        } catch (Exception e) {
-            logUpdate(what + "获取失败，本次更新将跳过对应步骤: " + e);
-            return "";
+        for (String candidate : repoUrlCandidates(url)) {
+            try {
+                HttpResponse<String> response = sendWithRetry(HttpRequest.newBuilder(URI.create(candidate)), HttpResponse.BodyHandlers.ofString(),
+                        REQUEST_TIMEOUT, "读取 " + what);
+                if (response.statusCode() == 200) {
+                    return response.body();
+                }
+                logUpdate(what + "获取失败（HTTP " + response.statusCode() + "）: " + candidate);
+            } catch (Exception e) {
+                logUpdate(what + "获取失败: " + e);
+            }
         }
+        logUpdate(what + "获取失败，本次更新将跳过对应步骤");
+        return "";
     }
     
     /**
@@ -595,10 +676,32 @@ public final class UpdateService {
 
     /**
      * 下载二进制资产到内存（含重试、空响应与长度校验）。
+     * <p>下载前会把 GitHub 资产地址展开为候选列表：主仓库（data-sync-client）地址失败时
+     * 自动改用备选仓库（omnikit-client）的同名资产地址。</p>
      *
      * @param what 日志中的动作描述
      */
     private byte[] downloadBytes(String url, String what) throws Exception {
+        Exception lastFailure = null;
+        List<String> candidates = repoUrlCandidates(url);
+        for (int i = 0; i < candidates.size(); i++) {
+            String candidate = candidates.get(i);
+            try {
+                return downloadBytesOnce(candidate, what);
+            } catch (Exception e) {
+                lastFailure = e;
+                if (i < candidates.size() - 1) {
+                    logUpdate(what + " 失败（" + candidate + "）: " + e.getMessage() + "，改用备选地址 " + candidates.get(i + 1));
+                }
+            }
+        }
+        throw lastFailure;
+    }
+
+    /**
+     * 单次下载：发送请求并校验状态码、响应体非空、Content-Length 一致
+     */
+    private byte[] downloadBytesOnce(String url, String what) throws Exception {
         HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url)).header("Accept", "application/octet-stream")
                 .header("User-Agent", "OmniKit-Updater");
         HttpResponse<byte[]> response = sendWithRetry(builder, HttpResponse.BodyHandlers.ofByteArray(), DOWNLOAD_TIMEOUT, what);

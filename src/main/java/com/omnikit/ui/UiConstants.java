@@ -3,6 +3,7 @@ package com.omnikit.ui;
 import java.awt.*;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.List;
 import java.util.Locale;
 import java.util.Properties;
 
@@ -17,6 +18,12 @@ public final class UiConstants {
     public static final String VERSION = "v" + loadVersion();
     
     public static final String GITHUB_ADDR = "https://github.com/wp2code/data-sync-client";
+    
+    /**
+     * 升级源仓库地址候选（按优先级）：data-sync-client 为历史仓库，omnikit-client 为当前仓库。
+     * 前者查询不到 Release 或资产下载失败时，自动回退到后者。
+     */
+    public static final List<String> GITHUB_ADDR_CANDIDATES = List.of(GITHUB_ADDR, "https://github.com/wp2code/omnikit-client");
     
     // ─── 占位文本 ───
     public static final String PLACEHOLDER_SELECT_SOURCE = "请选择数据源";
