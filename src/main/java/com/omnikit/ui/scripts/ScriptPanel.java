@@ -97,6 +97,11 @@ public class ScriptPanel extends AbsJPanl {
      */
     private final Set<String> collapsedGroups = new LinkedHashSet<>();
     
+    /**
+     * 首次加载的分组是否已默认折叠：首载前出现的分组默认折叠，之后展开/折叠由用户点击记忆
+     */
+    private boolean groupCollapseInitialized;
+    
     private JPanel scriptListPanel;
     
     /**
@@ -449,6 +454,9 @@ public class ScriptPanel extends AbsJPanl {
             }
         }
         
+        // 首次加载的分组已全部默认折叠，之后的刷新不再改变折叠记忆
+        groupCollapseInitialized = true;
+        
         filterScriptList();
         revalidateList();
     }
@@ -529,8 +537,13 @@ public class ScriptPanel extends AbsJPanl {
      * 构建一个分组（可折叠标题 + 组内脚本项）：flat 表示未分组，不加标题、不缩进，脚本项直接平铺展开
      */
     private void addScriptGroup(String groupName, List<Script> scripts, boolean flat) {
+        // 首次加载的分组默认折叠，之后展开/折叠状态由用户点击记忆
+        boolean defaultCollapsed = !flat && !groupCollapseInitialized;
+        if (defaultCollapsed) {
+            collapsedGroups.add(groupName);
+        }
         // 箭头图标 + 分组图标 + 分组名
-        JLabel arrowLabel = new JLabel(IconUtil.getGroupArrowIcon(true));
+        JLabel arrowLabel = new JLabel(IconUtil.getGroupArrowIcon(!defaultCollapsed));
         JLabel titleLabel = new JLabel(groupName, IconUtil.getScriptsGroupIcon(), SwingConstants.LEFT);
         titleLabel.setFont(UiConstants.FONT_SANS_12.deriveFont(Font.BOLD));
         titleLabel.setIconTextGap(6);

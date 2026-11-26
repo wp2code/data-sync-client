@@ -8,6 +8,7 @@ import com.omnikit.core.UpdateService;
 import com.omnikit.ui.aitraining.AiQuestionPanel;
 import com.omnikit.ui.datasync.DataSourceManagerDialog;
 import com.omnikit.ui.datasync.DataSyncPanel;
+import com.omnikit.ui.kafka.KafkaPushPanel;
 import com.omnikit.ui.programs.ProgramContainerPanel;
 import com.omnikit.ui.scripts.GitLabMangerDialog;
 import com.omnikit.ui.scripts.ScriptPanel;
@@ -50,6 +51,8 @@ public class OmniKitUI extends JFrame {
     private static final String CARD_SCRIPT = ScriptPanel.NAME;
     
     private static final String CARD_CONTAINER = ProgramContainerPanel.NAME;
+    
+    private static final String CARD_KAFKA = KafkaPushPanel.NAME;
     
     private CardLayout contentCards;
     
@@ -181,6 +184,7 @@ public class OmniKitUI extends JFrame {
         addMenuButton(menuPanel, "AI 训练", CARD_AI);
         addMenuButton(menuPanel, "脚本管理", CARD_SCRIPT);
         addMenuButton(menuPanel, "程序容器", CARD_CONTAINER);
+        addMenuButton(menuPanel, "Kafka 推送", CARD_KAFKA);
         
         // 设置下拉菜单：数据源管理 / GitLab 配置 / 检查更新
         JButton settingsBtn = ButtonFactory.createToolbar("设置");
@@ -249,6 +253,7 @@ public class OmniKitUI extends JFrame {
             case CARD_AI -> contentCardPanel.add(new AiQuestionPanel(this), CARD_AI);
             case CARD_SCRIPT -> contentCardPanel.add(new ScriptPanel(), CARD_SCRIPT);
             case CARD_CONTAINER -> contentCardPanel.add(new ProgramContainerPanel(), CARD_CONTAINER);
+            case CARD_KAFKA -> contentCardPanel.add(new KafkaPushPanel(this), CARD_KAFKA);
             default -> {
             }
         }

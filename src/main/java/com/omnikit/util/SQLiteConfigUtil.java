@@ -4,6 +4,8 @@ import com.omnikit.model.AiEnvConfig;
 import com.omnikit.model.DataSource;
 import com.omnikit.model.DbType;
 import com.omnikit.model.GitLabAuthConfig;
+import com.omnikit.model.KafkaConnection;
+import com.omnikit.model.KafkaTopic;
 import com.omnikit.model.ProgramConfig;
 import com.omnikit.model.Script;
 import java.io.File;
@@ -162,6 +164,31 @@ public class SQLiteConfigUtil {
             );
             """;
 
+    // Kafka 连接配置表（消息队列数据推送）
+    private static final String CREATE_KAFKA_CONNECTION_TABLE_SQL = """
+            CREATE TABLE IF NOT EXISTS kafka_connection_config (
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                name             VARCHAR(64)  NOT NULL UNIQUE,
+                bootstrap_servers VARCHAR(256) NOT NULL,
+                extra_config     TEXT         DEFAULT NULL,
+                remark           TEXT         DEFAULT NULL,
+                create_time      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                update_time      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            """;
+    
+    // Kafka Topic 表：每个连接下单独维护（connection_id + topic_name 唯一）
+    private static final String CREATE_KAFKA_TOPIC_TABLE_SQL = """
+            CREATE TABLE IF NOT EXISTS kafka_topic_config (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                connection_id INTEGER      NOT NULL,
+                topic_name    VARCHAR(256) NOT NULL,
+                remark        TEXT         DEFAULT NULL,
+                create_time   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(connection_id, topic_name)
+            );
+            """;
+
     // 通用键值配置表（如更新检查间隔、上次检查时间等）
     private static final String CREATE_APP_CONFIG_TABLE_SQL = """
             CREATE TABLE IF NOT EXISTS app_config (
@@ -196,6 +223,8 @@ public class SQLiteConfigUtil {
                 stmt.execute(CREATE_AI_ENV_CONFIG_TABLE_SQL);
                 stmt.execute(CREATE_PROGRAM_CONFIG_TABLE_SQL);
                 stmt.execute(CREATE_APP_CONFIG_TABLE_SQL);
+                stmt.execute(CREATE_KAFKA_CONNECTION_TABLE_SQL);
+                stmt.execute(CREATE_KAFKA_TOPIC_TABLE_SQL);
                 ensureAiEnvConfigColumns(stmt);
                 ensureScriptConfigColumns(stmt);
                 ensureProgramConfigColumns(stmt);
@@ -884,6 +913,164 @@ public class SQLiteConfigUtil {
         }
     }
     
+    // ────────── Kafka 连接 / Topic CRUD ──────────
+    
+    /**
+     * 加载全部 Kafka 连接配置
+     */
+    public List<KafkaConnection> loadKafkaConnections() {
+        List<KafkaConnection> configs = new ArrayList<>();
+        String sql = "SELECT * FROM kafka_connection_config ORDER BY id ASC";
+        try (Connection conn = getConnection();
+                Statement stmt = conn.createStatement();
+                ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                configs.add(mapRowToKafkaConnection(rs));
+            }
+        } catch (SQLException e) {
+            logger.error("[SQLite] 加载 Kafka 连接列表失败", e);
+        }
+        return configs;
+    }
+    
+    /**
+     * 新增 Kafka 连接配置（name 唯一），返回生成的自增 ID（失败返回 -1）
+     */
+    public long saveKafkaConnection(KafkaConnection config) {
+        String sql = "INSERT INTO kafka_connection_config (name, bootstrap_servers, extra_config, remark) VALUES (?, ?, ?, ?)";
+        try (Connection conn = getConnection();
+                PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            ps.setString(1, config.getName());
+            ps.setString(2, config.getBootstrapServers());
+            ps.setString(3, config.getExtraConfig());
+            ps.setString(4, config.getRemark());
+            ps.executeUpdate();
+            try (ResultSet keys = ps.getGeneratedKeys()) {
+                if (keys.next()) {
+                    return keys.getLong(1);
+                }
+            }
+        } catch (SQLException e) {
+            logger.error("[SQLite] 保存 Kafka 连接失败", e);
+        }
+        return -1;
+    }
+    
+    /**
+     * 更新 Kafka 连接配置
+     */
+    public boolean updateKafkaConnection(KafkaConnection config) {
+        String sql = "UPDATE kafka_connection_config SET name = ?, bootstrap_servers = ?, extra_config = ?, remark = ?, update_time = CURRENT_TIMESTAMP WHERE id = ?";
+        try (Connection conn = getConnection();
+                PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, config.getName());
+            ps.setString(2, config.getBootstrapServers());
+            ps.setString(3, config.getExtraConfig());
+            ps.setString(4, config.getRemark());
+            ps.setLong(5, config.getId());
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            logger.error("[SQLite] 更新 Kafka 连接失败", e);
+            return false;
+        }
+    }
+    
+    /**
+     * 删除 Kafka 连接配置（同时删除该连接下的全部 Topic）
+     */
+    public boolean deleteKafkaConnection(Long id) {
+        try (Connection conn = getConnection()) {
+            conn.setAutoCommit(false);
+            try (PreparedStatement delTopics = conn.prepareStatement("DELETE FROM kafka_topic_config WHERE connection_id = ?");
+                    PreparedStatement delConn = conn.prepareStatement("DELETE FROM kafka_connection_config WHERE id = ?")) {
+                delTopics.setLong(1, id);
+                delTopics.executeUpdate();
+                delConn.setLong(1, id);
+                int rows = delConn.executeUpdate();
+                conn.commit();
+                return rows > 0;
+            } catch (SQLException e) {
+                conn.rollback();
+                throw e;
+            }
+        } catch (SQLException e) {
+            logger.error("[SQLite] 删除 Kafka 连接失败", e);
+            return false;
+        }
+    }
+    
+    /**
+     * 加载指定连接下的全部 Topic
+     */
+    public List<KafkaTopic> loadKafkaTopics(Long connectionId) {
+        List<KafkaTopic> topics = new ArrayList<>();
+        String sql = "SELECT * FROM kafka_topic_config WHERE connection_id = ? ORDER BY topic_name ASC";
+        try (Connection conn = getConnection();
+                PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setLong(1, connectionId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    topics.add(mapRowToKafkaTopic(rs));
+                }
+            }
+        } catch (SQLException e) {
+            logger.error("[SQLite] 加载 Kafka Topic 列表失败", e);
+        }
+        return topics;
+    }
+    
+    /**
+     * 新增 Kafka Topic（同连接下 topic_name 唯一，重复插入静默忽略）
+     */
+    public boolean saveKafkaTopic(Long connectionId, String topicName, String remark) {
+        String sql = "INSERT OR IGNORE INTO kafka_topic_config (connection_id, topic_name, remark) VALUES (?, ?, ?)";
+        try (Connection conn = getConnection();
+                PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setLong(1, connectionId);
+            ps.setString(2, topicName);
+            ps.setString(3, remark);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            logger.error("[SQLite] 保存 Kafka Topic 失败", e);
+            return false;
+        }
+    }
+    
+    /**
+     * 删除 Kafka Topic
+     */
+    public boolean deleteKafkaTopic(Long id) {
+        String sql = "DELETE FROM kafka_topic_config WHERE id = ?";
+        try (Connection conn = getConnection();
+                PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setLong(1, id);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            logger.error("[SQLite] 删除 Kafka Topic 失败", e);
+            return false;
+        }
+    }
+    
+    /**
+     * 按 Topic 名称查找记录 ID（同连接下唯一，找不到返回 null）
+     */
+    public Long findKafkaTopicId(Long connectionId, String topicName) {
+        String sql = "SELECT id FROM kafka_topic_config WHERE connection_id = ? AND topic_name = ?";
+        try (Connection conn = getConnection();
+                PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setLong(1, connectionId);
+            ps.setString(2, topicName);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getLong("id");
+                }
+            }
+        } catch (SQLException e) {
+            logger.error("[SQLite] 查询 Kafka Topic ID 失败", e);
+        }
+        return null;
+    }
+    
     // ────────── 私有方法 ──────────
     
     private Connection getConnection() throws SQLException {
@@ -1112,6 +1299,40 @@ public class SQLiteConfigUtil {
     /**
      * 将 ResultSet 当前行映射为 AiEnvConfig 实体
      */
+    private KafkaConnection mapRowToKafkaConnection(ResultSet rs) throws SQLException {
+        KafkaConnection config = new KafkaConnection();
+        config.setId(rs.getLong("id"));
+        config.setName(rs.getString("name"));
+        config.setBootstrapServers(rs.getString("bootstrap_servers"));
+        config.setExtraConfig(rs.getString("extra_config"));
+        config.setRemark(rs.getString("remark"));
+        
+        Timestamp ct = rs.getTimestamp("create_time");
+        if (ct != null) {
+            config.setCreateTime(ct.toLocalDateTime());
+        }
+        
+        Timestamp ut = rs.getTimestamp("update_time");
+        if (ut != null) {
+            config.setUpdateTime(ut.toLocalDateTime());
+        }
+        return config;
+    }
+    
+    private KafkaTopic mapRowToKafkaTopic(ResultSet rs) throws SQLException {
+        KafkaTopic topic = new KafkaTopic();
+        topic.setId(rs.getLong("id"));
+        topic.setConnectionId(rs.getLong("connection_id"));
+        topic.setTopicName(rs.getString("topic_name"));
+        topic.setRemark(rs.getString("remark"));
+        
+        Timestamp ct = rs.getTimestamp("create_time");
+        if (ct != null) {
+            topic.setCreateTime(ct.toLocalDateTime());
+        }
+        return topic;
+    }
+    
     private AiEnvConfig mapRowToAiEnvConfig(ResultSet rs) throws SQLException {
         AiEnvConfig config = new AiEnvConfig();
         config.setId(rs.getLong("id"));

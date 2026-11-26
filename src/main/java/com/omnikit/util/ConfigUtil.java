@@ -3,6 +3,8 @@ package com.omnikit.util;
 import com.omnikit.model.AiEnvConfig;
 import com.omnikit.model.DataSource;
 import com.omnikit.model.GitLabAuthConfig;
+import com.omnikit.model.KafkaConnection;
+import com.omnikit.model.KafkaTopic;
 import com.omnikit.model.ProgramConfig;
 import com.omnikit.model.Script;
 import java.util.List;
@@ -196,5 +198,77 @@ public final class ConfigUtil {
      */
     public static boolean updateProgramPid(long id, Long pid) {
         return SQLiteConfigUtil.getInstance().updateProgramPid(id, pid);
+    }
+    
+    // ────────── Kafka 连接 / Topic 配置（消息队列数据推送） ──────────
+    
+    /**
+     * 读取字符串配置（app_config 键值表），不存在或读取失败时返回默认值
+     */
+    public static String getAppConfig(String key, String defaultValue) {
+        return SQLiteConfigUtil.getInstance().getAppConfig(key, defaultValue);
+    }
+    
+    /**
+     * 写入字符串配置（app_config 键值表，不存在则插入，存在则更新）
+     */
+    public static boolean setAppConfig(String key, String value) {
+        return SQLiteConfigUtil.getInstance().setAppConfig(key, value);
+    }
+    
+    /**
+     * 加载全部 Kafka 连接配置
+     */
+    public static List<KafkaConnection> loadKafkaConnections() {
+        return SQLiteConfigUtil.getInstance().loadKafkaConnections();
+    }
+    
+    /**
+     * 新增 Kafka 连接配置，返回生成的自增 ID（失败返回 -1）
+     */
+    public static long saveKafkaConnection(KafkaConnection config) {
+        return SQLiteConfigUtil.getInstance().saveKafkaConnection(config);
+    }
+    
+    /**
+     * 更新 Kafka 连接配置
+     */
+    public static boolean updateKafkaConnection(KafkaConnection config) {
+        return SQLiteConfigUtil.getInstance().updateKafkaConnection(config);
+    }
+    
+    /**
+     * 删除 Kafka 连接配置（同时删除该连接下的全部 Topic）
+     */
+    public static boolean deleteKafkaConnection(Long id) {
+        return SQLiteConfigUtil.getInstance().deleteKafkaConnection(id);
+    }
+    
+    /**
+     * 加载指定连接下的全部 Topic
+     */
+    public static List<KafkaTopic> loadKafkaTopics(Long connectionId) {
+        return SQLiteConfigUtil.getInstance().loadKafkaTopics(connectionId);
+    }
+    
+    /**
+     * 新增 Kafka Topic（同连接下唯一，重复插入静默忽略）
+     */
+    public static boolean saveKafkaTopic(Long connectionId, String topicName, String remark) {
+        return SQLiteConfigUtil.getInstance().saveKafkaTopic(connectionId, topicName, remark);
+    }
+    
+    /**
+     * 删除 Kafka Topic
+     */
+    public static boolean deleteKafkaTopic(Long id) {
+        return SQLiteConfigUtil.getInstance().deleteKafkaTopic(id);
+    }
+    
+    /**
+     * 按 Topic 名称查找记录 ID（同连接下唯一，找不到返回 null）
+     */
+    public static Long findKafkaTopicId(Long connectionId, String topicName) {
+        return SQLiteConfigUtil.getInstance().findKafkaTopicId(connectionId, topicName);
     }
 }
