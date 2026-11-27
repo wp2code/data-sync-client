@@ -149,6 +149,11 @@ public class ProgramContainerPanel extends AbsJPanl {
     private JTextField jrePathField;
     
     private JTextField pythonPathField;
+
+    /**
+     * 停止命令输入框（仅「其它」程序类型显示）：配置后停止时优先执行该命令优雅退出
+     */
+    private JTextField stopCommandField;
     
     private JTextField remarkField;
     
@@ -497,9 +502,14 @@ public class ProgramContainerPanel extends AbsJPanl {
         pythonPathField = new CustomTextField("如：D:\\proj\\venv 或 C:\\Python311\\python.exe");
         pythonPathField.setToolTipText("可选：Python 安装根目录、虚拟环境目录（自动定位 Scripts/python.exe 或 bin/python）"
                 + "或直接指向 python 可执行文件；留空使用系统 PATH。对 python/python3 命令及 .py 入口脚本生效");
+        stopCommandField = new CustomTextField("如：D:\\app\\stop.bat 或 taskkill /f /pid 1234");
+        stopCommandField.setToolTipText("可选，仅「其它」程序：点击「停止」时优先执行该命令让程序优雅退出"
+                + "（如停止脚本、taskkill），输出写入控制台日志；执行后进程仍未退出（最多等 10 秒）才强制结束。"
+                + "执行逻辑与「程序/命令」一致：单个脚本路径（可含空格）或完整命令行，"
+                + ".bat/.cmd 自动经 cmd.exe /c 执行，相对路径按「工作目录」解析");
         remarkField = new JTextField();
         JTextField[] fields = {nameField, programPathField, argumentsField, jvmArgsField, envVarsField, workDirField, jrePathField,
-                pythonPathField, remarkField};
+                pythonPathField, stopCommandField, remarkField};
         for (JTextField field : fields) {
             field.setFont(UiConstants.FONT_MONO_12);
         }
@@ -783,12 +793,14 @@ public class ProgramContainerPanel extends AbsJPanl {
             if (advancedExpanded) {
                 rows.addAll(advancedRows);
             }
-            rows.add(new JComponent[] {formLabel("工作目录:"), workDirRow});
             if (java) {
                 rows.add(new JComponent[] {formLabel("JRE/JDK:"), jrePathRow});
             } else if (ProgramConfig.TYPE_PYTHON.equals(selectedTypeValue())) {
                 rows.add(new JComponent[] {formLabel("Python:"), pythonPathRow});
+            } else if (ProgramConfig.TYPE_OTHER.equals(selectedTypeValue())) {
+                rows.add(new JComponent[] {formLabel("停止命令:"), stopCommandField});
             }
+            rows.add(new JComponent[] {formLabel("工作目录:"), workDirRow});
         }
         rows.add(new JComponent[] {formLabel("分组:"), groupField});
         rows.add(new JComponent[] {formLabel("备注:"), remarkField});
@@ -1641,6 +1653,7 @@ public class ProgramContainerPanel extends AbsJPanl {
         workDirField.setText(config.getWorkDir());
         jrePathField.setText(config.getJrePath());
         pythonPathField.setText(config.getPythonPath());
+        stopCommandField.setText(config.getStopCommand());
         remarkField.setText(config.getRemark());
         // 切换选中程序或载入导入配置后同步折叠区摘要（收起时标题右侧可见）
         updateAdvancedSummary();
@@ -1657,6 +1670,7 @@ public class ProgramContainerPanel extends AbsJPanl {
         workDirField.setText("");
         jrePathField.setText("");
         pythonPathField.setText("");
+        stopCommandField.setText("");
         remarkField.setText("");
         updateAdvancedSummary();
     }
@@ -1685,6 +1699,7 @@ public class ProgramContainerPanel extends AbsJPanl {
         workDirField.setEditable(editable);
         jrePathField.setEditable(editable);
         pythonPathField.setEditable(editable);
+        stopCommandField.setEditable(editable);
         remarkField.setEditable(editable);
         browseProgramBtn.setEnabled(editable);
         browseWorkDirBtn.setEnabled(editable);
@@ -1802,6 +1817,7 @@ public class ProgramContainerPanel extends AbsJPanl {
             selectedConfig.setWorkDir(workDirField.getText().trim());
             selectedConfig.setJrePath(jrePathField.getText().trim());
             selectedConfig.setPythonPath(pythonPathField.getText().trim());
+            selectedConfig.setStopCommand(stopCommandField.getText().trim());
             selectedConfig.setRemark(remarkField.getText().trim());
             if (!ConfigUtil.updateProgramConfig(selectedConfig)) {
                 JOptionPane.showMessageDialog(this, "更新程序配置失败", "错误", JOptionPane.ERROR_MESSAGE);
@@ -1817,6 +1833,7 @@ public class ProgramContainerPanel extends AbsJPanl {
             config.setWorkDir(workDirField.getText().trim());
             config.setJrePath(jrePathField.getText().trim());
             config.setPythonPath(pythonPathField.getText().trim());
+            config.setStopCommand(stopCommandField.getText().trim());
             config.setRemark(remarkField.getText().trim());
             if (!ConfigUtil.saveProgramConfig(config)) {
                 JOptionPane.showMessageDialog(this, "保存程序配置失败", "错误", JOptionPane.ERROR_MESSAGE);
@@ -2092,7 +2109,8 @@ public class ProgramContainerPanel extends AbsJPanl {
             if (inMemoryRunning) {
                 PROCESS_SERVICE.stop(config.getId());
             } else if (externalPid != null) {
-                PROCESS_SERVICE.stopExternalProcess(externalPid);
+                // 接管运行：配置了停止命令时优先执行停止命令优雅退出
+                PROCESS_SERVICE.stopExternalProcess(externalPid, config);
             }
             SwingUtilities.invokeLater(this::updateActionState);
         }, "program-container-stop").start();
@@ -2198,7 +2216,7 @@ public class ProgramContainerPanel extends AbsJPanl {
             // 先停止并移除进程会话（含接管的外部进程），再删除配置
             PROCESS_SERVICE.removeSession(id);
             if (externalPid != null) {
-                PROCESS_SERVICE.stopExternalProcess(externalPid);
+                PROCESS_SERVICE.stopExternalProcess(externalPid, config);
             }
             SwingUtilities.invokeLater(() -> {
                 if (!ConfigUtil.deleteProgramConfig(id)) {

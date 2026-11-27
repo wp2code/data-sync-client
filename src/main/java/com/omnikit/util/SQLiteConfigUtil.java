@@ -157,6 +157,7 @@ public class SQLiteConfigUtil {
                 work_dir     VARCHAR(512) DEFAULT NULL,
                 jre_path     VARCHAR(512) DEFAULT NULL,
                 python_path  VARCHAR(512) DEFAULT NULL,
+                stop_command VARCHAR(512) DEFAULT NULL,
                 last_pid     INTEGER      DEFAULT NULL,
                 remark       TEXT         DEFAULT NULL,
                 create_time  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -539,7 +540,7 @@ public class SQLiteConfigUtil {
      * 保存新的程序容器配置，成功后回填自增主键到 config.id
      */
     public boolean saveProgramConfig(ProgramConfig config) {
-        String sql = "INSERT INTO program_config (name, group_name, program_path, program_type, arguments, jvm_args, env_vars, work_dir, jre_path, python_path, last_pid, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO program_config (name, group_name, program_path, program_type, arguments, jvm_args, env_vars, work_dir, jre_path, python_path, stop_command, last_pid, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (Connection conn = getConnection();
                 PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setString(1, config.getName());
@@ -552,12 +553,13 @@ public class SQLiteConfigUtil {
             ps.setString(8, config.getWorkDir());
             ps.setString(9, config.getJrePath());
             ps.setString(10, config.getPythonPath());
+            ps.setString(11, config.getStopCommand());
             if (config.getLastPid() == null) {
-                ps.setNull(11, java.sql.Types.INTEGER);
+                ps.setNull(12, java.sql.Types.INTEGER);
             } else {
-                ps.setLong(11, config.getLastPid());
+                ps.setLong(12, config.getLastPid());
             }
-            ps.setString(12, config.getRemark());
+            ps.setString(13, config.getRemark());
             boolean saved = ps.executeUpdate() > 0;
             if (saved) {
                 try (ResultSet rs = ps.getGeneratedKeys()) {
@@ -614,7 +616,7 @@ public class SQLiteConfigUtil {
      * 更新已有的程序容器配置（以 id 为条件）
      */
     public boolean updateProgramConfig(ProgramConfig config) {
-        String sql = "UPDATE program_config SET name = ?, group_name = ?, program_path = ?, program_type = ?, arguments = ?, jvm_args = ?, env_vars = ?, work_dir = ?, jre_path = ?, python_path = ?, remark = ?, update_time = CURRENT_TIMESTAMP WHERE id = ?";
+        String sql = "UPDATE program_config SET name = ?, group_name = ?, program_path = ?, program_type = ?, arguments = ?, jvm_args = ?, env_vars = ?, work_dir = ?, jre_path = ?, python_path = ?, stop_command = ?, remark = ?, update_time = CURRENT_TIMESTAMP WHERE id = ?";
         try (Connection conn = getConnection();
                 PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, config.getName());
@@ -627,8 +629,9 @@ public class SQLiteConfigUtil {
             ps.setString(8, config.getWorkDir());
             ps.setString(9, config.getJrePath());
             ps.setString(10, config.getPythonPath());
-            ps.setString(11, config.getRemark());
-            ps.setLong(12, config.getId());
+            ps.setString(11, config.getStopCommand());
+            ps.setString(12, config.getRemark());
+            ps.setLong(13, config.getId());
             return ps.executeUpdate() > 0;
         } catch (SQLException e) {
             logger.error("[SQLite] 更新程序配置失败", e);
@@ -1121,6 +1124,7 @@ public class SQLiteConfigUtil {
         addColumnIfAbsent(stmt, "program_config", "program_type", "VARCHAR(16) DEFAULT NULL");
         addColumnIfAbsent(stmt, "program_config", "jre_path", "VARCHAR(512) DEFAULT NULL");
         addColumnIfAbsent(stmt, "program_config", "python_path", "VARCHAR(512) DEFAULT NULL");
+        addColumnIfAbsent(stmt, "program_config", "stop_command", "VARCHAR(512) DEFAULT NULL");
         addColumnIfAbsent(stmt, "program_config", "last_pid", "INTEGER DEFAULT NULL");
         addColumnIfAbsent(stmt, "program_config", "jvm_args", "TEXT DEFAULT NULL");
         addColumnIfAbsent(stmt, "program_config", "env_vars", "TEXT DEFAULT NULL");
@@ -1277,6 +1281,7 @@ public class SQLiteConfigUtil {
         config.setWorkDir(rs.getString("work_dir"));
         config.setJrePath(rs.getString("jre_path"));
         config.setPythonPath(rs.getString("python_path"));
+        config.setStopCommand(rs.getString("stop_command"));
         long lastPid = rs.getLong("last_pid");
         if (!rs.wasNull()) {
             config.setLastPid(lastPid);

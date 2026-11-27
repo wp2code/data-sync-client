@@ -58,6 +58,11 @@ public class ProcessContainerService {
     private static final long GRACEFUL_STOP_TIMEOUT_MS = 3_000;
 
     /**
+     * 停止命令等待时长：执行配置的停止命令本身、以及命令发出后等待目标进程自行退出的上限
+     */
+    private static final long STOP_COMMAND_TIMEOUT_MS = 10_000;
+
+    /**
      * 子进程输出编码自动探测的回退基准：Windows 控制台程序通常为 GBK，优先取 JVM 的 native.encoding；
      * 探测时开头字节能通过 UTF-8 严格校验则改用 UTF-8
      */
@@ -111,7 +116,7 @@ public class ProcessContainerService {
      */
     private static final class ProcessSession {
 
-        final ProgramConfig config;
+        ProgramConfig config;
 
         final ArrayDeque<String> logBuffer = new ArrayDeque<>();
 
@@ -236,6 +241,8 @@ public class ProcessContainerService {
             // 复用会话前先等旧 tail 线程退出（旧进程退出后最多一个轮询周期），
             // 防止 tailRunning 残留导致新进程的 tail 启动被幂等跳过
             joinTailThread(session);
+            // 同步最新配置：表单编辑（如停止命令）后复用旧会话时避免沿用过期配置
+            existing.config = config;
         }
         synchronized (session) {
             session.outputConsumer = onOutput;
@@ -349,7 +356,8 @@ public class ProcessContainerService {
     }
 
     /**
-     * 停止运行中的指定进程：destroy() → 等待 3 秒 → 仍未退出则 destroyForcibly()。
+     * 停止运行中的指定进程：配置了「停止命令」的程序优先执行停止命令优雅退出
+     * （等待 {@value #STOP_COMMAND_TIMEOUT_MS} 毫秒），超时未退出再 destroy() → 等 3 秒 → destroyForcibly() 兜底。
      * 阻塞方法，禁止在 EDT 调用；进程退出后由监听线程触发状态回调。
      */
     public void stop(long id) {
@@ -366,6 +374,17 @@ public class ProcessContainerService {
         Process process = session.process;
         if (process == null || !process.isAlive()) {
             return;
+        }
+        // 配置了停止命令：优先执行停止命令优雅退出，进程仍未退出再强制销毁
+        if (runStopCommand(session.config, message -> appendSystemLog(session, message))) {
+            try {
+                if (process.waitFor(STOP_COMMAND_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                    return;
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            appendSystemLog(session, "[容器] 停止命令执行后进程仍未退出，强制结束");
         }
         destroyProcess(process);
     }
@@ -385,6 +404,33 @@ public class ProcessContainerService {
         if (callback != null) {
             callback.run();
         }
+    }
+
+    /**
+     * 停止上次启动、应用重启后仍在后台运行的外部进程（仅有 PID、无 Process 句柄）：
+     * 配置了「停止命令」时优先执行停止命令优雅退出，超时或未配置再走
+     * ProcessHandle destroy → 等待 3 秒 → 仍未退出则 destroyForcibly。
+     * 进程已不存在返回 false；停止成功后清空持久化的进程号。
+     * 阻塞方法，禁止在 EDT 调用
+     */
+    public boolean stopExternalProcess(long pid, ProgramConfig config) {
+        // 配置了停止命令：优先执行停止命令，等待目标进程自行退出
+        if (config != null
+                && runStopCommand(config, message -> logger.info("[ProgramContainer] {}", message))) {
+            ProcessHandle handle = ProcessHandle.of(pid).orElse(null);
+            if (handle != null) {
+                try {
+                    handle.onExit().get(STOP_COMMAND_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                } catch (TimeoutException e) {
+                    logger.warn("[ProgramContainer] 停止命令执行后进程 {} 仍未退出，强制结束", pid);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } catch (ExecutionException e) {
+                    logger.warn("[ProgramContainer] 等待进程 {} 退出异常", pid, e);
+                }
+            }
+        }
+        return stopExternalProcess(pid);
     }
 
     /**
@@ -450,6 +496,54 @@ public class ProcessContainerService {
             Thread.currentThread().interrupt();
             process.destroyForcibly();
         }
+    }
+
+    /**
+     * 执行配置的「停止命令」（可选）：与「程序/命令」相同的解析执行逻辑——单个程序/脚本路径
+     * （可含空格，以文件存在性判定）或完整命令行（引号感知分词），Windows 下 .bat/.cmd 自动经
+     * cmd.exe /c 解释执行，相对路径以配置的工作目录为根解析；继承配置的工作目录与环境变量，
+     * 输出追加重定向到该程序的日志文件便于排查。
+     * 等待停止命令自身退出（上限 {@value #STOP_COMMAND_TIMEOUT_MS} 毫秒，超时强制结束）。
+     * 未配置停止命令返回 false；已配置则返回 true（无论执行是否成功，调用方据此决定是否继续强制销毁目标进程）
+     */
+    private boolean runStopCommand(ProgramConfig config, Consumer<String> log) {
+        String stopCommand = config.getStopCommand();
+        if (stopCommand == null || stopCommand.isBlank()) {
+            return false;
+        }
+        String commandLine = stopCommand.trim();
+        log.accept("[容器] 执行停止命令: " + commandLine);
+        // 与「程序/命令」共用同一解析逻辑：单个路径 / 完整命令行 / .bat/.cmd 包装
+        List<String> parsed = parseCommandTokens(commandLine, resolveWorkDir(config));
+        List<String> command = new ArrayList<>();
+        addProgramWithWrap(command, parsed.get(0));
+        command.addAll(parsed.subList(1, parsed.size()));
+        ProcessBuilder pb = new ProcessBuilder(command);
+        File workDir = resolveWorkDir(config);
+        if (workDir != null) {
+            pb.directory(workDir);
+        }
+        Map<String, String> envVars = parseEnvVars(config.getEnvVars());
+        if (!envVars.isEmpty()) {
+            pb.environment().putAll(envVars);
+        }
+        File logFile = programLogFile(config.getId());
+        pb.redirectOutput(ProcessBuilder.Redirect.appendTo(logFile));
+        pb.redirectError(ProcessBuilder.Redirect.appendTo(logFile));
+        try {
+            Process stopProcess = pb.start();
+            if (!stopProcess.waitFor(STOP_COMMAND_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                log.accept("[容器] 停止命令执行超时，强制结束停止命令进程");
+                stopProcess.destroyForcibly();
+            }
+        } catch (IOException e) {
+            log.accept("[容器] 停止命令执行失败: " + e.getMessage());
+            logger.warn("[ProgramContainer] 执行停止命令失败: {}", config.getName(), e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+        return true;
     }
 
     /**
@@ -697,16 +791,12 @@ public class ProcessContainerService {
      */
     List<String> buildCommand(ProgramConfig config) {
         String field = config.getProgramPath().trim();
-        String program = stripOuterQuotes(field);
-        List<String> leadingArgs = List.of();
         // 相对路径默认以配置的工作目录为根解析（未配置或目录无效时回退应用当前目录）
         File baseDir = resolveWorkDir(config);
-        // 含空格且整体不是已存在的文件 → 按完整命令行拆分：首词为程序，其余为前置参数
-        if (program.contains(" ") && !isExistingFile(baseDir, program)) {
-            List<String> tokens = tokenize(field);
-            program = tokens.get(0);
-            leadingArgs = tokens.subList(1, tokens.size());
-        }
+        // 「程序/命令」解析：与「停止命令」共用同一逻辑（见 parseCommandTokens）
+        List<String> parsed = parseCommandTokens(field, baseDir);
+        String program = parsed.get(0);
+        List<String> leadingArgs = parsed.subList(1, parsed.size());
         // 配置了 JRE/JDK 路径且程序为 java/javaw 命令时，替换为指定环境下的可执行文件
         String javaExe = resolveConfiguredJavaExecutable(config, program);
         if (javaExe != null) {
@@ -731,12 +821,7 @@ public class ProcessContainerService {
             }
         }
         List<String> command = new ArrayList<>();
-        String lower = program.toLowerCase(Locale.ROOT);
-        if (lower.endsWith(".bat") || lower.endsWith(".cmd")) {
-            command.add("cmd.exe");
-            command.add("/c");
-        }
-        command.add(program);
+        addProgramWithWrap(command, program);
         // JVM 参数：插在 java 可执行文件之后、-jar/主类之前（非 java 命令忽略，避免破坏命令行）
         if (isJavaExecutable(program)) {
             command.addAll(tokenize(trimToEmpty(config.getJvmArgs())));
@@ -747,6 +832,35 @@ public class ProcessContainerService {
             command.addAll(tokenize(arguments.trim()));
         }
         return command;
+    }
+
+    /**
+     * 解析单个命令字段（「程序/命令」与「停止命令」共用）：整体去引号后若含空格且不是已存在的文件，
+     * 按完整命令行做引号感知分词——首词为程序，其余为前置参数；否则整体视为单个程序/脚本路径
+     * （可含空格）。相对路径由调用方通过子进程工作目录解析。返回 [程序, 前置参数...]，程序未做 bat/cmd 包装
+     */
+    static List<String> parseCommandTokens(String field, File baseDir) {
+        String program = stripOuterQuotes(field);
+        // 含空格且整体不是已存在的文件 → 按完整命令行拆分：首词为程序，其余为前置参数
+        if (program.contains(" ") && !isExistingFile(baseDir, program)) {
+            return tokenize(field);
+        }
+        List<String> tokens = new ArrayList<>();
+        tokens.add(program);
+        return tokens;
+    }
+
+    /**
+     * 追加程序到命令行（「程序/命令」与「停止命令」共用）：Windows 下 .bat/.cmd 脚本
+     * 自动前置 cmd.exe /c 解释执行
+     */
+    private static void addProgramWithWrap(List<String> command, String program) {
+        String lower = program.toLowerCase(Locale.ROOT);
+        if (lower.endsWith(".bat") || lower.endsWith(".cmd")) {
+            command.add("cmd.exe");
+            command.add("/c");
+        }
+        command.add(program);
     }
     
     /**

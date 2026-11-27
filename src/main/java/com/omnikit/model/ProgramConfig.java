@@ -92,6 +92,12 @@ public class ProgramConfig {
     private String pythonPath;
 
     /**
+     * 停止程序命令（可选，仅「其它」程序类型生效）：完整命令行（如 {@code D:\app\stop.bat} 或 {@code taskkill /f /pid 1234}）。
+     * 配置后点击「停止」优先执行该命令优雅退出，超时进程仍未退出再强制销毁
+     */
+    private String stopCommand;
+
+    /**
      * 最近一次启动的进程号（可选）：启动成功后由服务层写入，应用重启后用于检测程序是否仍在后台运行
      */
     private Long lastPid;

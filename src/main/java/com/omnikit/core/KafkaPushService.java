@@ -3,6 +3,7 @@ package com.omnikit.core;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.omnikit.model.KafkaConnection;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -40,8 +41,10 @@ public final class KafkaPushService {
      * @param timestamp 消息时间戳（epoch millis）
      * @param key 消息 Key（可能为 null）
      * @param value 消息内容
+     * @param headers 消息头（按 UTF-8 解码为文本；无消息头时为空 Map）
      */
-    public record KafkaMessage(int partition, long offset, long timestamp, String key, String value) {
+    public record KafkaMessage(int partition, long offset, long timestamp, String key, String value,
+            Map<String, String> headers) {
     }
     
     /**
@@ -151,15 +154,17 @@ public final class KafkaPushService {
      *
      * @param conn Kafka 连接配置
      * @param topic 目标 Topic
+     * @param partition 目标分区（null 表示按 Key 哈希 / 轮询自动分配）
      * @param key 消息 Key（可选，为空时不设置）
+     * @param headers 消息头（可选，null 或空 Map 表示不携带；值按 UTF-8 编码写入）
      * @param payload JSON 消息内容（对象或数组）
      * @param log 日志回调（进度与每条消息的分区/偏移量）
      * @return 实际成功推送的消息条数
      * @throws IllegalArgumentException payload 不是合法 JSON
      * @throws Exception 推送过程任意失败（发送超时、 broker 不可达等）
      */
-    public static int sendJson(KafkaConnection conn, String topic, String key, String payload, Consumer<String> log)
-            throws Exception {
+    public static int sendJson(KafkaConnection conn, String topic, Integer partition, String key,
+            Map<String, String> headers, String payload, Consumer<String> log) throws Exception {
         JsonNode root = JSON_MAPPER.readTree(payload);
         List<String> messages = new ArrayList<>();
         if (root.isArray()) {
@@ -172,9 +177,18 @@ public final class KafkaPushService {
         int successCount = 0;
         try (KafkaProducer<String, String> producer = new KafkaProducer<>(buildProducerProps(conn))) {
             for (int i = 0; i < messages.size(); i++) {
-                ProducerRecord<String, String> record = key == null || key.isBlank()
-                        ? new ProducerRecord<>(topic, messages.get(i))
-                        : new ProducerRecord<>(topic, key, messages.get(i));
+                ProducerRecord<String, String> record;
+                if (partition != null) {
+                    record = new ProducerRecord<>(topic, partition, key, messages.get(i));
+                } else if (key == null || key.isBlank()) {
+                    record = new ProducerRecord<>(topic, messages.get(i));
+                } else {
+                    record = new ProducerRecord<>(topic, key, messages.get(i));
+                }
+                if (headers != null && !headers.isEmpty()) {
+                    headers.forEach((name, value) -> record.headers().add(name,
+                            value == null ? new byte[0] : value.getBytes(StandardCharsets.UTF_8)));
+                }
                 RecordMetadata metadata = producer.send(record).get(SEND_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
                 successCount++;
                 log.accept("消息 " + (i + 1) + "/" + messages.size() + " 推送成功 → partition=" + metadata.partition()
@@ -183,6 +197,25 @@ public final class KafkaPushService {
             producer.flush();
         }
         return successCount;
+    }
+    
+    /**
+     * 查询指定 Topic 的分区数量（失败或 Topic 不存在时返回 -1）
+     */
+    public static int getTopicPartitionCount(KafkaConnection conn, String topic) {
+        Properties props = new Properties();
+        props.put("bootstrap.servers", conn.getBootstrapServers());
+        props.put("key.deserializer", StringDeserializer.class.getName());
+        props.put("value.deserializer", StringDeserializer.class.getName());
+        props.putAll(parseExtraConfig(conn.getExtraConfig()));
+        try (KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props)) {
+            List<org.apache.kafka.common.PartitionInfo> partitions =
+                    consumer.partitionsFor(topic, Duration.ofSeconds(ADMIN_TIMEOUT_MS));
+            return partitions == null ? -1 : partitions.size();
+        } catch (Exception e) {
+            logger.warn("[KAFKA] 查询 Topic 分区数失败: {}", e.getMessage());
+            return -1;
+        }
     }
     
     /**
@@ -242,7 +275,11 @@ public final class KafkaPushService {
                 }
                 consecutiveEmpty = 0;
                 for (ConsumerRecord<String, String> record : records) {
-                    messages.add(new KafkaMessage(record.partition(), record.offset(), record.timestamp(), record.key(), record.value()));
+                    Map<String, String> recordHeaders = new LinkedHashMap<>();
+                    record.headers().forEach(header -> recordHeaders.put(header.key(),
+                            header.value() == null ? null : new String(header.value(), StandardCharsets.UTF_8)));
+                    messages.add(new KafkaMessage(record.partition(), record.offset(), record.timestamp(),
+                            record.key(), record.value(), recordHeaders));
                     if (messages.size() >= limit) {
                         break;
                     }
