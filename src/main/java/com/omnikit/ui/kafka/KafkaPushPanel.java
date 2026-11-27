@@ -153,10 +153,11 @@ public class KafkaPushPanel extends AbsJPanl {
         // ── 顶栏共用：Topic 选择 + 刷新（消息推送与 Topic 查询页签共用同一选择） ──
         topicCombo = new FilterComboBox<>();
         topicCombo.setPreferredSize(new Dimension(280, 28));
-        // 选中 Topic 后按连接维度记忆，并刷新分区下拉框
+        // 选中 Topic 后按连接维度记忆，刷新分区下拉框，并清空 Topic 查询页签的旧结果
         topicCombo.addActionListener(e -> {
             saveSelectedTopic();
             refreshTopicPartitions();
+            topicQueryPanel.clearResults();
         });
         JButton fetchTopicBtn = ButtonFactory.createToolbar("刷新");
         fetchTopicBtn.addActionListener(e -> fetchTopicsFromCluster());
@@ -554,12 +555,15 @@ public class KafkaPushPanel extends AbsJPanl {
             closeActiveConnection();
             activeConnection = null;
             topicCombo.removeAllItems();
+            topicQueryPanel.clearResults();
             return;
         }
         // 切换连接：先关闭之前的连接，再打开新连接
         if (activeConnection != conn) {
             closeActiveConnection();
             activeConnection = conn;
+            // 旧连接的查询结果不再适用，清空 Topic 查询页签
+            topicQueryPanel.clearResults();
             // 选中连接立即打印连接成功日志，无需等待后台 Topic 拉取结果
             appendLog(LogUtil.success("[KAFKA] 连接成功：" + conn.getName() + "（" + conn.getBootstrapServers() + "）"));
         }

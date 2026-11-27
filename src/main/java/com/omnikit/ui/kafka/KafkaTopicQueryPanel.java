@@ -84,6 +84,17 @@ public class KafkaTopicQueryPanel extends JPanel {
         initUI();
     }
     
+    /**
+     * 清空查询结果：连接或 Topic 切换后旧数据不再适用，清空表格与缓存数据
+     */
+    public void clearResults() {
+        allMessages = List.of();
+        tableModel.setRowCount(0);
+        listBorder.setTitle("消息列表（双击列复制，Value / Headers 双击查看详情）");
+        listScroll.repaint();
+        setStatus(" ");
+    }
+    
     private void initUI() {
         setLayout(new BorderLayout(6, 6));
         // 页签内容与页签线之间留出间距，避免操作组件紧贴页签线
@@ -306,7 +317,7 @@ public class KafkaTopicQueryPanel extends JPanel {
         boolean latest = positionCombo.getSelectedIndex() == 0;
         // 突出显示本次查询使用的 Topic：日志加粗 + 表格标题栏携带 Topic
         logConsumer.accept(LogUtil.warn("[KAFKA] 查询 Topic 数据 → <b>" + topic + "</b>（" + (latest ? "最新" : "最早") + " " + limit + " 条）"));
-        listBorder.setTitle(listBorder.getTitle() + " — Topic: " + topic);
+        listBorder.setTitle("消息列表（双击列复制，Value / Headers 双击查看详情）— Topic: " + topic);
         listScroll.repaint();
         queryBtn.setEnabled(false);
         setStatus("正在查询 Topic 数据 ...");
@@ -320,6 +331,12 @@ public class KafkaTopicQueryPanel extends JPanel {
             @Override
             protected void done() {
                 queryBtn.setEnabled(true);
+                // 查询期间连接或 Topic 已切换，过期结果丢弃并清空
+                if (connectionSupplier.get() != conn || !topic.equals(topicSupplier.get())) {
+                    logConsumer.accept(LogUtil.warn("[KAFKA] 查询期间已切换连接/Topic，本次查询结果已丢弃"));
+                    clearResults();
+                    return;
+                }
                 try {
                     List<KafkaPushService.KafkaMessage> messages = get();
                     fillTable(messages);

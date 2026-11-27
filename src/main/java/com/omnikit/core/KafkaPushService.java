@@ -48,18 +48,18 @@ public final class KafkaPushService {
     }
     
     /**
-     * 查询拉取的整体超时（防止集群持续无数据时阻塞）
+     * 查询类操作的整体超时（默认 3 秒：Topic 列表 / 分区数 / 消息查询等， 防止集群不可达时 UI 长时间等待）
      */
-    private static final long QUERY_TIMEOUT_MS = 15_000;
+    private static final long QUERY_TIMEOUT_MS = 3_000;
+    
+    /**
+     * 连接建立超时（默认 2 秒：socket 连接与元数据首次获取）
+     */
+    private static final long CONNECT_TIMEOUT_MS = 2_000;
     
     private static final Logger logger = LoggerFactory.getLogger(KafkaPushService.class);
     
     private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
-    
-    /**
-     * Topic 列表查询超时（连接失败时避免 UI 长时间等待）
-     */
-    private static final long ADMIN_TIMEOUT_MS = 10_000;
     
     /**
      * 单条消息发送确认超时
@@ -92,8 +92,9 @@ public final class KafkaPushService {
     public static Properties buildAdminProps(KafkaConnection conn) {
         Properties props = new Properties();
         props.put("bootstrap.servers", conn.getBootstrapServers());
-        props.put("request.timeout.ms", String.valueOf(ADMIN_TIMEOUT_MS));
-        props.put("default.api.timeout.ms", String.valueOf(ADMIN_TIMEOUT_MS + 5_000));
+        props.put("request.timeout.ms", String.valueOf(QUERY_TIMEOUT_MS));
+        props.put("default.api.timeout.ms", String.valueOf(QUERY_TIMEOUT_MS + CONNECT_TIMEOUT_MS));
+        props.put("socket.connection.setup.timeout.ms", String.valueOf(CONNECT_TIMEOUT_MS));
         props.putAll(parseExtraConfig(conn.getExtraConfig()));
         return props;
     }
@@ -110,6 +111,7 @@ public final class KafkaPushService {
         props.put("retries", "3");
         props.put("request.timeout.ms", "30000");
         props.put("delivery.timeout.ms", "60000");
+        props.put("socket.connection.setup.timeout.ms", String.valueOf(CONNECT_TIMEOUT_MS));
         props.putAll(parseExtraConfig(conn.getExtraConfig()));
         return props;
     }
@@ -139,7 +141,7 @@ public final class KafkaPushService {
     public static List<String> listTopics(KafkaConnection conn) throws Exception {
         try (AdminClient admin = AdminClient.create(buildAdminProps(conn))) {
             return new ArrayList<>(admin.listTopics(new ListTopicsOptions().listInternal(false))
-                    .names().get(ADMIN_TIMEOUT_MS, TimeUnit.MILLISECONDS));
+                    .names().get(QUERY_TIMEOUT_MS + CONNECT_TIMEOUT_MS, TimeUnit.MILLISECONDS));
         }
     }
     
@@ -207,10 +209,14 @@ public final class KafkaPushService {
         props.put("bootstrap.servers", conn.getBootstrapServers());
         props.put("key.deserializer", StringDeserializer.class.getName());
         props.put("value.deserializer", StringDeserializer.class.getName());
+        props.put("request.timeout.ms", String.valueOf(QUERY_TIMEOUT_MS));
+        props.put("default.api.timeout.ms", String.valueOf(QUERY_TIMEOUT_MS));
+        props.put("max.block.ms", String.valueOf(CONNECT_TIMEOUT_MS));
+        props.put("socket.connection.setup.timeout.ms", String.valueOf(CONNECT_TIMEOUT_MS));
         props.putAll(parseExtraConfig(conn.getExtraConfig()));
         try (KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props)) {
             List<org.apache.kafka.common.PartitionInfo> partitions =
-                    consumer.partitionsFor(topic, Duration.ofSeconds(ADMIN_TIMEOUT_MS));
+                    consumer.partitionsFor(topic, Duration.ofMillis(QUERY_TIMEOUT_MS));
             return partitions == null ? -1 : partitions.size();
         } catch (Exception e) {
             logger.warn("[KAFKA] 查询 Topic 分区数失败: {}", e.getMessage());
@@ -238,11 +244,15 @@ public final class KafkaPushService {
         props.put("enable.auto.commit", "false");
         props.put("session.timeout.ms", "15000");
         props.put("max.poll.records", String.valueOf(Math.max(limit, 1)));
+        props.put("request.timeout.ms", String.valueOf(QUERY_TIMEOUT_MS));
+        props.put("default.api.timeout.ms", String.valueOf(QUERY_TIMEOUT_MS));
+        props.put("max.block.ms", String.valueOf(CONNECT_TIMEOUT_MS));
+        props.put("socket.connection.setup.timeout.ms", String.valueOf(CONNECT_TIMEOUT_MS));
         props.putAll(parseExtraConfig(conn.getExtraConfig()));
         
         List<KafkaMessage> messages = new ArrayList<>();
         try (KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props)) {
-            List<org.apache.kafka.common.PartitionInfo> partitions = consumer.partitionsFor(topic, Duration.ofSeconds(ADMIN_TIMEOUT_MS));
+            List<org.apache.kafka.common.PartitionInfo> partitions = consumer.partitionsFor(topic, Duration.ofMillis(QUERY_TIMEOUT_MS));
             if (partitions == null || partitions.isEmpty()) {
                 return messages;
             }
@@ -252,10 +262,10 @@ public final class KafkaPushService {
             consumer.assign(topicPartitions);
             if (fromLatest) {
                 // 每个分区定位到 末尾位移 - limit（不超过分区起点），保证能取到最新消息
-                Map<TopicPartition, Long> endOffsets = consumer.endOffsets(topicPartitions, Duration.ofSeconds(ADMIN_TIMEOUT_MS));
+                Map<TopicPartition, Long> endOffsets = consumer.endOffsets(topicPartitions, Duration.ofMillis(QUERY_TIMEOUT_MS));
                 for (TopicPartition tp : topicPartitions) {
                     long end = endOffsets.getOrDefault(tp, 0L);
-                    long begin = consumer.beginningOffsets(List.of(tp), Duration.ofSeconds(ADMIN_TIMEOUT_MS)).getOrDefault(tp, 0L);
+                    long begin = consumer.beginningOffsets(List.of(tp), Duration.ofMillis(QUERY_TIMEOUT_MS)).getOrDefault(tp, 0L);
                     consumer.seek(tp, Math.max(begin, end - limit));
                 }
             } else {
